@@ -27,8 +27,7 @@ float CircleSDF(float2 p, float r) {
     return length(p) - r;
 }
 
-float Antialisas(float dist, float2 ddist, float value) {
-    float gradientLength = length(ddist);
+float Antialisas(float dist, float gradientLength, float value) {
     float thresholdWidth = value * gradientLength;
     float antialiasedCircle = saturate((dist / thresholdWidth) + 0.5);
     return antialiasedCircle;
@@ -52,8 +51,8 @@ float4 SpritePixelShader(PixelInput p) : COLOR0 {
     float gradientLength = length(ddist);
     float size = p.Thickness.x * gradientLength;
 
-    float4 border = lerp(p.Color1, p.Color2, Antialisas(dist + size, ddist, 1.5));
-    return lerp(border, float4(0, 0, 0, 0), Antialisas(dist, ddist, 1.5));
+    float4 border = lerp(p.Color1, p.Color2, Antialisas(dist + size, gradientLength, 1.5));
+    return lerp(border, float4(0, 0, 0, 0), Antialisas(dist, gradientLength, 1.5));
 }
 
 technique SpriteBatch {
