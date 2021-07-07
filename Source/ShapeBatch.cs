@@ -24,7 +24,7 @@ namespace Apos.Shapes {
                 _view = Matrix.Identity;
             }
 
-            if (view != null) {
+            if (projection != null) {
                 _projection = projection.Value;
             } else {
                 int width = _graphicsDevice.Viewport.Width;
