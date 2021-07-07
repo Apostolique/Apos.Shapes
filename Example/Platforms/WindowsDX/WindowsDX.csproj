@@ -14,9 +14,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Apos.Camera" Version="0.3.1" />
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.0.1641" />
     <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.0.1641" />
-    <PackageReference Include="Apos.Input" Version="2.1.0" />
+    <PackageReference Include="Apos.Input" Version="2.4.1" />
 
     <ProjectReference Include="../../../Source/Apos.Shapes.csproj">
       <NoWarn>CS1591</NoWarn>
