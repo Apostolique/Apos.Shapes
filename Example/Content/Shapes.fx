@@ -7,6 +7,7 @@
 #endif
 
 float4x4 view_projection;
+float aa;
 
 struct VertexInput {
     float4 Position : POSITION0;
@@ -51,8 +52,8 @@ float4 SpritePixelShader(PixelInput p) : COLOR0 {
     float gradientLength = length(ddist);
     float size = p.Thickness.x * gradientLength;
 
-    float4 border = lerp(p.Color1, p.Color2, Antialias(dist + size, gradientLength, 1.5));
-    return lerp(border, float4(0, 0, 0, 0), Antialias(dist, gradientLength, 1.5));
+    float4 border = lerp(p.Color1, p.Color2, Antialias(dist + size, gradientLength, aa));
+    return lerp(border, float4(0, 0, 0, 0), Antialias(dist, gradientLength, aa));
 }
 
 technique SpriteBatch {

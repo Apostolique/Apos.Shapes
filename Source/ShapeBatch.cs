@@ -17,7 +17,7 @@ namespace Apos.Shapes {
             _indexBuffer.SetData(_indices);
         }
 
-        public void Begin(Matrix? view = null, Matrix? projection = null) {
+        public void Begin(Matrix? view = null, Matrix? projection = null, float antialias = 1.5f) {
             if (view != null) {
                 _view = view.Value;
             } else {
@@ -31,9 +31,11 @@ namespace Apos.Shapes {
                 int height = _graphicsDevice.Viewport.Height;
                 _projection = Matrix.CreateOrthographicOffCenter(0, width, height, 0, 0, 1);
             }
+
+            _antialias = antialias;
         }
         public void DrawCircle(Vector2 xy, float radius, Color c1, Color c2, float thickness = 1f) {
-            float padding = 1f;
+            float padding = _antialias;
             float texel = padding / (radius * 2f);
 
             float r = radius + padding;
@@ -65,6 +67,7 @@ namespace Apos.Shapes {
             if (_triangleCount == 0) return;
 
             _effect.Parameters["view_projection"]?.SetValue(_view * _projection);
+            _effect.Parameters["aa"]?.SetValue(_antialias);
 
             _vertexBuffer.SetData(_vertices);
             _graphicsDevice.SetVertexBuffer(_vertexBuffer);
@@ -114,5 +117,7 @@ namespace Apos.Shapes {
         Matrix _view;
         Matrix _projection;
         Effect _effect;
+
+        float _antialias;
     }
 }
