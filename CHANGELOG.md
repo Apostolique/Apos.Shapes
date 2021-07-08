@@ -14,5 +14,5 @@ Nothing yet!
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Input/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Apostolique/Apos.Shapes/releases/tag/v0.1.0
