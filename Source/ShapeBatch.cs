@@ -1,11 +1,13 @@
+using System;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace Apos.Shapes {
     public class ShapeBatch {
-        public ShapeBatch(GraphicsDevice graphicsDevice, Effect effect) {
+        public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content) {
             _graphicsDevice = graphicsDevice;
-            _effect = effect;
+            _effect = content.Load<Effect>("AposShapesEffect");
 
             _vertices = new VertexShape[MAX_VERTICES];
             _indices = GenerateIndexArray();

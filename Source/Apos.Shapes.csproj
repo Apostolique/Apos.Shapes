@@ -24,11 +24,31 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MonoGame.Content.Builder.Task" PrivateAssets="All" Version="3.8.0.1641" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" PrivateAssets="All" Version="3.8.0.1641" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Apos.Shapes.props" PackagePath="build" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Content/AposShapesEffect.fx">
+      <Pack>true</Pack>
+      <PackageCopyToOutput>true</PackageCopyToOutput>
+      <PackageFlatten>true</PackageFlatten>
+      <PackagePath>Content/</PackagePath>
+    </None>
+    <None Include="Content/Content.mgcb">
+      <Pack>true</Pack>
+      <PackageCopyToOutput>true</PackageCopyToOutput>
+      <PackageFlatten>true</PackageFlatten>
+      <PackagePath>Content/</PackagePath>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

@@ -22,6 +22,7 @@
     <ProjectReference Include="../../../Source/Apos.Shapes.csproj">
       <NoWarn>CS1591</NoWarn>
     </ProjectReference>
+
   </ItemGroup>
 
   <ItemGroup>

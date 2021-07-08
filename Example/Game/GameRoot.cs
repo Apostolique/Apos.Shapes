@@ -23,7 +23,7 @@ namespace GameProject {
 
         protected override void LoadContent() {
             _s = new SpriteBatch(GraphicsDevice);
-            _sb = new ShapeBatch(GraphicsDevice, Content.Load<Effect>("Shapes"));
+            _sb = new ShapeBatch(GraphicsDevice, Content);
 
             InputHelper.Setup(this);
 

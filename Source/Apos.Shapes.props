@@ -1,0 +1,13 @@
+<Project>
+
+  <PropertyGroup>
+    <AposShapesPath>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine($(MSBuildThisFileDirectory),"../Content/Content.mgcb"))))</AposShapesPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <MonoGameContentReference Include="$(AposShapesPath)">
+      <Link>Content/%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </MonoGameContentReference>
+  </ItemGroup>
+
+</Project>
