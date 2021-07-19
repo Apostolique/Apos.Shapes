@@ -3,6 +3,10 @@ Shape rendering in MonoGame.
 
 [![Discord](https://img.shields.io/discord/355231098122272778.svg)](https://discord.gg/MonoGame)
 
+## Description
+
+This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions.
+
 ## Documentation
 
 * Coming soon!
@@ -10,6 +14,12 @@ Shape rendering in MonoGame.
 ## Build
 
 [![NuGet](https://img.shields.io/nuget/v/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/) [![NuGet](https://img.shields.io/nuget/dt/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/)
+
+## Features
+
+* Circles
+* Rectangles
+* Filled + Borders
 
 ## Usage samples
 
