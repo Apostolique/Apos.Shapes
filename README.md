@@ -45,10 +45,10 @@ ShapeBatch _sb = new ShapeBatch(GraphicsDevice, Content);
 // ...
 
 _sb.Begin();
-_sb.DrawCircle(new Vector2(100f, 0f), 100f, Color.Red, Color.White, 4f);
-_sb.DrawCircle(new Vector2(100, 100), 50, Color.Red, Color.White, 4f);
-_sb.DrawCircle(new Vector2(170, 150), 75, Color.Blue * 0.5f, Color.White, 2f);
-_sb.DrawCircle(new Vector2(400, 120), 100, Color.Green, Color.White, 10f);
+_sb.FillCircle(new Vector2(100f, 0f), 100f, Color.Red, Color.White, 4f);
+_sb.FillCircle(new Vector2(100, 100), 50, Color.Red, Color.White, 4f);
+_sb.FillCircle(new Vector2(170, 150), 75, Color.Blue * 0.5f, Color.White, 2f);
+_sb.FillCircle(new Vector2(400, 120), 100, Color.Green, Color.White, 10f);
 _sb.End();
 ```
 
