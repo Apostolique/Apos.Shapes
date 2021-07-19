@@ -24,8 +24,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MonoGame.Content.Builder.Task" PrivateAssets="All" Version="3.8.0.1641" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" PrivateAssets="All" Version="3.8.0.1641" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(GITHUB_ACTIONS)' == ''">
+    <!-- Hack for building the content for the example project but not during the pipeline. -->
+    <PackageReference Include="MonoGame.Content.Builder.Task" PrivateAssets="All" Version="3.8.0.1641" />
   </ItemGroup>
 
   <ItemGroup>
