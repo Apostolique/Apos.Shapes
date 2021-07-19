@@ -49,7 +49,7 @@ namespace GameProject {
             GraphicsDevice.Clear(Color.Black);
 
             _sb.Begin(_camera.View);
-            _sb.FillCircle(new Vector2(200f, -100f), 100f, Color.Red, Color.White, 4f);
+            _sb.FillCircle(new Vector2(200f, -100f), 100f, Color.Red, Color.White, 4f * _camera.WorldToScreenScale());
             _sb.FillCircle(new Vector2(200, 0), 50, Color.Purple, Color.White, 0f);
             _sb.FillCircle(new Vector2(270, 50), 75, Color.Blue * 0.5f, Color.White, 2f);
             _sb.FillCircle(new Vector2(80, 120), 100, Color.Green, Color.White, 10f);
