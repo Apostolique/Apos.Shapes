@@ -1,7 +1,7 @@
 <Project>
 
   <PropertyGroup>
-    <AposShapesPath>$([System.IO.Path]::GetFullPath($([System.IO.Path]::Combine($(MSBuildThisFileDirectory),"../Content/Content.mgcb"))))</AposShapesPath>
+    <AposShapesPath>$([System.IO.Path]::Combine($(MSBuildThisFileDirectory),"Content/Content.mgcb"))</AposShapesPath>
   </PropertyGroup>
 
   <ItemGroup>

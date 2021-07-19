@@ -27,31 +27,24 @@
     <PackageReference Include="MonoGame.Framework.DesktopGL" PrivateAssets="All" Version="3.8.0.1641" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(GITHUB_ACTIONS)' == ''">
-    <!-- Hack for building the content for the example project but not during the pipeline. -->
-    <PackageReference Include="MonoGame.Content.Builder.Task" PrivateAssets="All" Version="3.8.0.1641" />
-  </ItemGroup>
-
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Apos.Shapes.props" PackagePath="build" />
-  </ItemGroup>
+    <Content Include="Apos.Shapes.props" PackagePath="build/" />
 
-  <ItemGroup>
     <None Include="Content/AposShapesEffect.fx">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
       <PackageFlatten>true</PackageFlatten>
-      <PackagePath>Content/</PackagePath>
+      <PackagePath>build/Content/</PackagePath>
     </None>
     <None Include="Content/Content.mgcb">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
       <PackageFlatten>true</PackageFlatten>
-      <PackagePath>Content/</PackagePath>
+      <PackagePath>build/Content/</PackagePath>
     </None>
   </ItemGroup>
 

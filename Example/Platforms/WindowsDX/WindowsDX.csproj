@@ -22,8 +22,9 @@
     <ProjectReference Include="../../../Source/Apos.Shapes.csproj">
       <NoWarn>CS1591</NoWarn>
     </ProjectReference>
-
   </ItemGroup>
+
+  <Import Project="../../../Source/Apos.Shapes.props" />
 
   <ItemGroup>
     <Compile Include="../../Game/**/*.cs">
