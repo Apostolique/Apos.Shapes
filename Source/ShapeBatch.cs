@@ -19,7 +19,7 @@ namespace Apos.Shapes {
             _indexBuffer.SetData(_indices);
         }
 
-        public void Begin(Matrix? view = null, Matrix? projection = null, float antialias = 1.5f) {
+        public void Begin(Matrix? view = null, Matrix? projection = null) {
             if (view != null) {
                 _view = view.Value;
             } else {
@@ -34,24 +34,49 @@ namespace Apos.Shapes {
                 _projection = Matrix.CreateOrthographicOffCenter(0, width, height, 0, 0, 1);
             }
 
-            _antialias = antialias;
+            _pixelSize = ScreenToWorldScale();
         }
-        public void DrawCircle(Vector2 xy, float radius, Color c1, Color c2, float thickness = 1f) {
-            float padding = _antialias;
-            float texel = padding / (radius * 2f);
+        public void FillCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+            float r = radius;
 
-            float r = radius + padding;
-            float u = 0.5f + texel;
+            var topLeft = center + new Vector2(-r);
+            var topRight = center + new Vector2(r, -r);
+            var bottomRight = center + new Vector2(r);
+            var bottomLeft = center + new Vector2(-r, r);
 
-            var topLeft = xy + new Vector2(-r);
-            var topRight = xy + new Vector2(r, -r);
-            var bottomRight = xy + new Vector2(r);
-            var bottomLeft = xy + new Vector2(-r, r);
+            float ps = _pixelSize / (r * 2);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-u, -u), c1, c2, thickness);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(u, -u), c1, c2, thickness);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(u, u), c1, c2, thickness);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-u, u), c1, c2, thickness);
+            float u = 1.0f;
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-u, -u), 0f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(u, -u), 0f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(u, u), 0f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-u, u), 0f, c1, c2, thickness, ps);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+
+            if (_triangleCount >= MAX_TRIANGLES) {
+                Flush();
+            }
+        }
+        public void FillRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
+            Vector2 uv = size / size.Y;
+            float ux = uv.X;
+            float uy = uv.Y;
+
+            float ps = _pixelSize / size.Y;
+
+            var topLeft = xy;
+            var topRight = xy + new Vector2(size.X, 0);
+            var bottomRight = xy + size;
+            var bottomLeft = xy + new Vector2(0, size.Y);
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy), 1f, c1, c2, thickness, ps, ux);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy), 1f, c1, c2, thickness, ps, ux);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy), 1f, c1, c2, thickness, ps, ux);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy), 1f, c1, c2, thickness, ps, ux);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -68,8 +93,7 @@ namespace Apos.Shapes {
         private void Flush() {
             if (_triangleCount == 0) return;
 
-            _effect.Parameters["view_projection"]?.SetValue(_view * _projection);
-            _effect.Parameters["aa"]?.SetValue(_antialias);
+            _effect.Parameters["view_projection"].SetValue(_view * _projection);
 
             _vertexBuffer.SetData(_vertices);
             _graphicsDevice.SetVertexBuffer(_vertexBuffer);
@@ -88,6 +112,16 @@ namespace Apos.Shapes {
             _vertexCount = 0;
             _indexCount = 0;
         }
+        private float ScreenToWorldScale() {
+            return Vector2.Distance(ScreenToWorld(0f, 0f), ScreenToWorld(1f, 0f));
+        }
+        private Vector2 ScreenToWorld(float x, float y) {
+            return ScreenToWorld(new Vector2(x, y));
+        }
+        private Vector2 ScreenToWorld(Vector2 xy) {
+            return Vector2.Transform(xy, Matrix.Invert(_view));
+        }
+
         private static short[] GenerateIndexArray() {
             short[] result = new short[MAX_INDICES];
             for (int i = 0, j = 0; i < MAX_INDICES; i += 6, j += 4) {
@@ -120,6 +154,11 @@ namespace Apos.Shapes {
         Matrix _projection;
         Effect _effect;
 
-        float _antialias;
+        Vector2 _topLeft;
+        Vector2 _topRight;
+        Vector2 _bottomRight;
+        Vector2 _bottomLeft;
+
+        float _pixelSize = 1f;
     }
 }
