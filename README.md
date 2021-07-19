@@ -1,9 +1,15 @@
 # Apos.Shapes
 Shape rendering in MonoGame.
 
+[![Discord](https://img.shields.io/discord/355231098122272778.svg)](https://discord.gg/MonoGame)
+
 ## Documentation
 
 * Coming soon!
+
+## Build
+
+[![NuGet](https://img.shields.io/nuget/v/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/) [![NuGet](https://img.shields.io/nuget/dt/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/)
 
 ## Usage samples
 
