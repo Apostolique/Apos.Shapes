@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 Nothing yet!
 
+## [0.1.1] - 2021-07-19
+
+### Added
+
+- Rectangle
+
 ## [0.1.0] - 2020-07-08
 
 ### Added
