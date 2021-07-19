@@ -49,10 +49,14 @@ namespace GameProject {
             GraphicsDevice.Clear(Color.Black);
 
             _sb.Begin(_camera.View);
-            _sb.DrawCircle(new Vector2(100f, 0f), 100f, Color.Red, Color.White, 4f);
-            _sb.DrawCircle(new Vector2(100, 100), 50, Color.Red, Color.White, 4f);
-            _sb.DrawCircle(new Vector2(170, 150), 75, Color.Blue * 0.5f, Color.White, 2f);
-            _sb.DrawCircle(new Vector2(400, 120), 100, Color.Green, Color.White, 10f);
+            _sb.FillCircle(new Vector2(200f, -100f), 100f, Color.Red, Color.White, 4f);
+            _sb.FillCircle(new Vector2(200, 0), 50, Color.Purple, Color.White, 0f);
+            _sb.FillCircle(new Vector2(270, 50), 75, Color.Blue * 0.5f, Color.White, 2f);
+            _sb.FillCircle(new Vector2(80, 120), 100, Color.Green, Color.White, 10f);
+
+            _sb.FillRectangle(new Vector2(-200, -200), new Vector2(100, 100), Color.Green, Color.White, 0f);
+            _sb.FillRectangle(new Vector2(-200, -50), new Vector2(200, 100), Color.Green, Color.White, 2f);
+            _sb.FillRectangle(new Vector2(-350, -50), new Vector2(100, 200), Color.Blue, Color.White, 10f);
             _sb.End();
 
             base.Draw(gameTime);
