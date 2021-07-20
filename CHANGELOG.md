@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 Nothing yet!
 
+## [0.1.2] - 2021-07-20
+
+### Fixed
+
+- Shapes weren't drawn at the correct position
+
+### Optimized
+
+- The ShapeBatch should be slightly faster
+
 ## [0.1.1] - 2021-07-19
 
 ### Added
@@ -20,5 +30,7 @@ Nothing yet!
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Apostolique/Apos.Shapes/releases/tag/v0.1.0
