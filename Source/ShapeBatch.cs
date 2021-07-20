@@ -37,14 +37,14 @@ namespace Apos.Shapes {
             _pixelSize = ScreenToWorldScale();
         }
         public void FillCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
-            float r = radius;
+            radius = radius + _pixelSize; // Account for AA.
 
-            var topLeft = center + new Vector2(-r);
-            var topRight = center + new Vector2(r, -r);
-            var bottomRight = center + new Vector2(r);
-            var bottomLeft = center + new Vector2(-r, r);
+            var topLeft = center + new Vector2(-radius);
+            var topRight = center + new Vector2(radius, -radius);
+            var bottomRight = center + new Vector2(radius);
+            var bottomLeft = center + new Vector2(-radius, radius);
 
-            float ps = _pixelSize / (r * 2);
+            float ps = _pixelSize / (radius * 2);
 
             float u = 1.0f;
 
@@ -62,6 +62,9 @@ namespace Apos.Shapes {
             }
         }
         public void FillRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
+            xy -= new Vector2(_pixelSize); // Account for AA.
+            size += new Vector2(_pixelSize * 2f); // Account for AA.
+
             Vector2 uv = size / size.Y;
             float ux = uv.X;
             float uy = uv.Y;
