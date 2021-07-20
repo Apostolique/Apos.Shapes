@@ -13,10 +13,11 @@ namespace Apos.Shapes {
             _indices = GenerateIndexArray();
 
             _vertexBuffer = new DynamicVertexBuffer(_graphicsDevice, typeof(VertexShape), _vertices.Length, BufferUsage.WriteOnly);
-            _vertexBuffer.SetData(_vertices);
 
-            _indexBuffer = new IndexBuffer(_graphicsDevice, typeof(short), _indices.Length, BufferUsage.WriteOnly);
+            _indexBuffer = new IndexBuffer(_graphicsDevice, typeof(ushort), _indices.Length, BufferUsage.WriteOnly);
             _indexBuffer.SetData(_indices);
+
+            // TODO: Allow batch to resize instead of capping at 2048 shapes per batch.
         }
 
         public void Begin(Matrix? view = null, Matrix? projection = null) {
@@ -29,9 +30,8 @@ namespace Apos.Shapes {
             if (projection != null) {
                 _projection = projection.Value;
             } else {
-                int width = _graphicsDevice.Viewport.Width;
-                int height = _graphicsDevice.Viewport.Height;
-                _projection = Matrix.CreateOrthographicOffCenter(0, width, height, 0, 0, 1);
+                Viewport viewport = _graphicsDevice.Viewport;
+                _projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
             }
 
             _pixelSize = ScreenToWorldScale();
@@ -125,15 +125,15 @@ namespace Apos.Shapes {
             return Vector2.Transform(xy, Matrix.Invert(_view));
         }
 
-        private static short[] GenerateIndexArray() {
-            short[] result = new short[MAX_INDICES];
+        private static ushort[] GenerateIndexArray() {
+            ushort[] result = new ushort[MAX_INDICES];
             for (int i = 0, j = 0; i < MAX_INDICES; i += 6, j += 4) {
-                result[i + 0] = (short) (j + 0);
-                result[i + 1] = (short) (j + 1);
-                result[i + 2] = (short) (j + 3);
-                result[i + 3] = (short) (j + 1);
-                result[i + 4] = (short) (j + 2);
-                result[i + 5] = (short) (j + 3);
+                result[i + 0] = (ushort) (j + 0);
+                result[i + 1] = (ushort) (j + 1);
+                result[i + 2] = (ushort) (j + 3);
+                result[i + 3] = (ushort) (j + 1);
+                result[i + 4] = (ushort) (j + 2);
+                result[i + 5] = (ushort) (j + 3);
             }
             return result;
         }
@@ -145,7 +145,7 @@ namespace Apos.Shapes {
 
         GraphicsDevice _graphicsDevice;
         VertexShape[] _vertices;
-        short[] _indices;
+        ushort[] _indices;
         int _triangleCount = 0;
         int _vertexCount = 0;
         int _indexCount = 0;
