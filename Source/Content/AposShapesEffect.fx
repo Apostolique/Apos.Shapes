@@ -58,9 +58,9 @@ float4 SpritePixelShader(PixelInput p) : COLOR0 {
         d = BoxSDF(p.TexCoord.xy, float2(p.Meta.w - aa, sdfSize));
     }
 
-    float lineSize = p.Meta.x * ps - ps - ps;
+    float lineSize = p.Meta.x * ps - ps * 2.0;
 
-    float4 c1 = p.Color1 * Antialias(d + lineSize, aa);
+    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + ps * 3.0, aa);
 
     d = abs(d + lineSize) - lineSize;
     float4 c2 = p.Color2 * Antialias(d, aa);
