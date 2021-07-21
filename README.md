@@ -7,6 +7,8 @@ Shape rendering in MonoGame.
 
 This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions.
 
+![](./Images/example.png)
+
 ## Documentation
 
 * Coming soon!
