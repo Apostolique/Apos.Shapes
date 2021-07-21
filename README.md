@@ -47,10 +47,19 @@ ShapeBatch _sb = new ShapeBatch(GraphicsDevice, Content);
 // ...
 
 _sb.Begin();
-_sb.FillCircle(new Vector2(100f, 0f), 100f, Color.Red, Color.White, 4f);
-_sb.FillCircle(new Vector2(100, 100), 50, Color.Red, Color.White, 4f);
-_sb.FillCircle(new Vector2(170, 150), 75, Color.Blue * 0.5f, Color.White, 2f);
-_sb.FillCircle(new Vector2(400, 120), 100, Color.Green, Color.White, 10f);
+_sb.FillCircle(new Vector2(120, 120), 75, new Color(96, 165, 250), new Color(191, 219, 254), 4f);
+_sb.FillCircle(new Vector2(120, 120), 30, Color.White, Color.Black, 20f);
+
+_sb.FillCircle(new Vector2(370, 120), 100, new Color(96, 165, 250), new Color(191, 219, 254), 4f);
+_sb.FillCircle(new Vector2(370, 120), 40, Color.White, Color.Black, 20f);
+
+_sb.FillCircle(new Vector2(190, 270), 10, Color.Black, Color.White, 2f);
+_sb.FillCircle(new Vector2(220, 270), 10, Color.Black, Color.White, 2f);
+
+_sb.FillCircle(new Vector2(235, 400), 30, new Color(220, 38, 38), Color.White, 0f);
+_sb.FillRectangle(new Vector2(235, 370), new Vector2(135, 60), new Color(220, 38, 38), Color.White, 0f);
+_sb.FillCircle(new Vector2(235, 400), 20, Color.White, Color.White, 0f);
+_sb.FillRectangle(new Vector2(235, 380), new Vector2(125, 40), Color.White, Color.White, 0f);
 _sb.End();
 ```
 
