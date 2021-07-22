@@ -157,11 +157,6 @@ namespace Apos.Shapes {
         Matrix _projection;
         Effect _effect;
 
-        Vector2 _topLeft;
-        Vector2 _topRight;
-        Vector2 _bottomRight;
-        Vector2 _bottomLeft;
-
         float _pixelSize = 1f;
     }
 }
