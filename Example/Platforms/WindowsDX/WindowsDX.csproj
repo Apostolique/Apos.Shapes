@@ -18,6 +18,7 @@
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.0.1641" />
     <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.0.1641" />
     <PackageReference Include="Apos.Input" Version="2.4.1" />
+    <PackageReference Include="FontStashSharp.MonoGame" Version="0.9.5" />
 
     <ProjectReference Include="../../../Source/Apos.Shapes.csproj">
       <NoWarn>CS1591</NoWarn>

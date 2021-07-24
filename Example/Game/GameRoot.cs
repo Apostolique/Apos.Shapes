@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework.Input;
 using Apos.Input;
 using Apos.Shapes;
 using Apos.Camera;
+using FontStashSharp;
 
 namespace GameProject {
     public class GameRoot : Game {
@@ -29,10 +30,16 @@ namespace GameProject {
 
             IVirtualViewport defaultViewport = new DefaultViewport(GraphicsDevice, Window);
             _camera = new Camera(defaultViewport);
+
+            _fontSystem = new FontSystem();
+            _fontSystem.AddFont(TitleContainer.OpenStream($"{Content.RootDirectory}/source-code-pro-medium.ttf"));
         }
 
         protected override void Update(GameTime gameTime) {
             InputHelper.UpdateSetup();
+
+            if (_resetDroppedFrames.Pressed()) _fps.DroppedFrames = 0;
+            _fps.Update(gameTime);
 
             if (_quit.Pressed())
                 Exit();
@@ -46,6 +53,7 @@ namespace GameProject {
         }
 
         protected override void Draw(GameTime gameTime) {
+            _fps.Draw(gameTime);
             GraphicsDevice.Clear(Color.Black);
 
             _sb.Begin(_camera.View);
@@ -58,6 +66,11 @@ namespace GameProject {
             _sb.FillRectangle(new Vector2(-200, -50), new Vector2(200, 100), Color.Green, Color.White, 2f);
             _sb.FillRectangle(new Vector2(-350, -50), new Vector2(100, 200), Color.Blue, Color.White, 10f);
             _sb.End();
+
+            var font = _fontSystem.GetFont(24);
+            _s.Begin();
+            _s.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 10), Color.White);
+            _s.End();
 
             base.Draw(gameTime);
         }
@@ -134,6 +147,9 @@ namespace GameProject {
         SpriteBatch _s;
         ShapeBatch _sb;
 
+        FontSystem _fontSystem;
+        FPSCounter _fps = new FPSCounter();
+
         ICondition _quit =
             new AnyCondition(
                 new KeyboardCondition(Keys.Escape),
@@ -145,6 +161,8 @@ namespace GameProject {
         ICondition CameraDrag = new MouseCondition(MouseButton.MiddleButton);
 
         ICondition CameraReset = new KeyboardCondition(Keys.R);
+
+        ICondition _resetDroppedFrames = new KeyboardCondition(Keys.F2);
 
         Camera _camera;
         Vector2 _mouseWorld = Vector2.Zero;
