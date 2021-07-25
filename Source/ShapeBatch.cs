@@ -37,7 +37,7 @@ namespace Apos.Shapes {
             _pixelSize = ScreenToWorldScale();
         }
         public void FillCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
-            radius = radius + _pixelSize; // Account for AA.
+            radius += _pixelSize; // Account for AA.
 
             var topLeft = center + new Vector2(-radius);
             var topRight = center + new Vector2(radius, -radius);
@@ -89,6 +89,41 @@ namespace Apos.Shapes {
                 Flush();
             }
         }
+        public void FillLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
+            var r = radius + _pixelSize; // Account for AA.
+
+            var c = Slide(a, b, r);
+            var d = Slide(b, a, r);
+
+            var topLeft = Clockwise(d, c, r);
+            var topRight = CounterClockwise(c, d, r);
+            var bottomRight = Clockwise(c, d, r);
+            var bottomLeft = CounterClockwise(d, c, r);
+
+            var size = new Vector2(Vector2.Distance(topLeft, topRight), Vector2.Distance(topLeft, bottomLeft));
+
+            var uv = size / size.Y;
+            var ux = uv.X;
+            var uy = uv.Y;
+
+            var ur = (radius * 2f) / size.Y;
+
+            var ps = _pixelSize / size.Y;
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+
+            if (_triangleCount >= MAX_TRIANGLES) {
+                Flush();
+            }
+        }
+
         public void End() {
             Flush();
         }
@@ -123,6 +158,19 @@ namespace Apos.Shapes {
         }
         private Vector2 ScreenToWorld(Vector2 xy) {
             return Vector2.Transform(xy, Matrix.Invert(_view));
+        }
+
+        private Vector2 Slide(Vector2 a, Vector2 b, float distance) {
+            var c = Vector2.Normalize(b - a) * distance;
+            return b + c;
+        }
+        private Vector2 Clockwise(Vector2 a, Vector2 b, float distance) {
+            var c = Vector2.Normalize(b - a) * distance;
+            return new Vector2(c.Y, -c.X) + a;
+        }
+        private Vector2 CounterClockwise(Vector2 a, Vector2 b, float distance) {
+            var c = Vector2.Normalize(b - a) * distance;
+            return new Vector2(-c.Y, c.X) + a;
         }
 
         private static ushort[] GenerateIndexArray() {

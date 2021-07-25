@@ -13,22 +13,31 @@ struct VertexInput {
     float4 TexCoord : TEXCOORD0;
     float4 Color1 : COLOR0;
     float4 Color2 : COLOR1;
-    float4 Meta : TEXCOORD1;
+    float4 Meta1 : TEXCOORD1;
+    float4 Meta2 : TEXCOORD2;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
     float4 TexCoord : TEXCOORD0;
     float4 Color1 : COLOR0;
     float4 Color2 : COLOR1;
-    float4 Meta : TEXCOORD1;
+    float4 Meta1 : TEXCOORD1;
+    float4 Meta2 : TEXCOORD2;
 };
 
+// https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
 float CircleSDF(float2 p, float r) {
     return length(p) - r;
 }
 float BoxSDF(float2 p, float2 b) {
     float2 d = abs(p) - b;
     return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+float SegmentSDF(float2 p, float2 a, float2 b) {
+    float2 ba = b - a;
+    float2 pa = p - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - h * ba);
 }
 
 float Antialias(float d, float size) {
@@ -42,23 +51,26 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.TexCoord = v.TexCoord;
     output.Color1 = v.Color1;
     output.Color2 = v.Color2;
-    output.Meta = v.Meta;
+    output.Meta1 = v.Meta1;
+    output.Meta2 = v.Meta2;
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : COLOR0 {
-    float ps = p.Meta.z;
+    float ps = p.Meta1.z;
     float aaSize = 4.0;
-    float aa = p.Meta.z * aaSize;
+    float aa = p.Meta1.z * aaSize;
     float sdfSize = 1.0 - aa;
 
     float d;
-    if (p.Meta.y == 0) {
+    if (p.Meta1.y == 0) {
         d = CircleSDF(p.TexCoord.xy, sdfSize);
-    } else if (p.Meta.y == 1) {
-        d = BoxSDF(p.TexCoord.xy, float2(p.Meta.w - aa, sdfSize));
+    } else if (p.Meta1.y == 1) {
+        d = BoxSDF(p.TexCoord.xy, float2(p.Meta1.w - aa, sdfSize));
+    } else if (p.Meta1.y == 2) {
+        d = SegmentSDF(p.TexCoord.xy, float2(-p.Meta1.w + aa, 0.0), float2(p.Meta1.w - aa, 0.0)) - p.Meta2.x + aa / 2.0;
     }
 
-    float lineSize = p.Meta.x * ps - ps * 2.0;
+    float lineSize = p.Meta1.x * ps - ps * 2.0;
 
     float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + ps * 3.0, aa);
 

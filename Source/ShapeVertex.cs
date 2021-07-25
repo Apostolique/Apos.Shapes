@@ -5,7 +5,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Color c1, Color c2, float thickness = 0f, float pixelSize = 1f, float width = 1.0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Color c1, Color c2, float thickness = 0f, float pixelSize = 1f, float width = 1.0f, float x = 0f) {
             if (thickness <= 0f) {
                 c2 = c1;
                 thickness = 0f;
@@ -16,14 +16,16 @@ namespace Apos.Shapes {
             Color1 = c1;
             Color2 = c2;
 
-            Meta = new Vector4(thickness, shape, pixelSize, width);
+            Meta1 = new Vector4(thickness, shape, pixelSize, width);
+            Meta2 = new Vector4(x, 0f, 0f, 0f);
         }
 
         public Vector3 Position;
         public Vector2 TextureCoordinate;
         public Color Color1;
         public Color Color2;
-        public Vector4 Meta;
+        public Vector4 Meta1;
+        public Vector4 Meta2;
         public static readonly VertexDeclaration VertexDeclaration;
 
         VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
@@ -34,7 +36,7 @@ namespace Apos.Shapes {
                 hashCode = (hashCode * 397) ^ TextureCoordinate.GetHashCode();
                 hashCode = (hashCode * 397) ^ Color1.GetHashCode();
                 hashCode = (hashCode * 397) ^ Color2.GetHashCode();
-                hashCode = (hashCode * 397) ^ Meta.GetHashCode();
+                hashCode = (hashCode * 397) ^ Meta1.GetHashCode();
                 return hashCode;
             }
         }
@@ -45,10 +47,10 @@ namespace Apos.Shapes {
                 " Color1:" + this.Color1 +
                 " Color2:" + this.Color1 +
                 " TextureCoordinate:" + this.TextureCoordinate +
-                " Thickness:" + this.Meta.X +
-                " Shape:" + this.Meta.Y +
-                " PixelSize:" + this.Meta.Z +
-                " Width:" + this.Meta.W +
+                " Thickness:" + this.Meta1.X +
+                " Shape:" + this.Meta1.Y +
+                " PixelSize:" + this.Meta1.Z +
+                " Width:" + this.Meta1.W +
                 "}}";
         }
 
@@ -58,7 +60,8 @@ namespace Apos.Shapes {
                 left.TextureCoordinate == right.TextureCoordinate &&
                 left.Color1 == right.Color1 &&
                 left.Color2 == right.Color2 &&
-                left.Meta == right.Meta;
+                left.Meta1 == right.Meta1 &&
+                left.Meta2 == right.Meta2;
         }
 
         public static bool operator !=(VertexShape left, VertexShape right) {
@@ -81,7 +84,8 @@ namespace Apos.Shapes {
                 new VertexElement(sizeof(float) * 3, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
                 new VertexElement(sizeof(float) * 5, VertexElementFormat.Color, VertexElementUsage.Color, 0),
                 new VertexElement(sizeof(float) * 5 + sizeof(int), VertexElementFormat.Color, VertexElementUsage.Color, 1),
-                new VertexElement(sizeof(float) * 5 + sizeof(int) * 2, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 1)
+                new VertexElement(sizeof(float) * 5 + sizeof(int) * 2, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 1),
+                new VertexElement(sizeof(float) * 9 + sizeof(int) * 2, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 2)
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }
