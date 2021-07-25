@@ -72,7 +72,7 @@ float4 SpritePixelShader(PixelInput p) : COLOR0 {
 
     float lineSize = p.Meta1.x * ps;
 
-    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + ps, aa);
+    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0, aa);
 
     d = abs(d + lineSize) - lineSize;
     float4 c2 = p.Color2 * Antialias(d, aa);
