@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 Nothing yet!
 
+## [0.1.4] - 2021-08-17
+
+### Changed
+
+- The Fill methods have been renamed to Draw. FillCircle becomes DrawCircle. The Draw methods are used to draw a shape with both a fill and a border.
+
+### Added
+
+- Fill methods draw a shape without a border.
+- Border methods draw a shape without a fill. A border encases a shape without going outside it's boundaries.
+
 ## [0.1.3] - 2021-07-25
 
 ### Added
@@ -40,7 +51,8 @@ Nothing yet!
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.0...v0.1.1
