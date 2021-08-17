@@ -33,8 +33,6 @@ namespace GameProject {
 
             _fontSystem = new FontSystem();
             _fontSystem.AddFont(TitleContainer.OpenStream($"{Content.RootDirectory}/source-code-pro-medium.ttf"));
-
-            _200x200 = Content.Load<Texture2D>("200x200");
         }
 
         protected override void Update(GameTime gameTime) {
