@@ -36,7 +36,7 @@ namespace Apos.Shapes {
 
             _pixelSize = ScreenToWorldScale();
         }
-        public void FillCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+        public void DrawCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
             radius += _pixelSize; // Account for AA.
 
             var topLeft = center + new Vector2(-radius);
@@ -61,7 +61,13 @@ namespace Apos.Shapes {
                 Flush();
             }
         }
-        public void FillRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
+        public void FillCircle(Vector2 center, float radius, Color c) {
+            DrawCircle(center, radius, c, c, 0f);
+        }
+        public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f) {
+            DrawCircle(center, radius, Color.Transparent, c, thickness);
+        }
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
             xy -= new Vector2(_pixelSize); // Account for AA.
             size += new Vector2(_pixelSize * 2f); // Account for AA.
 
@@ -89,7 +95,13 @@ namespace Apos.Shapes {
                 Flush();
             }
         }
-        public void FillLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
+        public void FillRectangle(Vector2 xy, Vector2 size, Color c) {
+            DrawRectangle(xy, size, c, c, 0f);
+        }
+        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f) {
+            DrawRectangle(xy, size, Color.Transparent, c, thickness);
+        }
+        public void DrawLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
             var r = radius + _pixelSize; // Account for AA.
 
             var c = Slide(a, b, r);
@@ -122,6 +134,12 @@ namespace Apos.Shapes {
             if (_triangleCount >= MAX_TRIANGLES) {
                 Flush();
             }
+        }
+        public void FillLine(Vector2 a, Vector2 b, float radius, Color c) {
+            DrawLine(a, b, radius, c, c, 0f);
+        }
+        public void BorderLine(Vector2 a, Vector2 b, float radius, Color c, float thickness = 1f) {
+            DrawLine(a, b, radius, Color.Transparent, c, thickness);
         }
 
         public void End() {
