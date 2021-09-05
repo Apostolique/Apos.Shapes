@@ -70,14 +70,14 @@ float4 SpritePixelShader(PixelInput p) : COLOR0 {
         d = SegmentSDF(p.TexCoord.xy, float2(-p.Meta1.w + aa, 0.0), float2(p.Meta1.w - aa, 0.0)) - p.Meta2.x + aa / 2.0;
     }
 
-    float lineSize = p.Meta1.x * ps;
+    float lineSize = p.Meta1.x * ps - ps * 2.0;
 
-    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0, aa);
+    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + ps * 3.0, aa);
 
     d = abs(d + lineSize) - lineSize;
     float4 c2 = p.Color2 * Antialias(d, aa);
 
-    return c1 + (c2 * (1.0 - c1.a));
+    return c2 + c1 * (1.0 - c2.a);
 }
 
 technique SpriteBatch {
