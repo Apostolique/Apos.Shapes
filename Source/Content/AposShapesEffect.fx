@@ -55,7 +55,7 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta2 = v.Meta2;
     return output;
 }
-float4 SpritePixelShader(PixelInput p) : COLOR0 {
+float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float ps = p.Meta1.z;
     float aaSize = 4.0;
     float aa = p.Meta1.z * aaSize;
