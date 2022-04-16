@@ -39,6 +39,13 @@ float SegmentSDF(float2 p, float2 a, float2 b) {
     float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
     return length(pa - h * ba);
 }
+float HexagonSDF(float2 p, float r) {
+    const float3 k = float3(-0.866025404, 0.5, 0.577350269);
+    p = abs(p);
+    p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+    p -= float2(clamp(p.x, -k.z * r, k.z * r), r);
+    return length(p) * sign(p.y);
+}
 
 float Antialias(float d, float size) {
     return lerp(1.0, 0.0, smoothstep(0.0, size, d));
@@ -68,6 +75,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = BoxSDF(p.TexCoord.xy, float2(p.Meta1.w - aa, sdfSize));
     } else if (p.Meta1.y == 2) {
         d = SegmentSDF(p.TexCoord.xy, float2(-p.Meta1.w + aa, 0.0), float2(p.Meta1.w - aa, 0.0)) - p.Meta2.x + aa / 2.0;
+    } else if (p.Meta1.y == 3) {
+        d = HexagonSDF(p.TexCoord.xy, sdfSize);
     }
 
     float lineSize = p.Meta1.x * ps - ps * 2.0;

@@ -142,6 +142,40 @@ namespace Apos.Shapes {
             DrawLine(a, b, radius, Color.Transparent, c, thickness);
         }
 
+        public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+            radius += _pixelSize; // Account for AA.
+            Vector2 size = new Vector2(radius / (float)Math.Cos(Math.PI / 6.0), radius);
+
+            var topLeft = center - size;
+            var topRight = center + new Vector2(size.X, -size.Y);
+            var bottomRight = center + size;
+            var bottomLeft = center + new Vector2(-size.X, size.Y);
+
+            float ps = _pixelSize / (radius * 2);
+
+            float ux = 1.0f / (float)Math.Cos(Math.PI / 6.0);
+            float uy = 1.0f;
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy), 3f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy), 3f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy), 3f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy), 3f, c1, c2, thickness, ps);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+
+            if (_triangleCount >= MAX_TRIANGLES) {
+                Flush();
+            }
+        }
+        public void FillHexagon(Vector2 center, float radius, Color c) {
+            DrawCircle(center, radius, c, c, 0f);
+        }
+        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f) {
+            DrawCircle(center, radius, Color.Transparent, c, thickness);
+        }
+
         public void End() {
             Flush();
         }

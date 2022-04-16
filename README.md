@@ -22,6 +22,7 @@ This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_dista
 * Circles
 * Lines
 * Rectangles
+* Hexagons
 * Filled + Borders
 
 ## Usage samples
