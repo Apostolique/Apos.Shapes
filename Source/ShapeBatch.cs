@@ -35,6 +35,8 @@ namespace Apos.Shapes {
             }
 
             _pixelSize = ScreenToWorldScale();
+            
+            _begun = true;
         }
         public void DrawCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
             radius += _pixelSize; // Account for AA.
@@ -178,6 +180,7 @@ namespace Apos.Shapes {
 
         public void End() {
             Flush();
+            this._begun = false;
         }
 
         private void Flush() {
@@ -258,5 +261,8 @@ namespace Apos.Shapes {
         Effect _effect;
 
         float _pixelSize = 1f;
+        
+        private bool _begun = false;
+        public bool Begun => _begun;
     }
 }
