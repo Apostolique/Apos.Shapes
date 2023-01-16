@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>Example</AssemblyName>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -14,15 +14,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.1.303" />
     <PackageReference Include="Apos.Camera" Version="0.3.1" />
-    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.0.1641" />
-    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.0.1641" />
     <PackageReference Include="Apos.Input" Version="2.4.1" />
     <PackageReference Include="FontStashSharp.MonoGame" Version="0.9.5" />
 
-    <ProjectReference Include="../../../Source/Apos.Shapes.csproj">
-      <NoWarn>CS1591</NoWarn>
-    </ProjectReference>
+    <ProjectReference Include="../../../Source/Apos.Shapes.csproj" />
   </ItemGroup>
 
   <Import Project="../../../Source/Apos.Shapes.props" />
@@ -38,5 +36,10 @@
       <Link>Content/%(RecursiveDir)%(Filename)%(Extension)</Link>
     </MonoGameContentReference>
   </ItemGroup>
+
+  <Target Name="RestoreDotnetTools" BeforeTargets="Restore">
+    <Message Text="Restoring dotnet tools" Importance="High" />
+    <Exec Command="dotnet tool restore" />
+  </Target>
 
 </Project>
