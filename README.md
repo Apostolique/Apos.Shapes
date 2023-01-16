@@ -1,5 +1,5 @@
 # Apos.Shapes
-Shape rendering in MonoGame.
+Shape rendering library for MonoGame.
 
 [![Discord](https://img.shields.io/discord/355231098122272778.svg)](https://discord.gg/MonoGame)
 
