@@ -10,15 +10,15 @@ namespace Apos.Shapes {
 
             _effect = content.Load<Effect>("apos-shapes-effect");
 
-            _vertices = new VertexShape[MAX_VERTICES];
-            _indices = GenerateIndexArray();
+            _vertices = new VertexShape[_initialVertices];
+            _indices = new uint[_initialIndices];
+
+            GenerateIndexArray(ref _indices, 0);
 
             _vertexBuffer = new DynamicVertexBuffer(_graphicsDevice, typeof(VertexShape), _vertices.Length, BufferUsage.WriteOnly);
 
-            _indexBuffer = new IndexBuffer(_graphicsDevice, typeof(ushort), _indices.Length, BufferUsage.WriteOnly);
+            _indexBuffer = new IndexBuffer(_graphicsDevice, typeof(uint), _indices.Length, BufferUsage.WriteOnly);
             _indexBuffer.SetData(_indices);
-
-            // TODO: Allow batch to resize instead of capping at 2048 shapes per batch.
         }
 
         public void Begin(Matrix? view = null, Matrix? projection = null) {
@@ -38,6 +38,12 @@ namespace Apos.Shapes {
             _pixelSize = ScreenToWorldScale();
         }
         public void DrawCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+                _fromIndex = _indexCount;
+                _indicesChanged = true;
+            }
+
             radius += _pixelSize; // Account for AA.
 
             var topLeft = center + new Vector2(-radius);
@@ -57,10 +63,6 @@ namespace Apos.Shapes {
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
-
-            if (_triangleCount >= MAX_TRIANGLES) {
-                Flush();
-            }
         }
         public void FillCircle(Vector2 center, float radius, Color c) {
             DrawCircle(center, radius, c, c, 0f);
@@ -69,6 +71,12 @@ namespace Apos.Shapes {
             DrawCircle(center, radius, Color.Transparent, c, thickness);
         }
         public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+                _fromIndex = _indexCount;
+                _indicesChanged = true;
+            }
+
             xy -= new Vector2(_pixelSize); // Account for AA.
             size += new Vector2(_pixelSize * 2f); // Account for AA.
 
@@ -91,10 +99,6 @@ namespace Apos.Shapes {
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
-
-            if (_triangleCount >= MAX_TRIANGLES) {
-                Flush();
-            }
         }
         public void FillRectangle(Vector2 xy, Vector2 size, Color c) {
             DrawRectangle(xy, size, c, c, 0f);
@@ -103,6 +107,12 @@ namespace Apos.Shapes {
             DrawRectangle(xy, size, Color.Transparent, c, thickness);
         }
         public void DrawLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+                _fromIndex = _indexCount;
+                _indicesChanged = true;
+            }
+
             var r = radius + _pixelSize; // Account for AA.
 
             var c = Slide(a, b, r);
@@ -131,10 +141,6 @@ namespace Apos.Shapes {
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
-
-            if (_triangleCount >= MAX_TRIANGLES) {
-                Flush();
-            }
         }
         public void FillLine(Vector2 a, Vector2 b, float radius, Color c) {
             DrawLine(a, b, radius, c, c, 0f);
@@ -144,6 +150,12 @@ namespace Apos.Shapes {
         }
 
         public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+                _fromIndex = _indexCount;
+                _indicesChanged = true;
+            }
+
             radius += _pixelSize; // Account for AA.
             Vector2 size = new Vector2(radius / (float)Math.Cos(Math.PI / 6.0), radius);
 
@@ -165,10 +177,6 @@ namespace Apos.Shapes {
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
-
-            if (_triangleCount >= MAX_TRIANGLES) {
-                Flush();
-            }
         }
         public void FillHexagon(Vector2 center, float radius, Color c) {
             DrawCircle(center, radius, c, c, 0f);
@@ -179,6 +187,8 @@ namespace Apos.Shapes {
 
         public void End() {
             Flush();
+
+            // TODO: Restore old states like rasterizer, depth stencil, blend state?
         }
 
         private void Flush() {
@@ -186,8 +196,23 @@ namespace Apos.Shapes {
 
             _effect.Parameters["view_projection"].SetValue(_view * _projection);
 
+            if (_indicesChanged) {
+                _vertexBuffer.Dispose();
+                _indexBuffer.Dispose();
+
+                _vertexBuffer = new DynamicVertexBuffer(_graphicsDevice, typeof(VertexShape), _vertices.Length, BufferUsage.WriteOnly);
+
+                GenerateIndexArray(ref _indices, _fromIndex);
+
+                _indexBuffer = new IndexBuffer(_graphicsDevice, typeof(uint), _indices.Length, BufferUsage.WriteOnly);
+                _indexBuffer.SetData(_indices);
+
+                _indicesChanged = false;
+            }
+
             _vertexBuffer.SetData(_vertices);
             _graphicsDevice.SetVertexBuffer(_vertexBuffer);
+
             _graphicsDevice.Indices = _indexBuffer;
 
             _graphicsDevice.DepthStencilState = DepthStencilState.None;
@@ -226,38 +251,52 @@ namespace Apos.Shapes {
             return new Vector2(-c.Y, c.X) + a;
         }
 
-        private static ushort[] GenerateIndexArray() {
-            ushort[] result = new ushort[MAX_INDICES];
-            for (int i = 0, j = 0; i < MAX_INDICES; i += 6, j += 4) {
-                result[i + 0] = (ushort) (j + 0);
-                result[i + 1] = (ushort) (j + 1);
-                result[i + 2] = (ushort) (j + 3);
-                result[i + 3] = (ushort) (j + 1);
-                result[i + 4] = (ushort) (j + 2);
-                result[i + 5] = (ushort) (j + 3);
+        private bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
+            if (array.Length < neededCapacity) {
+                Array.Resize(ref array, array.Length * 2);
+                return true;
             }
-            return result;
+            return false;
         }
 
-        const int MAX_SPRITES = 2048;
-        const int MAX_TRIANGLES = 2048 * 2;
-        const int MAX_VERTICES = 2048 * 4;
-        const int MAX_INDICES = 2048 * 6;
+        private void GenerateIndexArray(ref uint[] array, int index = 0) {
+            uint i = Floor(index, 6, 6);
+            uint j = Floor(index, 6, 4);
+            for (; i < array.Length; i += 6, j += 4) {
+                array[i + 0] = j + 0;
+                array[i + 1] = j + 1;
+                array[i + 2] = j + 3;
+                array[i + 3] = j + 1;
+                array[i + 4] = j + 2;
+                array[i + 5] = j + 3;
+            }
+        }
+        private uint Floor(int value, int div, uint mul) {
+            return (uint)MathF.Floor((float)value / div) * mul;
+        }
 
-        GraphicsDevice _graphicsDevice;
-        VertexShape[] _vertices;
-        ushort[] _indices;
-        int _triangleCount = 0;
-        int _vertexCount = 0;
-        int _indexCount = 0;
+        private const int _initialSprites = 2048;
+        private const int _initialTriangles = 2048 * 2;
+        private const int _initialVertices = 2048 * 4;
+        private const int _initialIndices = 2048 * 6;
 
-        DynamicVertexBuffer _vertexBuffer;
-        IndexBuffer _indexBuffer;
+        private GraphicsDevice _graphicsDevice;
+        private VertexShape[] _vertices;
+        private uint[] _indices;
+        private int _triangleCount = 0;
+        private int _vertexCount = 0;
+        private int _indexCount = 0;
 
-        Matrix _view;
-        Matrix _projection;
-        Effect _effect;
+        private DynamicVertexBuffer _vertexBuffer;
+        private IndexBuffer _indexBuffer;
 
-        float _pixelSize = 1f;
+        private Matrix _view;
+        private Matrix _projection;
+        private Effect _effect;
+
+        private float _pixelSize = 1f;
+
+        private bool _indicesChanged = false;
+        private int _fromIndex = 0;
     }
 }
