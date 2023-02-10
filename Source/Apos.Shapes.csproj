@@ -35,7 +35,7 @@
   <ItemGroup>
     <Content Include="Apos.Shapes.props" PackagePath="build/" />
 
-    <None Include="Content/AposShapesEffect.fx">
+    <None Include="Content/apos-shapes-effect.fx">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
       <PackageFlatten>true</PackageFlatten>

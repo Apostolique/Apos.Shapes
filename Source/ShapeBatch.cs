@@ -7,7 +7,8 @@ namespace Apos.Shapes {
     public class ShapeBatch {
         public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content) {
             _graphicsDevice = graphicsDevice;
-            _effect = content.Load<Effect>("AposShapesEffect");
+
+            _effect = content.Load<Effect>("apos-shapes-effect");
 
             _vertices = new VertexShape[MAX_VERTICES];
             _indices = GenerateIndexArray();

@@ -13,9 +13,8 @@
 
 #---------------------------------- Content ---------------------------------#
 
-#begin AposShapesEffect.fx
+#begin apos-shapes-effect.fx
 /importer:EffectImporter
 /processor:EffectProcessor
 /processorParam:DebugMode=Auto
-/build:AposShapesEffect.fx
-
+/build:apos-shapes-effect.fx
