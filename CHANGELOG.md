@@ -8,6 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 Nothing yet!
 
+## [0.1.9] - 2023-03-09
+
+### Fixed
+
+- Bug where the floating point comparison used in the shader could fail on some GPUs ending up with the wrong shape.
+
+## [0.1.8] - 2023-02-09
+
+### Changed
+
+- The shape shader effect has been internally rename to `apos-shapes.fx` from `AposShapesEffect.fx`.
+
+### Optimized
+
+- The shape batch now resizes itself. This makes it be faster based on my tests.
+
+## [0.1.7] - 2022-04-16
+
+### Added
+
+- New hexagon shape.
+
+## [0.1.6] - 2021-12-12
+
+### Fixed
+
+- Compatibility issue with the [MonoGame Compute fork](https://github.com/cpt-max/Docs/blob/master/Build%20Requirements.md).
+
+
 ## [0.1.5] - 2021-09-05
 
 ### Fixed
@@ -57,7 +86,12 @@ Nothing yet!
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
+[0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.2...v0.1.3
