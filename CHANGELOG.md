@@ -14,15 +14,19 @@ Nothing yet!
 
 - Bug where the floating point comparison used in the shader could fail on some GPUs ending up with the wrong shape.
 
-## [0.1.8] - 2023-02-09
-
 ### Changed
 
-- The shape shader effect has been internally rename to `apos-shapes.fx` from `AposShapesEffect.fx`.
+- The shape shader effect has been internally rename to `apos-shapes.fx` from `apos-shapes-effect.fx`.
+
+## [0.1.8] - 2023-02-09
 
 ### Optimized
 
 - The shape batch now resizes itself. This makes it be faster based on my tests.
+
+### Changed
+
+- The shape shader effect has been internally rename to `apos-shapes-effect.fx` from `AposShapesEffect.fx`.
 
 ## [0.1.7] - 2022-04-16
 
