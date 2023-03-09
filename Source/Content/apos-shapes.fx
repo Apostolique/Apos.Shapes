@@ -69,13 +69,13 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float sdfSize = 1.0 - aa;
 
     float d;
-    if (p.Meta1.y == 0) {
+    if (p.Meta1.y < 0.5) {
         d = CircleSDF(p.TexCoord.xy, sdfSize);
-    } else if (p.Meta1.y == 1) {
+    } else if (p.Meta1.y < 1.5) {
         d = BoxSDF(p.TexCoord.xy, float2(p.Meta1.w - aa, sdfSize));
-    } else if (p.Meta1.y == 2) {
+    } else if (p.Meta1.y < 2.5) {
         d = SegmentSDF(p.TexCoord.xy, float2(-p.Meta1.w + aa, 0.0), float2(p.Meta1.w - aa, 0.0)) - p.Meta2.x + aa / 2.0;
-    } else if (p.Meta1.y == 3) {
+    } else if (p.Meta1.y < 3.5) {
         d = HexagonSDF(p.TexCoord.xy, sdfSize);
     }
 
