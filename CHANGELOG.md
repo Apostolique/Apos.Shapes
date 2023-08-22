@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 Nothing yet!
 
+## [0.1.10] - 2023-08-22
+
+### Fixed
+
+- Bug where resizing the batch more than twice on the same frame would prevent the index and vertex buffers from being resized correctly.
+
 ## [0.1.9] - 2023-03-09
 
 ### Fixed
@@ -90,7 +96,8 @@ Nothing yet!
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
 [0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
