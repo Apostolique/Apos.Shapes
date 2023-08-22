@@ -39,7 +39,7 @@ namespace Apos.Shapes {
         }
         public void DrawCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6) && !_indicesChanged) {
                 _fromIndex = _indexCount;
                 _indicesChanged = true;
             }
@@ -72,7 +72,7 @@ namespace Apos.Shapes {
         }
         public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6) && !_indicesChanged) {
                 _fromIndex = _indexCount;
                 _indicesChanged = true;
             }
@@ -108,7 +108,7 @@ namespace Apos.Shapes {
         }
         public void DrawLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6) && !_indicesChanged) {
                 _fromIndex = _indexCount;
                 _indicesChanged = true;
             }
@@ -151,7 +151,7 @@ namespace Apos.Shapes {
 
         public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6)) {
+            if (EnsureSizeOrDouble(ref _indices, _indexCount + 6) && !_indicesChanged) {
                 _fromIndex = _indexCount;
                 _indicesChanged = true;
             }
