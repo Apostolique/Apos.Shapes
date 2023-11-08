@@ -173,6 +173,43 @@ namespace Apos.Shapes {
             DrawCircle(center, radius, Color.Transparent, c, thickness);
         }
 
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            // radius += _pixelSize; // Account for AA.
+
+            float halfWidth = MathF.Sqrt(3f) * radius + _pixelSize;
+            float radius1 = radius + _pixelSize;
+            float radius2 = 2f * radius + _pixelSize;
+
+            var topLeft = center - new Vector2(halfWidth, radius1);
+            var topRight = center + new Vector2(halfWidth, -radius1);
+            var bottomRight = center + new Vector2(halfWidth, radius2);
+            var bottomLeft = center + new Vector2(-halfWidth, radius2);
+
+            float ps = _pixelSize / (radius * 3f + _pixelSize * 2f);
+
+            var ux = 1f;
+            var uy1 = radius1 / halfWidth;
+            var uy2 = radius2 / halfWidth;
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy1), 4f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy1), 4f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy2), 4f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy2), 4f, c1, c2, thickness, ps);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void FillEquilateralTriangle(Vector2 center, float radius, Color c) {
+            DrawEquilateralTriangle(center, radius, c, c, 0f);
+        }
+        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f) {
+            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness);
+        }
+
         public void End() {
             Flush();
 
