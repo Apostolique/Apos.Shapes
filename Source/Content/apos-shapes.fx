@@ -46,12 +46,12 @@ float HexagonSDF(float2 p, float r) {
     p -= float2(clamp(p.x, -k.z * r, k.z * r), r);
     return length(p) * sign(p.y);
 }
-float EquilateralTriangleSDF(float2 p, float r) {
+float EquilateralTriangleSDF(float2 p, float ha) {
     const float k = sqrt(3.0);
-    p.x = abs(p.x) - r;
-    p.y = p.y + r / k;
+    p.x = abs(p.x) - ha;
+    p.y = p.y + ha / k;
     if (p.x + k * p.y > 0.0) p = float2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
-    p.x -= clamp(p.x, -2.0 * r, 0.0);
+    p.x -= clamp(p.x, -2.0 * ha, 0.0);
     return -length(p) * sign(p.y);
 }
 
@@ -71,32 +71,41 @@ PixelInput SpriteVertexShader(VertexInput v) {
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
-    float ps = p.Meta1.z;
-    float aaSize = 4.0;
-    float aa = p.Meta1.z * aaSize;
-    float sdfSize = 1.0 - aa;
+    float ps = p.Meta2.x;
+    float aaSize = ps * p.Meta2.y;
+    float sdfSize = p.Meta1.z;
+    float lineSize = p.Meta1.x * 0.5;
 
     float d;
     if (p.Meta1.y < 0.5) {
         d = CircleSDF(p.TexCoord.xy, sdfSize);
     } else if (p.Meta1.y < 1.5) {
-        d = BoxSDF(p.TexCoord.xy, float2(p.Meta1.w - aa, sdfSize));
+        d = BoxSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
     } else if (p.Meta1.y < 2.5) {
-        d = SegmentSDF(p.TexCoord.xy, float2(-p.Meta1.w + aa, 0.0), float2(p.Meta1.w - aa, 0.0)) - p.Meta2.x + aa / 2.0;
+        d = SegmentSDF(p.TexCoord.xy, float2(sdfSize, sdfSize), float2(sdfSize, p.Meta1.w)) - sdfSize;
     } else if (p.Meta1.y < 3.5) {
         d = HexagonSDF(p.TexCoord.xy, sdfSize);
     } else if (p.Meta1.y < 4.5) {
         d = EquilateralTriangleSDF(p.TexCoord.xy, sdfSize);
     }
 
-    float lineSize = p.Meta1.x * ps - ps * 2.0;
+    d -= p.Meta2.z;
 
-    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + ps * 3.0, aa);
-
+    float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + aaSize - ps * 0.5, aaSize);
     d = abs(d + lineSize) - lineSize;
-    float4 c2 = p.Color2 * Antialias(d, aa);
+    float4 c2 = p.Color2 * Antialias(d, aaSize);
 
     return c2 + c1 * (1.0 - c2.a);
+
+    // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
+    // d = abs(d + lineSize) - lineSize;
+    // float4 c2 = p.Color2 * step(d, 0.0);
+
+    // float4 c3 = c2 + c1 * (1.0 - c2.a);
+    // // return c3;
+
+    // float4 c4 = float4(1.0, 0.0, 0.0, 1.0);
+    // return c3 + c4 * (1.0 - c3.a);
 }
 
 technique SpriteBatch {

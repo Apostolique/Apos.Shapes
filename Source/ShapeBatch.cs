@@ -36,26 +36,23 @@ namespace Apos.Shapes {
             }
 
             _pixelSize = ScreenToWorldScale();
+            _aaOffset = _pixelSize * _aaSize;
         }
         public void DrawCircle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            radius += _pixelSize; // Account for AA.
+            float radius1 = radius + _aaOffset; // Account for AA.
 
-            var topLeft = center + new Vector2(-radius);
-            var topRight = center + new Vector2(radius, -radius);
-            var bottomRight = center + new Vector2(radius);
-            var bottomLeft = center + new Vector2(-radius, radius);
+            var topLeft = center + new Vector2(-radius1);
+            var topRight = center + new Vector2(radius1, -radius1);
+            var bottomRight = center + new Vector2(radius1);
+            var bottomLeft = center + new Vector2(-radius1, radius1);
 
-            float ps = _pixelSize / (radius * 2);
-
-            float u = 1.0f;
-
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-u, -u), 0f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(u, -u), 0f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(u, u), 0f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-u, u), 0f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 0f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), 0f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), 0f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), 0f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -67,67 +64,61 @@ namespace Apos.Shapes {
         public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f) {
             DrawCircle(center, radius, Color.Transparent, c, thickness);
         }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f) {
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f, float rounded = 0f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            xy -= new Vector2(_pixelSize); // Account for AA.
-            size += new Vector2(_pixelSize * 2f); // Account for AA.
+            rounded = MathF.Min(MathF.Min(rounded, size.X / 2f), size.Y / 2f);
 
-            Vector2 uv = size / size.Y;
-            float ux = uv.X;
-            float uy = uv.Y;
+            xy -= new Vector2(_aaOffset); // Account for AA.
+            Vector2 size1 = size + new Vector2(_aaOffset * 2f); // Account for AA.
+            Vector2 half = size / 2f;
+            Vector2 half1 = half + new Vector2(_aaOffset);
 
-            float ps = _pixelSize / size.Y;
+            half -= new Vector2(rounded);
 
             var topLeft = xy;
-            var topRight = xy + new Vector2(size.X, 0);
-            var bottomRight = xy + size;
-            var bottomLeft = xy + new Vector2(0, size.Y);
+            var topRight = xy + new Vector2(size1.X, 0);
+            var bottomRight = xy + size1;
+            var bottomLeft = xy + new Vector2(0, size1.Y);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy), 1f, c1, c2, thickness, ps, ux);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy), 1f, c1, c2, thickness, ps, ux);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy), 1f, c1, c2, thickness, ps, ux);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy), 1f, c1, c2, thickness, ps, ux);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillRectangle(Vector2 xy, Vector2 size, Color c) {
-            DrawRectangle(xy, size, c, c, 0f);
+        public void FillRectangle(Vector2 xy, Vector2 size, Color c, float rounded = 0f) {
+            DrawRectangle(xy, size, c, c, 0f, rounded);
         }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f) {
-            DrawRectangle(xy, size, Color.Transparent, c, thickness);
+        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f) {
+            DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded);
         }
         public void DrawLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            var r = radius + _pixelSize; // Account for AA.
+            var radius1 = radius + _aaOffset; // Account for AA.
 
-            var c = Slide(a, b, r);
-            var d = Slide(b, a, r);
+            var c = Slide(a, b, radius1);
+            var d = Slide(b, a, radius1);
 
-            var topLeft = Clockwise(d, c, r);
-            var topRight = CounterClockwise(c, d, r);
-            var bottomRight = Clockwise(c, d, r);
-            var bottomLeft = CounterClockwise(d, c, r);
+            var topLeft = CounterClockwise(d, c, radius1);
+            var topRight = Clockwise(d, c, radius1);
+            var bottomRight = CounterClockwise(c, d, radius1);
+            var bottomLeft = Clockwise(c, d, radius1);
 
-            var size = new Vector2(Vector2.Distance(topLeft, topRight), Vector2.Distance(topLeft, bottomLeft));
+            var width1 = radius + radius1;
+            var height = Vector2.Distance(a, b) + radius;
+            var height1 = Vector2.Distance(topLeft, bottomLeft) - _aaOffset; // Account for AA.
 
-            var uv = size / size.Y;
-            var ux = uv.X;
-            var uy = uv.Y;
-
-            var ur = (radius * 2f) / size.Y;
-
-            var ps = _pixelSize / size.Y;
-
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy), 2f, c1, c2, thickness, ps, ux - ur, ur);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-_aaOffset, -_aaOffset), 2f, c1, c2, thickness, radius, _pixelSize, height, aaSize: _aaSize);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -_aaOffset), 2f, c1, c2, thickness, radius, _pixelSize, height, aaSize: _aaSize);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, height1), 2f, c1, c2, thickness, radius, _pixelSize, height, aaSize: _aaSize);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-_aaOffset, height1), 2f, c1, c2, thickness, radius, _pixelSize, height, aaSize: _aaSize);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -140,74 +131,77 @@ namespace Apos.Shapes {
             DrawLine(a, b, radius, Color.Transparent, c, thickness);
         }
 
-        public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+        public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f, float rounded = 0) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            radius += _pixelSize; // Account for AA.
-            Vector2 size = new Vector2(radius / (float)Math.Cos(Math.PI / 6.0), radius);
+            rounded = MathF.Min(rounded, radius);
+
+            float radius1 = radius + _aaOffset; // Account for AA.
+            float width1 = 2f * radius / MathF.Sqrt(3f) + _aaOffset; // Account for AA.
+
+            radius -= rounded;
+
+            Vector2 size = new Vector2(width1, radius1);
 
             var topLeft = center - size;
             var topRight = center + new Vector2(size.X, -size.Y);
             var bottomRight = center + size;
             var bottomLeft = center + new Vector2(-size.X, size.Y);
 
-            float ps = _pixelSize / (radius * 2);
-
-            float ux = 1.0f / (float)Math.Cos(Math.PI / 6.0);
-            float uy = 1.0f;
-
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy), 3f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy), 3f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy), 3f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy), 3f, c1, c2, thickness, ps);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillHexagon(Vector2 center, float radius, Color c) {
-            DrawCircle(center, radius, c, c, 0f);
+        public void FillHexagon(Vector2 center, float radius, Color c, float rounded = 0f) {
+            DrawHexagon(center, radius, c, c, 0f, rounded);
         }
-        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f) {
-            DrawCircle(center, radius, Color.Transparent, c, thickness);
+        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f) {
+            DrawHexagon(center, radius, Color.Transparent, c, thickness, rounded);
         }
 
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f) {
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f, float rounded = 0f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            // radius += _pixelSize; // Account for AA.
+            rounded = MathF.Min(rounded, radius);
 
-            float halfWidth = MathF.Sqrt(3f) * radius + _pixelSize;
-            float radius1 = radius + _pixelSize;
-            float radius2 = 2f * radius + _pixelSize;
+            float height = radius * 3f;
 
-            var topLeft = center - new Vector2(halfWidth, radius1);
-            var topRight = center + new Vector2(halfWidth, -radius1);
-            var bottomRight = center + new Vector2(halfWidth, radius2);
-            var bottomLeft = center + new Vector2(-halfWidth, radius2);
+            float halfWidth = height / MathF.Sqrt(3f);
+            float incircle = height / 3f;
+            float circumcircle = 2f * height / 3f;
 
-            float ps = _pixelSize / (radius * 3f + _pixelSize * 2f);
+            float halfWidth1 = halfWidth + _aaOffset; // Account for AA.
+            float incircle1 = incircle + _aaOffset; // Account for AA.
+            float circumcircle1 = circumcircle + _aaOffset; // Account for AA.
 
-            var ux = 1f;
-            var uy1 = radius1 / halfWidth;
-            var uy2 = radius2 / halfWidth;
+            halfWidth -= rounded * MathF.Sqrt(3f);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-ux, -uy1), 4f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(ux, -uy1), 4f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(ux, uy2), 4f, c1, c2, thickness, ps);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-ux, uy2), 4f, c1, c2, thickness, ps);
+            var topLeft = center - new Vector2(halfWidth1, incircle1);
+            var topRight = center + new Vector2(halfWidth1, -incircle1);
+            var bottomRight = center + new Vector2(halfWidth1, circumcircle1);
+            var bottomLeft = center + new Vector2(-halfWidth1, circumcircle1);
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillEquilateralTriangle(Vector2 center, float radius, Color c) {
-            DrawEquilateralTriangle(center, radius, c, c, 0f);
+        public void FillEquilateralTriangle(Vector2 center, float radius, Color c, float rounded = 0f) {
+            DrawEquilateralTriangle(center, radius, c, c, 0f, rounded);
         }
-        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f) {
-            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness);
+        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f) {
+            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded);
         }
 
         public void End() {
@@ -321,6 +315,8 @@ namespace Apos.Shapes {
         private Effect _effect;
 
         private float _pixelSize = 1f;
+        private float _aaSize = 2f;
+        private float _aaOffset = 1f;
 
         private bool _indicesChanged = false;
         private int _fromIndex = 0;

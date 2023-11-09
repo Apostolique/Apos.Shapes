@@ -5,7 +5,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Color c1, Color c2, float thickness = 0f, float pixelSize = 1f, float width = 1.0f, float x = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Color c1, Color c2, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f) {
             if (thickness <= 0f) {
                 c2 = c1;
                 thickness = 0f;
@@ -16,8 +16,8 @@ namespace Apos.Shapes {
             Color1 = c1;
             Color2 = c2;
 
-            Meta1 = new Vector4(thickness, shape, pixelSize, width);
-            Meta2 = new Vector4(x, 0f, 0f, 0f);
+            Meta1 = new Vector4(thickness, shape, sdfSize, height);
+            Meta2 = new Vector4(pixelSize, aaSize, rounded, 0f);
         }
 
         public Vector3 Position;
