@@ -64,7 +64,7 @@ namespace Apos.Shapes {
         public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f) {
             DrawCircle(center, radius, Color.Transparent, c, thickness);
         }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f, float rounded = 0f) {
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color c1, Color c2, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -82,6 +82,14 @@ namespace Apos.Shapes {
             var bottomRight = xy + size1;
             var bottomLeft = xy + new Vector2(0, size1.Y);
 
+            if (rotation != 0f) {
+                Vector2 center = xy + half1;
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), 1f, c1, c2, thickness, half.X, _pixelSize, half.Y, aaSize: _aaSize, rounded: rounded);
@@ -91,11 +99,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillRectangle(Vector2 xy, Vector2 size, Color c, float rounded = 0f) {
-            DrawRectangle(xy, size, c, c, 0f, rounded);
+        public void FillRectangle(Vector2 xy, Vector2 size, Color c, float rounded = 0f, float rotation = 0f) {
+            DrawRectangle(xy, size, c, c, 0f, rounded, rotation);
         }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f) {
-            DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded);
+        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
+            DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded, rotation);
         }
         public void DrawLine(Vector2 a, Vector2 b, float radius, Color c1, Color c2, float thickness = 1f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
@@ -131,7 +139,7 @@ namespace Apos.Shapes {
             DrawLine(a, b, radius, Color.Transparent, c, thickness);
         }
 
-        public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f, float rounded = 0) {
+        public void DrawHexagon(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f, float rounded = 0, float rotation = 0f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -149,6 +157,13 @@ namespace Apos.Shapes {
             var bottomRight = center + size;
             var bottomLeft = center + new Vector2(-size.X, size.Y);
 
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), 3f, c1, c2, thickness, radius, _pixelSize, aaSize: _aaSize, rounded: rounded);
@@ -158,14 +173,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillHexagon(Vector2 center, float radius, Color c, float rounded = 0f) {
-            DrawHexagon(center, radius, c, c, 0f, rounded);
+        public void FillHexagon(Vector2 center, float radius, Color c, float rounded = 0f, float rotation = 0f) {
+            DrawHexagon(center, radius, c, c, 0f, rounded, rotation);
         }
-        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f) {
-            DrawHexagon(center, radius, Color.Transparent, c, thickness, rounded);
+        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
+            DrawHexagon(center, radius, Color.Transparent, c, thickness, rounded, rotation);
         }
 
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f, float rounded = 0f) {
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Color c1, Color c2, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -188,6 +203,13 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(halfWidth1, circumcircle1);
             var bottomLeft = center + new Vector2(-halfWidth1, circumcircle1);
 
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), 4f, c1, c2, thickness, halfWidth, _pixelSize, aaSize: _aaSize, rounded: rounded);
@@ -197,11 +219,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillEquilateralTriangle(Vector2 center, float radius, Color c, float rounded = 0f) {
-            DrawEquilateralTriangle(center, radius, c, c, 0f, rounded);
+        public void FillEquilateralTriangle(Vector2 center, float radius, Color c, float rounded = 0f, float rotation = 0f) {
+            DrawEquilateralTriangle(center, radius, c, c, 0f, rounded, rotation);
         }
-        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f) {
-            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded);
+        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
+            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded, rotation);
         }
 
         public void End() {
@@ -268,6 +290,9 @@ namespace Apos.Shapes {
         private Vector2 CounterClockwise(Vector2 a, Vector2 b, float distance) {
             var c = Vector2.Normalize(b - a) * distance;
             return new Vector2(-c.Y, c.X) + a;
+        }
+        private Vector2 Rotate(Vector2 a, Vector2 origin, float rotation) {
+            return new Vector2(origin.X + (a.X - origin.X) * MathF.Cos(rotation) - (a.Y - origin.Y) * MathF.Sin(rotation), origin.Y + (a.X - origin.X) * MathF.Sin(rotation) + (a.Y - origin.Y) * MathF.Cos(rotation));
         }
 
         private bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
