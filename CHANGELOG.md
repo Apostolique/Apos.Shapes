@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.2.0] - 2023-11-10
+
 ### Added
 
 - Added equilateral triangle shape.
