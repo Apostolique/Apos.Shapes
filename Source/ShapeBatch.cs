@@ -73,7 +73,7 @@ namespace Apos.Shapes {
             xy -= new Vector2(_aaOffset); // Account for AA.
             Vector2 size1 = size + new Vector2(_aaOffset * 2f); // Account for AA.
             Vector2 half = size / 2f;
-            Vector2 half1 = half + new Vector2(_aaOffset);
+            Vector2 half1 = half + new Vector2(_aaOffset); // Account for AA.
 
             half -= new Vector2(rounded);
 
