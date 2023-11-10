@@ -6,7 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- New triangle shape.
+- Nothing yet!
+
+### Added
+
+- Added equilateral triangle shape.
+- Added rounded API for rectangle, hexagon, triangle shapes.
+- Added rotation API for rectangle, hexagon, triangle shapes.
+
+### Changed
+
+- The way the border is drawn is slightly different than before. In general borders will appear slightly thicker but will have a more accurate color and size.
+- Border thickness is now in world scale. In the previous version, borders were defined in screen scale which meant that they remained the same size no matter the view matrix.
+
+### Optimized
+
+- Simplified the math a bit to make the library easier to maintain. It should help add more shapes in the future.
 
 ## [0.1.10] - 2023-08-22
 
@@ -96,7 +111,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.10...v0.2.0
 [0.1.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
