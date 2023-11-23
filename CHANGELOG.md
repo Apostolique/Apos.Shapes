@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.2.1] - 2023-11-23
+
+### Changed
+
+- Adjusted the border thickness. It should be more accurate.
+
 ## [0.2.0] - 2023-11-10
 
 ### Added
@@ -113,7 +119,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.10...v0.2.0
 [0.1.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.8...v0.1.9
