@@ -92,7 +92,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     d -= p.Meta2.z;
 
     float4 c1 = p.Color1 * Antialias(d + lineSize * 2.0 + aaSize - ps * 1.5, aaSize);
-    d = abs(d + lineSize) - lineSize;
+    d = abs(d + lineSize) - lineSize + ps * 0.5;
     float4 c2 = p.Color2 * Antialias(d, aaSize);
 
     return c2 + c1 * (1.0 - c2.a);
