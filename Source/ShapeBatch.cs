@@ -225,6 +225,40 @@ namespace Apos.Shapes {
         public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
             DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded, rotation);
         }
+        public void DrawEllipse(Vector2 center, float radius1, float radius2, Color c1, Color c2, float thickness = 1f, float rotation = 0f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            float radius3 = radius1 + _aaOffset; // Account for AA.
+            float radius4 = radius2 + _aaOffset; // Account for AA.
+
+            var topLeft = center + new Vector2(-radius3, -radius4);
+            var topRight = center + new Vector2(radius3, -radius4);
+            var bottomRight = center + new Vector2(radius3, radius4);
+            var bottomLeft = center + new Vector2(-radius3, radius4);
+
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void FillEllipse(Vector2 center, float width, float height, Color c, float rotation = 0f) {
+            DrawEllipse(center, width, height, c, c, 0f, rotation);
+        }
+        public void BorderEllipse(Vector2 center, float width, float height, Color c, float thickness = 1f, float rotation = 0f) {
+            DrawEllipse(center, width, height, Color.Transparent, c, thickness, rotation);
+        }
 
         public void End() {
             Flush();

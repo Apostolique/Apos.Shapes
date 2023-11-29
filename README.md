@@ -24,6 +24,7 @@ This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_dista
 * Rectangles
 * Hexagons
 * Equilateral Triangles
+* Ellipses
 * Filled + Borders
 * Rounded
 * Rotations

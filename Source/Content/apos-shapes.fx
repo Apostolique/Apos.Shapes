@@ -54,6 +54,132 @@ float EquilateralTriangleSDF(float2 p, float ha) {
     p.x -= clamp(p.x, -2.0 * ha, 0.0);
     return -length(p) * sign(p.y);
 }
+// https://www.shadertoy.com/view/slS3Rw
+// Gives better results than other ones.
+float EllipseSDF(float2 p, float2 ab) {
+    float x = p.x;
+    float y = p.y;
+    float ax = abs(p.x);
+    float ay = abs(p.y);
+    float a = ab.x;
+    float b = ab.y;
+    float aa = ab.x * ab.x;
+    float bb = ab.y * ab.y;
+
+    float2 closest = float2(0.0, 0.0);
+
+    // edge special case, handle as AABB
+    if (a * b <= 1e-15) {
+        closest = clamp(p, -ab, ab);
+        return length(closest - p);
+    }
+
+    // this epsilon will guarantee float precision result
+    // (error<1e-6) for degenerate cases
+    float epsilon = 1e-3;
+    float diff = bb - aa;
+    if (a < b) {
+        if (ax <= epsilon * a) {
+            if (ay * b < diff) {
+                float yc = bb * y / diff;
+                float xc = a * sqrt(1.0 - yc * yc / bb);
+                closest = float2(xc, yc);
+                return -length(closest - p);
+            }
+            closest = float2(x, b * sign(y));
+            return ay - b;
+        } else if (ay <= epsilon * b) {
+            closest = float2(a * sign(x), y);
+            return ax - a;
+        }
+    } else {
+        if (ay <= epsilon * b) {
+            if (ax * a < -diff) {
+                float xc = aa * x / -diff;
+                float yc = b * sqrt(1.0 - xc * xc / aa);
+                closest = float2(xc, yc);
+                return -length(closest - p);
+            }
+            closest = float2(a * sign(x), y);
+            return ax - a;
+        }
+        else if (ax <= epsilon * a) {
+            closest = float2(x, b * sign(y));
+            return ay - b;
+        }
+    }
+
+    float rx = x / a;
+    float ry = y / b;
+    float inside = rx * rx + ry * ry - 1.0;
+
+    // get lower/upper bound for parameter t
+    float s2 = sqrt(2.0);
+    float tmin = max(a * ax - aa, b * ay - bb);
+    float tmax = max(s2 * a * ax - aa, s2 * b * ay - bb);
+
+    float xx = x * x * aa;
+    float yy = y * y * bb;
+    float rxx = rx * rx;
+    float ryy = ry * ry;
+    float t;
+    if (inside < 0.0) {
+        tmax = min(tmax, 0.0);
+        if (ryy < 1.0)
+            tmin = max(tmin, sqrt(xx / (1.0 - ryy)) - aa);
+        if (rxx < 1.0)
+            tmin = max(tmin, sqrt(yy / (1.0 - rxx)) - bb);
+        t = tmin * 0.95;
+    } else {
+        tmin = max(tmin, 0.0);
+        if (ryy < 1.0)
+            tmax = min(tmax, sqrt(xx / (1.0 - ryy)) - aa);
+        if (rxx < 1.0)
+            tmax = min(tmax, sqrt(yy / (1.0 - rxx)) - bb);
+        t = tmin;//2.0 * tmin * tmax / (tmin + tmax);
+    }
+    t = clamp(t, tmin, tmax);
+
+    int newton_steps = 12;
+    if (tmin >= tmax) {
+        t = tmin;
+        newton_steps = 0;
+    }
+
+    // iterate, most of the time 3 iterations are sufficient.
+    // bisect/newton hybrid
+    int i;
+    for (i = 0; i < newton_steps; i++) {
+        float at = aa + t;
+        float bt = bb + t;
+        float abt = at * bt;
+        float xxbt = xx * bt;
+        float yyat = yy * at;
+
+        float f0 = xxbt * bt + yyat * at - abt * abt;
+        float f1 = 2.0 * (xxbt + yyat - abt * (bt + at));
+        // bisect
+        if (f0 < 0.0)
+            tmax = t;
+        else if (f0 > 0.0)
+            tmin = t;
+        // newton iteration
+        float newton = f0 / abs(f1);
+        newton = clamp(newton, tmin - t, tmax - t);
+        newton = min(newton, a * b * 2.0);
+        t += newton;
+
+        float absnewton = abs(newton);
+        if (absnewton < 1e-6 * (abs(t) + 0.1) || tmin >= tmax)
+            break;
+    }
+
+    closest = float2(x * a / (aa + t), y * b / (bb + t));
+    // this normalization is a tradeoff in precision types
+    closest = normalize(closest);
+    closest *= ab;
+    return length(closest-p) * sign(inside);
+}
 
 float Antialias(float d, float size) {
     return lerp(1.0, 0.0, smoothstep(0.0, size, d));
@@ -87,6 +213,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = HexagonSDF(p.TexCoord.xy, sdfSize);
     } else if (p.Meta1.y < 4.5) {
         d = EquilateralTriangleSDF(p.TexCoord.xy, sdfSize);
+    } else if (p.Meta1.y < 5.5) {
+        d = EllipseSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
     }
 
     d -= p.Meta2.z;
