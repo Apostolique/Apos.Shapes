@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
@@ -266,27 +267,22 @@ namespace Apos.Shapes {
             // TODO: Restore old states like rasterizer, depth stencil, blend state?
         }
         
-        public Rectangle Bounds() {
-            if (_vertexCount == 0) return Rectangle.Empty;
+        public RectangleF Bounds()
+        {
+            if (_vertexCount == 0) 
+                return RectangleF.Empty;
 
-            var xMin = float.MaxValue;
-            var xMax = float.MinValue;
-            var yMin = float.MaxValue;
-            var yMax = float.MinValue;
-            var zMin = float.MaxValue;
-            var zMax = float.MinValue;
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 
-            for (int i = 0; i < _vertexCount; i++) {
+            for (var i = 0; i < _vertexCount; i++)
+            {
                 var v = _vertices[i].Position;
-                xMin = MathF.Min(xMin, v.X);
-                xMax = MathF.Max(xMax, v.X);
-                yMin = MathF.Min(yMin, v.Y);
-                yMax = MathF.Max(yMax, v.Y);
-                zMin = MathF.Min(zMin, v.Z);
-                zMax = MathF.Max(zMax, v.Z);
+                min = Vector3.Min(min, v);
+                max = Vector3.Max(max, v);
             }
 
-            return new Rectangle((int)xMin, (int)yMin, (int)(xMax - xMin), (int)(yMax - yMin));
+            return new RectangleF(min.X, min.Y, max.X - min.X, max.Y - min.Y);
         }
 
         private void Flush() {
