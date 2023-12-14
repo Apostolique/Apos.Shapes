@@ -265,6 +265,29 @@ namespace Apos.Shapes {
 
             // TODO: Restore old states like rasterizer, depth stencil, blend state?
         }
+        
+        public Rectangle Bounds() {
+            if (_vertexCount == 0) return Rectangle.Empty;
+
+            var xMin = float.MaxValue;
+            var xMax = float.MinValue;
+            var yMin = float.MaxValue;
+            var yMax = float.MinValue;
+            var zMin = float.MaxValue;
+            var zMax = float.MinValue;
+
+            for (int i = 0; i < _vertexCount; i++) {
+                var v = _vertices[i].Position;
+                xMin = MathF.Min(xMin, v.X);
+                xMax = MathF.Max(xMax, v.X);
+                yMin = MathF.Min(yMin, v.Y);
+                yMax = MathF.Max(yMax, v.Y);
+                zMin = MathF.Min(zMin, v.Z);
+                zMax = MathF.Max(zMax, v.Z);
+            }
+
+            return new Rectangle((int)xMin, (int)yMin, (int)(xMax - xMin), (int)(yMax - yMin));
+        }
 
         private void Flush() {
             if (_triangleCount == 0) return;
