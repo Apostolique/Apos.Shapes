@@ -43,14 +43,14 @@ namespace Apos.Shapes {
 
         public override string ToString() {
             return
-                "{{Position:" + this.Position +
-                " Color1:" + this.Color1 +
-                " Color2:" + this.Color1 +
-                " TextureCoordinate:" + this.TextureCoordinate +
-                " Thickness:" + this.Meta1.X +
-                " Shape:" + this.Meta1.Y +
-                " PixelSize:" + this.Meta1.Z +
-                " Width:" + this.Meta1.W +
+                "{{Position:" + Position +
+                " Color1:" + Color1 +
+                " Color2:" + Color2 +
+                " TextureCoordinate:" + TextureCoordinate +
+                " Thickness:" + Meta1.X +
+                " Shape:" + Meta1.Y +
+                " PixelSize:" + Meta1.Z +
+                " Width:" + Meta1.W +
                 "}}";
         }
 
