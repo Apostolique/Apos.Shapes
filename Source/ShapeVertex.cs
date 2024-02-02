@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -79,15 +80,38 @@ namespace Apos.Shapes {
         }
 
         static VertexShape() {
+            int offset = 0;
             var elements = new VertexElement[] {
-                new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
-                new VertexElement(sizeof(float) * 3, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
-                new VertexElement(sizeof(float) * 5, VertexElementFormat.Color, VertexElementUsage.Color, 0),
-                new VertexElement(sizeof(float) * 5 + sizeof(int), VertexElementFormat.Color, VertexElementUsage.Color, 1),
-                new VertexElement(sizeof(float) * 5 + sizeof(int) * 2, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 1),
-                new VertexElement(sizeof(float) * 9 + sizeof(int) * 2, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 2)
+                GetVertexElement(ref offset, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
+                GetVertexElement(ref offset, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
+                GetVertexElement(ref offset, VertexElementFormat.Color, VertexElementUsage.Color, 0),
+                GetVertexElement(ref offset, VertexElementFormat.Color, VertexElementUsage.Color, 1),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 1),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 2),
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }
+        private static VertexElement GetVertexElement(ref int offset, VertexElementFormat f, VertexElementUsage u, int usageIndex) {
+            return new VertexElement(OffsetInline(ref offset, Offsets[f]), f, u, usageIndex);
+        }
+        private static int OffsetInline(ref int value, int offset) {
+            int old = value;
+            value += offset;
+            return old;
+        }
+        private static readonly Dictionary<VertexElementFormat, int> Offsets = new Dictionary<VertexElementFormat, int>() {
+            [VertexElementFormat.Single] = 4,
+            [VertexElementFormat.Vector2] = 8,
+            [VertexElementFormat.Vector3] = 12,
+            [VertexElementFormat.Vector4] = 16,
+            [VertexElementFormat.Color] = 4,
+            [VertexElementFormat.Byte4] = 4,
+            [VertexElementFormat.Short2] = 4,
+            [VertexElementFormat.Short4] = 8,
+            [VertexElementFormat.NormalizedShort2] = 4,
+            [VertexElementFormat.NormalizedShort4] = 8,
+            [VertexElementFormat.HalfVector2] = 4,
+            [VertexElementFormat.HalfVector4] = 8,
+        };
     }
 }
