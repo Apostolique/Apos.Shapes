@@ -29,20 +29,13 @@ namespace Apos.Shapes {
         public Vector4 Meta2;
         public static readonly VertexDeclaration VertexDeclaration;
 
-        VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
+        readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
 
-        public override int GetHashCode() {
-            unchecked {
-                var hashCode = Position.GetHashCode();
-                hashCode = (hashCode * 397) ^ TextureCoordinate.GetHashCode();
-                hashCode = (hashCode * 397) ^ Color1.GetHashCode();
-                hashCode = (hashCode * 397) ^ Color2.GetHashCode();
-                hashCode = (hashCode * 397) ^ Meta1.GetHashCode();
-                return hashCode;
-            }
+        public override readonly int GetHashCode() {
+            return System.HashCode.Combine(Position, TextureCoordinate, Color1, Color2, Meta1);
         }
 
-        public override string ToString() {
+        public override readonly string ToString() {
             return
                 "{{Position:" + Position +
                 " Color1:" + Color1 +
@@ -69,14 +62,14 @@ namespace Apos.Shapes {
             return !(left == right);
         }
 
-        public override bool Equals(object obj) {
+        public override readonly bool Equals(object obj) {
             if (obj == null)
                 return false;
 
-            if (obj.GetType() != base.GetType())
+            if (obj.GetType() != GetType())
                 return false;
 
-            return (this == ((VertexShape)obj));
+            return this == ((VertexShape)obj);
         }
 
         static VertexShape() {
