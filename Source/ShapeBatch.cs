@@ -249,17 +249,14 @@ namespace Apos.Shapes {
                 longestSide = sideA;
                 A = a;
                 B = b;
-                C = c;
             } else if (sideB > sideC) {
                 longestSide = sideB;
                 A = b;
                 B = c;
-                C = a;
             } else {
                 longestSide = sideC;
                 A = c;
                 B = a;
-                C = b;
             }
 
             float area = 0.5f * MathF.Abs(a.X * (b.Y - c.Y) + b.X * (c.Y - a.Y) + c.X * (a.Y - b.Y));
@@ -275,12 +272,9 @@ namespace Apos.Shapes {
             var bottomRight = Clockwise(E, D, height + offset);
             var bottomLeft = CounterClockwise(D, E, height + offset);
 
-            float d1 = MathF.Sqrt(MathF.Pow(B.X - C.X, 2f) + MathF.Pow(B.Y - C.Y, 2f));
-            float d2 = MathF.Sqrt(MathF.Pow(C.X - A.X, 2f) + MathF.Pow(C.Y - A.Y, 2f));
-            float d3 = MathF.Sqrt(MathF.Pow(A.X - B.X, 2f) + MathF.Pow(A.Y - B.Y, 2f));
-            float inCenterX = (d1 * A.X + d2 * B.X + d3 * C.X) / (d1 + d2 + d3);
-            float inCenterY = (d1 * A.Y + d2 * B.Y + d3 * C.Y) / (d1 + d2 + d3);
-            float inRadius = MathF.Sqrt((-d1 + d2 + d3) * (d1 - d2 + d3) * (d1 + d2 - d3) / (d1 + d2 + d3)) / 2f;
+            float inCenterX = (sideB * a.X + sideC * b.X + sideA * c.X) / (sideB + sideC + sideA);
+            float inCenterY = (sideB * a.Y + sideC * b.Y + sideA * c.Y) / (sideB + sideC + sideA);
+            float inRadius = MathF.Sqrt((-sideB + sideC + sideA) * (sideB - sideC + sideA) * (sideB + sideC - sideA) / (sideB + sideC + sideA)) / 2f;
             float ratioDistance = (inRadius - rounded) / inRadius;
 
             if (ratioDistance < 0.001f) {
@@ -288,9 +282,9 @@ namespace Apos.Shapes {
                 rounded = inRadius - inRadius * ratioDistance;
             }
 
-            A = new Vector2(inCenterX + (ratioDistance * (A.X - inCenterX)), inCenterY + (ratioDistance * (A.Y - inCenterY)));
-            B = new Vector2(inCenterX + (ratioDistance * (B.X - inCenterX)), inCenterY + (ratioDistance * (B.Y - inCenterY)));
-            C = new Vector2(inCenterX + (ratioDistance * (C.X - inCenterX)), inCenterY + (ratioDistance * (C.Y - inCenterY)));
+            A = new Vector2(inCenterX + (ratioDistance * (a.X - inCenterX)), inCenterY + (ratioDistance * (a.Y - inCenterY)));
+            B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
+            C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, 5f, c1, c2, thickness, A.X, _pixelSize, height: A.Y, aaSize: _aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, 5f, c1, c2, thickness, A.X, _pixelSize, height: A.Y, aaSize: _aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y);
