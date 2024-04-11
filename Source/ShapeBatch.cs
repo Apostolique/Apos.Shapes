@@ -225,6 +225,89 @@ namespace Apos.Shapes {
         public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f) {
             DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded, rotation);
         }
+
+        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, Color c2, float thickness = 1f, float rounded = 0f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            float winding = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+            if (winding > 0) {
+                (b, c) = (c, b);
+            }
+
+            float sideA = Vector2.Distance(a, b);
+            float sideB = Vector2.Distance(b, c);
+            float sideC = Vector2.Distance(c, a);
+
+            float longestSide;
+
+            Vector2 A;
+            Vector2 B;
+            Vector2 C;
+
+            if (sideA > sideB && sideA > sideC) {
+                longestSide = sideA;
+                A = a;
+                B = b;
+                C = c;
+            } else if (sideB > sideC) {
+                longestSide = sideB;
+                A = b;
+                B = c;
+                C = a;
+            } else {
+                longestSide = sideC;
+                A = c;
+                B = a;
+                C = b;
+            }
+
+            float area = 0.5f * MathF.Abs(a.X * (b.Y - c.Y) + b.X * (c.Y - a.Y) + c.X * (a.Y - b.Y));
+            float height = 2f * area / longestSide;
+
+            float offset = _aaOffset;
+
+            var D = Slide(A, B, offset);
+            var E = Slide(B, A, offset);
+
+            var topLeft = Clockwise(D, E, offset);
+            var topRight = CounterClockwise(E, D, offset);
+            var bottomRight = Clockwise(E, D, height + offset);
+            var bottomLeft = CounterClockwise(D, E, height + offset);
+
+            float d1 = MathF.Sqrt(MathF.Pow(B.X - C.X, 2f) + MathF.Pow(B.Y - C.Y, 2f));
+            float d2 = MathF.Sqrt(MathF.Pow(C.X - A.X, 2f) + MathF.Pow(C.Y - A.Y, 2f));
+            float d3 = MathF.Sqrt(MathF.Pow(A.X - B.X, 2f) + MathF.Pow(A.Y - B.Y, 2f));
+            float inCenterX = (d1 * A.X + d2 * B.X + d3 * C.X) / (d1 + d2 + d3);
+            float inCenterY = (d1 * A.Y + d2 * B.Y + d3 * C.Y) / (d1 + d2 + d3);
+            float inRadius = MathF.Sqrt((-d1 + d2 + d3) * (d1 - d2 + d3) * (d1 + d2 - d3) / (d1 + d2 + d3)) / 2f;
+            float ratioDistance = (inRadius - rounded) / inRadius;
+
+            if (ratioDistance < 0.001f) {
+                ratioDistance = 0.001f;
+                rounded = inRadius - inRadius * ratioDistance;
+            }
+
+            A = new Vector2(inCenterX + (ratioDistance * (A.X - inCenterX)), inCenterY + (ratioDistance * (A.Y - inCenterY)));
+            B = new Vector2(inCenterX + (ratioDistance * (B.X - inCenterX)), inCenterY + (ratioDistance * (B.Y - inCenterY)));
+            C = new Vector2(inCenterX + (ratioDistance * (C.X - inCenterX)), inCenterY + (ratioDistance * (C.Y - inCenterY)));
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, 5f, c1, c2, thickness, A.X, _pixelSize, height: A.Y, aaSize: _aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, 5f, c1, c2, thickness, A.X, _pixelSize, height: A.Y, aaSize: _aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, 5f, c1, c2, thickness, A.X, _pixelSize, height: A.Y, aaSize: _aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft, 5f, c1, c2, thickness, A.X, _pixelSize, height: A.Y, aaSize: _aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float rounded = 0f) {
+            DrawTriangle(a, b, c, c1, c1, 0f, rounded);
+        }
+        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float thickness = 1f, float rounded = 0f) {
+            DrawTriangle(a, b, c, Color.Transparent, c1, thickness, rounded);
+        }
+
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Color c1, Color c2, float thickness = 1f, float rotation = 0f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
@@ -244,10 +327,10 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), 5f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), 6f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), 6f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), 6f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), 6f, c1, c2, thickness, radius1, _pixelSize, radius2, aaSize: _aaSize);
 
             _triangleCount += 2;
             _vertexCount += 4;

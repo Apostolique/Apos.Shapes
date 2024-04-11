@@ -6,7 +6,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Color c1, Color c2, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Color c1, Color c2, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
             if (thickness <= 0f) {
                 c2 = c1;
                 thickness = 0f;
@@ -19,6 +19,7 @@ namespace Apos.Shapes {
 
             Meta1 = new Vector4(thickness, shape, sdfSize, height);
             Meta2 = new Vector4(pixelSize, aaSize, rounded, 0f);
+            Meta3 = new Vector4(a, b, c, d);
         }
 
         public Vector3 Position;
@@ -27,6 +28,7 @@ namespace Apos.Shapes {
         public Color Color2;
         public Vector4 Meta1;
         public Vector4 Meta2;
+        public Vector4 Meta3;
         public static readonly VertexDeclaration VertexDeclaration;
 
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
@@ -55,7 +57,8 @@ namespace Apos.Shapes {
                 left.Color1 == right.Color1 &&
                 left.Color2 == right.Color2 &&
                 left.Meta1 == right.Meta1 &&
-                left.Meta2 == right.Meta2;
+                left.Meta2 == right.Meta2 &&
+                left.Meta3 == right.Meta3;
         }
 
         public static bool operator !=(VertexShape left, VertexShape right) {
@@ -81,6 +84,7 @@ namespace Apos.Shapes {
                 GetVertexElement(ref offset, VertexElementFormat.Color, VertexElementUsage.Color, 1),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 1),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 2),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 3),
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }
