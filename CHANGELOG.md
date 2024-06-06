@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.3.0] - 2024-06-06
+
+### Added
+
+- It is now possible to set the anti-aliasing size for each draw call. This controls a sort of blur that helps make shapes smoother. The default value is 2f, it's possible to reduce this in order to draw thinner lines.
+
 ## [0.2.4] - 2024-04-11
 
 ### Fixed
@@ -149,7 +155,8 @@ The filled shapes had a border when the color was transparent.
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.1...v0.2.2
