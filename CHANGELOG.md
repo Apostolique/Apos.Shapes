@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.3.1] - 2025-04-12
+
+### Fixed
+
+- Fixed compatibility issue with MonoGame 3.8.3. That MonoGame version has a regression that prevented creating the IndexBuffer using `typeof(uint)`.
+
 ## [0.3.0] - 2024-06-06
 
 ### Added
@@ -155,7 +161,8 @@ The filled shapes had a border when the color was transparent.
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.2...v0.2.3
