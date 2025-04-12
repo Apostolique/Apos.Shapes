@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>Example</AssemblyName>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -10,12 +10,12 @@
     <PublishTrimmed>true</PublishTrimmed>
     <PublishReadyToRun>false</PublishReadyToRun>
     <TieredCompilation>false</TieredCompilation>
-    <RuntimeIdentifiers>win10-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
-    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.1.303" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.3" />
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.3" />
     <PackageReference Include="Apos.Camera" Version="0.3.1" />
     <PackageReference Include="Apos.Input" Version="2.4.1" />
     <PackageReference Include="FontStashSharp.MonoGame" Version="0.9.5" />
