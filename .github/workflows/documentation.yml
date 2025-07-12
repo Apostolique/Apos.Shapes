@@ -11,6 +11,8 @@ env:
   DESCRIPTION: Shape rendering in MonoGame.
   BASE: Apos.Shapes
   REPO: https://github.com/Apostolique/Apos.Shapes/tree/main/
+  URL: https://apostolique.github.io/Apos.Shapes/
+  ANALYTICS: G-J3N95K2KKS
 
 jobs:
   build:
@@ -18,11 +20,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Use Node.js
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v4
       with:
-        node-version: '14.x'
+        node-version: '22.x'
     - name: Install apos-docs
       run: npm install apos-docs -g
     - name: Use apos-docs
@@ -33,7 +35,7 @@ jobs:
         npm run build
         cd -
     - name: Deploy
-      uses: peaceiris/actions-gh-pages@v3
+      uses: peaceiris/actions-gh-pages@v4
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./apos-docs/_site
