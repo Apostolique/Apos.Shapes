@@ -343,6 +343,36 @@ namespace Apos.Shapes {
             DrawEllipse(center, width, height, Color.Transparent, c, thickness, rotation, aaSize);
         }
 
+        public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c1, Color c2, float thickness = 1f, float aaSize = 2f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            radius1 -= 1f;
+
+            float aaOffset = _pixelSize * aaSize;
+            float radius3 = radius1 + radius2 + aaOffset; // Account for AA.
+
+            var topLeft = center + new Vector2(-radius3);
+            var topRight = center + new Vector2(radius3, -radius3);
+            var bottomRight = center + new Vector2(radius3);
+            var bottomLeft = center + new Vector2(-radius3, radius3);
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 7f, c1, c2, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 7f, c1, c2, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 7f, c1, c2, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 7f, c1, c2, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void FillArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float aaSize = 2f) {
+            DrawArc(center, angle1, angle2, radius1, radius2, c, c, 0f, aaSize);
+        }
+        public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float thickness = 1f, float aaSize = 2f) {
+            DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, c, thickness, aaSize);
+        }
+
         public void End() {
             Flush();
 

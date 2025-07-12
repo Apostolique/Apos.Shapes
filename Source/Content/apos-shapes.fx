@@ -198,6 +198,16 @@ float EllipseSDF(float2 p, float2 ab) {
     closest *= ab;
     return length(closest-p) * sign(inside);
 }
+// https://www.shadertoy.com/view/3cXSRf
+float ArcSDF(float2 p, float a1, float a2, float r1, float r2) {
+    float2 p1 = float2(cos(a1), sin(a1)) * r1;
+    float2 p2 = float2(cos(a2), sin(a2)) * r1;
+    // The signs of w.x, w.y are used to determine if we're in the gap
+    float2 w = float2(dot(p, -float2(-p1.y, p1.x)), dot(p, float2(-p2.y, p2.x)));
+    float longarc = dot(p1, float2(-p2.y, p2.x)); // Arc angle > pi
+    float ingap = longarc < 0.0 ? max(w.x, w.y) : min(w.x, w.y);
+    return ((ingap > 0.0) ? (min(length(p1 - p), length(p2 - p))) : (abs(length(p) - length(p1)))) - r2;
+}
 
 float Antialias(float d, float size) {
     return lerp(1.0, 0.0, smoothstep(0.0, size, d));
@@ -236,6 +246,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = TriangleSDF(p.TexCoord.xy, p.Meta1.zw, p.Meta3.xy, p.Meta3.zw);
     } else if (p.Meta1.y < 6.5) {
         d = EllipseSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
+    } else if (p.Meta1.y < 7.5) {
+        d = ArcSDF(p.TexCoord.xy, p.Meta3.x, p.Meta3.y, sdfSize, p.Meta3.z);
     }
 
     d -= p.Meta2.z;
