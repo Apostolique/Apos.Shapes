@@ -5,6 +5,7 @@ on:
     paths:
     - 'docs/**'
     - 'README.md'
+    - '.github/workflows/documentation.yml'
 
 env:
   TITLE: Apos.Shapes
@@ -29,7 +30,7 @@ jobs:
       run: npm install apos-docs -g
     - name: Use apos-docs
       run: |
-        apos-docs -t ${{ env.TITLE }} -d '${{ env.DESCRIPTION }}' -b ${{ env.BASE }} -r ${{ env.REPO }}
+        apos-docs -t ${{ env.TITLE }} -d '${{ env.DESCRIPTION }}' -b ${{ env.BASE }} -r ${{ env.REPO }} -a ${{ env.ANALYTICS }} -u ${{ env.URL }}
         cd apos-docs
         npm i
         npm run build
