@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.3.2] - 2025-07-12
+
+### Added
+
+- Arc shape.
+
 ## [0.3.1] - 2025-04-12
 
 ### Fixed
@@ -161,7 +167,8 @@ The filled shapes had a border when the color was transparent.
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.3...v0.2.4
