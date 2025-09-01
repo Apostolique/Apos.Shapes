@@ -10,6 +10,8 @@ namespace Apos.Shapes {
 
             if (effect == null) {
                 _effect = content.Load<Effect>("apos-shapes");
+            } else {
+                _effect = effect;
             }
 
             _vertices = new VertexShape[_initialVertices];
