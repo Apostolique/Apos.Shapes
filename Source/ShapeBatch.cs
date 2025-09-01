@@ -5,10 +5,12 @@ using Microsoft.Xna.Framework.Graphics;
 
 namespace Apos.Shapes {
     public class ShapeBatch {
-        public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content) {
+        public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) {
             _graphicsDevice = graphicsDevice;
 
-            _effect = content.Load<Effect>("apos-shapes");
+            if (effect == null) {
+                _effect = content.Load<Effect>("apos-shapes");
+            }
 
             _vertices = new VertexShape[_initialVertices];
             _indices = new uint[_initialIndices];
