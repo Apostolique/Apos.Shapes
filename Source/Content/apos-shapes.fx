@@ -11,20 +11,27 @@ float4x4 view_projection;
 struct VertexInput {
     float4 Position : POSITION0;
     float4 TexCoord : TEXCOORD0;
-    float4 Color1 : COLOR0;
-    float4 Color2 : COLOR1;
-    float4 Meta1 : TEXCOORD1;
-    float4 Meta2 : TEXCOORD2;
-    float4 Meta3 : TEXCOORD3;
+    float4 Fill : TEXCOORD1;
+    float4 Border : TEXCOORD2;
+    float4 FillCoord : TEXCOORD3;
+    float4 BorderCoord : TEXCOORD4;
+    float4 Meta1 : TEXCOORD5;
+    float4 Meta2 : TEXCOORD6;
+    float4 Meta3 : TEXCOORD7;
+    float4 Meta4 : TEXCOORD8;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
     float4 TexCoord : TEXCOORD0;
-    float4 Color1 : COLOR0;
-    float4 Color2 : COLOR1;
-    float4 Meta1 : TEXCOORD1;
-    float4 Meta2 : TEXCOORD2;
-    float4 Meta3 : TEXCOORD3;
+    float4 Fill : TEXCOORD1;
+    float4 Border : TEXCOORD2;
+    float4 FillCoord : TEXCOORD3;
+    float4 BorderCoord : TEXCOORD4;
+    float4 Meta1 : TEXCOORD5;
+    float4 Meta2 : TEXCOORD6;
+    float4 Meta3 : TEXCOORD7;
+    float4 Meta4 : TEXCOORD8;
+    float4 Pos : TEXCOORD9;
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
@@ -209,6 +216,199 @@ float ArcSDF(float2 p, float a1, float a2, float r1, float r2) {
     return ((ingap > 0.0) ? (min(length(p1 - p), length(p2 - p))) : (abs(length(p) - length(p1)))) - r2;
 }
 
+float GammaToLinear(float c) {
+    return c >= 0.04045 ? pow((c + 0.055) / 1.055, 2.4) : c / 12.92;
+}
+float LinearToGamma(float c) {
+    return c >= 0.0031308 ? pow(c, 1.0 / 2.4) * 1.055 - 0.055 : 12.92 * c;
+}
+
+float4 RgbToOklab(float4 c) {
+    c.r = GammaToLinear(c.r);
+    c.g = GammaToLinear(c.g);
+    c.b = GammaToLinear(c.b);
+
+    float l = 0.4122214708f * c.r + 0.5363325363f * c.g + 0.0514459929f * c.b;
+    float m = 0.2119034982f * c.r + 0.6806995451f * c.g + 0.1073969566f * c.b;
+    float s = 0.0883024619f * c.r + 0.2817188376f * c.g + 0.6299787005f * c.b;
+
+    float l_ = pow(l, 1.0 / 3.0);
+    float m_ = pow(m, 1.0 / 3.0);
+    float s_ = pow(s, 1.0 / 3.0);
+
+    return float4(
+        0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_,
+        1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_,
+        0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_,
+        c.a
+    );
+}
+
+float4 OkLabToRgb(float4 c) {
+    float l_ = c.x + 0.3963377774f * c.y + 0.2158037573f * c.z;
+    float m_ = c.x - 0.1055613458f * c.y - 0.0638541728f * c.z;
+    float s_ = c.x - 0.0894841775f * c.y - 1.2914855480f * c.z;
+
+    float l = l_ * l_ * l_;
+    float m = m_ * m_ * m_;
+    float s = s_ * s_ * s_;
+
+    float r = +4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+    float g = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+    float b = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+
+    return float4(
+        LinearToGamma(r),
+        LinearToGamma(g),
+        LinearToGamma(b),
+        c.a
+    );
+}
+
+float2 Rotate(float2 a, float2 b, float2 c) {
+    float ux = b.x - a.x;
+    float uy = b.y - a.y;
+    float vx = -c.x + a.x;
+    float vy = c.y - a.y;
+
+    float mag = sqrt(ux * ux + uy * uy);
+    if (mag == 0) return c;
+
+    ux /= mag;
+    uy /= mag;
+
+    float rx = ux * vx - uy * vy;
+    float ry = uy * vx + ux * vy;
+
+    return float2(rx, ry);
+}
+
+float Mod(float x, float m) {
+    return (x % m + m) % m;
+}
+
+float SmoothDiscontinuity(float x, float size) {
+    float v = frac(x);
+    float a = 1.0 / size;
+    return saturate(v * a - (a - 1.0));
+}
+
+float SawtoothWave(float x) {
+    return frac(x);
+}
+float TriangularWave(float w) {
+    return abs(Mod(w + 1.0, 2.0) - 1.0);
+}
+float SineWave(float w) {
+    return sin(w * 3.14159265 - 1.5) * 0.5 + 0.5;
+}
+
+float RadialGradient(float2 a, float2 b, float2 c) {
+    return length(c - a) / length(b - a);
+}
+float LinearGradient(float2 a, float2 b, float2 c) {
+    float l = length(b - a);
+    float2 d = normalize(b - a);
+    b = float2(-d.y, d.x) + a;
+    return ((b.x - a.x) * (a.y - c.y) - (a.x - c.x) * (b.y - a.y)) / sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2)) / l;
+}
+float BilinearGradient(float2 a, float2 b, float2 c) {
+    float l = length(b - a);
+    float2 d = normalize(b - a);
+    b = float2(-d.y, d.x) + a;
+    return abs((b.x - a.x) * (a.y - c.y) - (a.x - c.x) * (b.y - a.y)) / sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2)) / l;
+}
+float ConicalGradient(float2 a, float2 b, float2 c) {
+    c = Rotate(a, b, c);
+    return abs(atan2(-c.y, -c.x) / 3.14159265);
+}
+float ConicalAsymGradient(float2 a, float2 b, float2 c) {
+    c = Rotate(a, b, c);
+    return atan2(c.y, c.x) / 6.283185307179586 + 0.5;
+}
+float SquareGradient(float2 a, float2 b, float2 c) {
+    c = Rotate(a, b, c);
+    return max(abs(c.x), abs(c.y)) / length(b - a);
+}
+float CrossGradient(float2 a, float2 b, float2 c) {
+    c = Rotate(a, b, c);
+    return min(abs(c.x), abs(c.y)) / length(b - a);
+}
+float SpiralCWGradient(float2 a, float2 b, float2 c) {
+    c = Rotate(a, b, c);
+    return SawtoothWave(1.0 * atan2(-c.y, -c.x) / 6.283185307179586 + length(c) / length(b - a));
+}
+float SpiralCCWGradient(float2 a, float2 b, float2 c) {
+    c = Rotate(a, b, c);
+    return SawtoothWave(-1.0 * atan2(-c.y, -c.x) / 6.283185307179586 + length(c) / length(b - a));
+}
+float ShapeGradient(float a, float b, float c) {
+    return (c - a) / (b - a);
+}
+
+float4 Gradient(float2 type, float4 colorA, float4 colorB, float4 posAB, float2 c, float d, float aaSize) {
+    float4 result;
+    if (type.x < 0.5) {
+        result = colorA;
+    } else {
+        float grad;
+        if (type.x < 1.5) {
+            grad = RadialGradient(posAB.xy, posAB.zw, c);
+        } else if (type.x < 2.5) {
+            grad = LinearGradient(posAB.xy, posAB.zw, c);
+        } else if (type.x < 3.5) {
+            grad = BilinearGradient(posAB.xy, posAB.zw, c);
+        } else if (type.x < 4.5) {
+            grad = ConicalGradient(posAB.xy, posAB.zw, c);
+        } else if (type.x < 5.5) {
+            grad = ConicalAsymGradient(posAB.xy, posAB.zw, c);
+            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
+        } else if (type.x < 6.5) {
+            grad = SquareGradient(posAB.xy, posAB.zw, c);
+        } else if (type.x < 7.5) {
+            grad = CrossGradient(posAB.xy, posAB.zw, c);
+        } else if (type.x < 8.5) {
+            grad = SpiralCWGradient(posAB.xy, posAB.zw, c);
+            // TODO: Fix this, the discontinuity is in the wrong coordinate system.
+            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+        } else if (type.x < 9.5) {
+            grad = SpiralCCWGradient(posAB.xy, posAB.zw, c);
+            // TODO: Fix this, the discontinuity is in the wrong coordinate system.
+            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+        } else if (type.x < 10.5) {
+            grad = ShapeGradient(length(posAB.xy), length(posAB.zw), -d);
+        }
+
+        if (type.y < 0.5) {
+        } else if (type.y < 1.5) {
+            grad = SawtoothWave(grad);
+            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+        } else if (type.y < 2.5) {
+            grad = TriangularWave(grad);
+        } else if (type.y < 3.5) {
+            grad = SineWave(grad);
+        }
+        result = OkLabToRgb(lerp(RgbToOklab(colorA), RgbToOklab(colorB), saturate(grad)));
+    }
+    result.rgb *= result.a;
+    return result;
+}
+
+float2 Unpair(float n) {
+    float2 result;
+
+    float f1 = floor(sqrt(n));
+    float f2 = n - f1 * f1;
+    if (f2 < f1) {
+        result.x = f2 / 255.0;
+        result.y = f1 / 255.0;
+    } else {
+        result.x = f1 / 255.0;
+        result.y = (f2 - f1) / 255.0;
+    }
+    return result;
+}
+
 float Antialias(float d, float size) {
     return lerp(1.0, 0.0, smoothstep(0.0, size, d));
 }
@@ -218,11 +418,15 @@ PixelInput SpriteVertexShader(VertexInput v) {
 
     output.Position = mul(v.Position, view_projection);
     output.TexCoord = v.TexCoord;
-    output.Color1 = v.Color1;
-    output.Color2 = v.Color2;
+    output.Fill = v.Fill;
+    output.Border = v.Border;
+    output.FillCoord = v.FillCoord;
+    output.BorderCoord = v.BorderCoord;
     output.Meta1 = v.Meta1;
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
+    output.Meta4 = v.Meta4;
+    output.Pos = v.Position;
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
@@ -230,6 +434,20 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float aaSize = ps * p.Meta2.y;
     float sdfSize = p.Meta1.z;
     float lineSize = p.Meta1.x * 0.5;
+
+    float2 fillR = Unpair(p.Fill.r);
+    float2 fillG = Unpair(p.Fill.g);
+    float2 fillB = Unpair(p.Fill.b);
+    float2 fillA = Unpair(p.Fill.a);
+    float4 fill1 = float4(fillR.x, fillG.x, fillB.x, fillA.x);
+    float4 fill2 = float4(fillR.y, fillG.y, fillB.y, fillA.y);
+
+    float2 borderR = Unpair(p.Border.r);
+    float2 borderG = Unpair(p.Border.g);
+    float2 borderB = Unpair(p.Border.b);
+    float2 borderA = Unpair(p.Border.a);
+    float4 border1 = float4(borderR.x, borderG.x, borderB.x, borderA.x);
+    float4 border2 = float4(borderR.y, borderG.y, borderB.y, borderA.y);
 
     float d;
     if (p.Meta1.y < 0.5) {
@@ -252,15 +470,18 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     d -= p.Meta2.z;
 
+    float4 fc = Gradient(p.Meta4.xy, fill1, fill2, p.FillCoord, p.Pos.xy, d, aaSize);
+    float4 bc = Gradient(p.Meta4.zw, border1, border2, p.BorderCoord, p.Pos.xy, d, aaSize);
+
     float4 c1;
-    if (p.Color2.a >= 1.0) {
-        c1 = p.Color1 * step(d + ps * 0.5, 0.0);
+    if (bc.a >= 1.0) {
+        c1 = fc * step(d + ps * 0.5, 0.0);
     } else {
-        c1 = p.Color1 * Antialias(d + lineSize * 2.0 + aaSize - ps, aaSize);
+        c1 = fc * Antialias(d + lineSize * 2.0 + aaSize - ps, aaSize);
     }
 
     d = abs(d + lineSize) - lineSize + ps * 0.5;
-    float4 c2 = p.Color2 * Antialias(d, aaSize * 0.75);
+    float4 c2 = bc * Antialias(d, aaSize * 0.75);
 
     return c2 + c1 * (1.0 - c2.a);
 
