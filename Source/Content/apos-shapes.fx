@@ -375,7 +375,7 @@ float4 Gradient(float2 type, float4 colorA, float4 colorB, float4 posAB, float2 
             // TODO: Fix this, the discontinuity is in the wrong coordinate system.
             grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
         } else if (type.x < 10.5) {
-            grad = ShapeGradient(length(posAB.xy), length(posAB.zw), -d);
+            grad = ShapeGradient(posAB.x, posAB.y, d);
         }
 
         if (type.y < 0.5) {
@@ -389,7 +389,6 @@ float4 Gradient(float2 type, float4 colorA, float4 colorB, float4 posAB, float2 
         }
         result = OkLabToRgb(lerp(RgbToOklab(colorA), RgbToOklab(colorB), saturate(grad)));
     }
-    result.rgb *= result.a;
     return result;
 }
 
@@ -473,18 +472,12 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     float4 fc = Gradient(p.Meta4.xy, fill1, fill2, p.FillCoord, p.Pos.xy, d, aaSize);
     float4 bc = Gradient(p.Meta4.zw, border1, border2, p.BorderCoord, p.Pos.xy, d, aaSize);
+    bc = Gradient(10.0, bc, float4(bc.r, bc.g, bc.b, 0.0), float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d, aaSize);
 
-    float4 c1;
-    if (bc.a >= 1.0) {
-        c1 = fc * step(d + ps * 0.5, 0.0);
-    } else {
-        c1 = fc * Antialias(d + lineSize * 2.0 + aaSize - ps, aaSize);
-    }
+    float4 result = Gradient(10.0, fc, bc, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize * 2.0, aaSize);
+    result.rgb *= result.a;
 
-    d = abs(d + lineSize) - lineSize + ps * 0.5;
-    float4 c2 = bc * Antialias(d, aaSize * 0.75);
-
-    return c2 + c1 * (1.0 - c2.a);
+    return result;
 
     // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
     // d = abs(d + lineSize) - lineSize;
