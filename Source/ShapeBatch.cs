@@ -460,6 +460,10 @@ namespace Apos.Shapes {
 
             radius1 -= 1f;
 
+            float angleSize = MathF.Abs(Mod(angle2 - angle1 + MathF.PI, MathF.PI * 2f) - MathF.PI);
+            float sin = MathF.Sin(angleSize);
+            float cos = MathF.Cos(angleSize);
+
             float aaOffset = _pixelSize * aaSize;
             float radius3 = radius1 + radius2 + aaOffset; // Account for AA.
 
@@ -468,10 +472,19 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: angle1, b: angle2, c: radius2);
+            float rotation = angle1 + angle2 - MathF.PI * 0.5f;
+
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -497,6 +510,65 @@ namespace Apos.Shapes {
         }
         public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float thickness = 1f, float aaSize = 2f) {
             DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, c, thickness, aaSize);
+        }
+
+        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 2f) {
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            radius1 -= 1f;
+
+            float angleSize = MathF.Abs(Mod(angle2 - angle1 + MathF.PI, MathF.PI * 2f) - MathF.PI);
+
+            float cos = MathF.Cos(angleSize);
+            float sin = MathF.Sin(angleSize);
+
+            float aaOffset = _pixelSize * aaSize;
+            float radius3 = radius1 + radius2 + aaOffset; // Account for AA.
+
+            var topLeft = center + new Vector2(-radius3);
+            var topRight = center + new Vector2(radius3, -radius3);
+            var bottomRight = center + new Vector2(radius3);
+            var bottomLeft = center + new Vector2(-radius3, radius3);
+
+            float rotation = angle1 + angle2 - MathF.PI * 0.5f;
+
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Color border, float thickness = 1f, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, fill, new Gradient(border, Vector2.Zero, border, Vector2.Zero, Gradient.Shape.None), thickness, aaSize);
+        }
+        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color fill, Gradient border, float thickness = 1f, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, new Gradient(fill, Vector2.Zero, fill, Vector2.Zero, Gradient.Shape.None), border, thickness, aaSize);
+        }
+        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color fill, Color border, float thickness = 1f, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, new Gradient(fill, Vector2.Zero, fill, Vector2.Zero, Gradient.Shape.None), new Gradient(border, Vector2.Zero, border, Vector2.Zero, Gradient.Shape.None), thickness, aaSize);
+        }
+        public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize);
+        }
+        public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, c, c, 0f, aaSize);
+        }
+        public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize);
+        }
+        public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float thickness = 1f, float aaSize = 2f) {
+            DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, c, thickness, aaSize);
         }
 
         public void End() {
@@ -566,6 +638,9 @@ namespace Apos.Shapes {
         }
         private Vector2 Rotate(Vector2 a, Vector2 origin, float rotation) {
             return new Vector2(origin.X + (a.X - origin.X) * MathF.Cos(rotation) - (a.Y - origin.Y) * MathF.Sin(rotation), origin.Y + (a.X - origin.X) * MathF.Sin(rotation) + (a.Y - origin.Y) * MathF.Cos(rotation));
+        }
+        private float Mod(float x, float m) {
+            return (x % m + m) % m;
         }
 
         private bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
