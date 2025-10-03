@@ -460,7 +460,7 @@ namespace Apos.Shapes {
 
             radius1 -= 1f;
 
-            float angleSize = MathF.Abs(Mod(angle2 - angle1 + MathF.PI, MathF.PI * 2f) - MathF.PI);
+            float angleSize = MathF.Abs(Mod((angle2 - angle1) * 0.5f + MathF.PI, MathF.PI * 2f) - MathF.PI);
             float sin = MathF.Sin(angleSize);
             float cos = MathF.Cos(angleSize);
 
@@ -472,7 +472,7 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
 
-            float rotation = angle1 + angle2 - MathF.PI * 0.5f;
+            float rotation = (angle1 + angle2) * 0.5f - MathF.PI * 0.5f;
 
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
@@ -518,7 +518,7 @@ namespace Apos.Shapes {
 
             radius1 -= 1f;
 
-            float angleSize = MathF.Abs(Mod(angle2 - angle1 + MathF.PI, MathF.PI * 2f) - MathF.PI);
+            float angleSize = MathF.Abs(Mod((angle2 - angle1) * 0.5f + MathF.PI, MathF.PI * 2f) - MathF.PI);
 
             float cos = MathF.Cos(angleSize);
             float sin = MathF.Sin(angleSize);
@@ -531,7 +531,7 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
 
-            float rotation = angle1 + angle2 - MathF.PI * 0.5f;
+            float rotation = (angle1 + angle2) * 0.5f - MathF.PI * 0.5f;
 
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
