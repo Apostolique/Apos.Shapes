@@ -1,0 +1,13 @@
+<Project>
+
+  <PropertyGroup>
+    <AposShapesPath>$([System.IO.Path]::Combine($(MSBuildThisFileDirectory),"Content/Content.mgcb"))</AposShapesPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <KniContentReference Include="$(AposShapesPath)">
+      <Link>Content/%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </KniContentReference>
+  </ItemGroup>
+
+</Project>
