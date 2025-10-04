@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.1</TargetFrameworks>
+
+    <PackageId>Apos.Shapes.KNI</PackageId>
+    <Description>Shape rendering in KNI.</Description>
+    <PackageTags>gamedev;kni;shapes</PackageTags>
+
+    <Authors>Jean-David Moisan</Authors>
+    <Copyright>Copyright 2021</Copyright>
+
+    <RepositoryUrl>https://github.com/Apostolique/Apos.Shapes</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Apostolique/Apos.Shapes</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+
+    <PackageIcon>Icon.png</PackageIcon>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Nullable>enable</Nullable>
+    <NoWarn>1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="nkast.Xna.Framework" Version="4.1.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.1.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.1.9001" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Apos.Shapes.KNI.props" PackagePath="build/" />
+
+    <None Include="Content/apos-shapes.fx">
+      <Pack>true</Pack>
+      <PackageCopyToOutput>true</PackageCopyToOutput>
+      <PackageFlatten>true</PackageFlatten>
+      <PackagePath>build/Content/</PackagePath>
+    </None>
+    <None Include="Content/Content.mgcb">
+      <Pack>true</Pack>
+      <PackageCopyToOutput>true</PackageCopyToOutput>
+      <PackageFlatten>true</PackageFlatten>
+      <PackagePath>build/Content/</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <SourceRoot Include="$(MSBuildThisFileDirectory)/" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>
