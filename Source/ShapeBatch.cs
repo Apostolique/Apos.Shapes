@@ -143,6 +143,11 @@ namespace Apos.Shapes {
         }
 
         public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 2f) {
+            if (a == b) {
+                DrawCircle(a, radius, fill, border, thickness, aaSize);
+                return;
+            }
+
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
