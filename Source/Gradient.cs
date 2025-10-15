@@ -2,7 +2,7 @@ using Microsoft.Xna.Framework;
 
 namespace Apos.Shapes {
     public struct Gradient {
-        public Gradient(Color aC, Vector2 aXY, Color bC, Vector2 bXY, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None) {
+        public Gradient(Vector2 aXY, Color aC, Vector2 bXY, Color bC, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None) {
             AC = aC;
             AXY = aXY;
             BC = bC;
