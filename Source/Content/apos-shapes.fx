@@ -475,7 +475,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     float4 fc = Gradient(p.Meta4.xy, fill1, fill2, p.FillCoord, p.Pos.xy, d, aaSize);
     float4 bc = Gradient(p.Meta4.zw, border1, border2, p.BorderCoord, p.Pos.xy, d, aaSize);
-    bc = Gradient(10.0, bc, float4(bc.rgb, 0.0), float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d, aaSize);
+    bc = Gradient(10.0, bc, float4(bc.rgb, 0.0), float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize);
 
     float4 result = Gradient(10.0, fc, bc, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize);
     result.rgb *= result.a;
