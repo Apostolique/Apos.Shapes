@@ -390,7 +390,7 @@ float4 Gradient(float2 type, float4 colorA, float4 colorB, float4 posAB, float2 
         } else if (type.y < 3.5) {
             grad = SineWave(grad);
         }
-        result = OkLabToRgb(lerp(RgbToOklab(colorA), RgbToOklab(colorB), saturate(grad)));
+        result = lerp(colorA, colorB, saturate(grad));
     }
     return result;
 }
@@ -473,11 +473,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     d -= p.Meta2.z;
 
-    float4 fc = Gradient(p.Meta4.xy, fill1, fill2, p.FillCoord, p.Pos.xy, d, aaSize);
-    float4 bc = Gradient(p.Meta4.zw, border1, border2, p.BorderCoord, p.Pos.xy, d, aaSize);
+    float4 fc = Gradient(p.Meta4.xy, RgbToOklab(fill1), RgbToOklab(fill2), p.FillCoord, p.Pos.xy, d, aaSize);
+    float4 bc = Gradient(p.Meta4.zw, RgbToOklab(border1), RgbToOklab(border2), p.BorderCoord, p.Pos.xy, d, aaSize);
     bc = Gradient(10.0, bc, float4(bc.rgb, 0.0), float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize);
 
-    float4 result = Gradient(10.0, fc, bc, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize);
+    float4 result = OkLabToRgb(Gradient(10.0, fc, bc, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize));
     result.rgb *= result.a;
 
     return result;
