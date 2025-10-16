@@ -8,6 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.5.0] - 2025-10-15
+
+### Changed
+
+- Colors are no longer using pre-multipled alpha. This is because for transparent values, the gradient interpolation code needed to have the full color values. If you want transparent white for example, you can pass `new Color(255, 255, 255, 0)` which was impossible when using pre-multipled alpha. This only matters for the colors that are being passed in. Here is a useful extension function that you can add to your project for quickly setting a color's alpha:
+    ```csharp
+    public static Color SetAlpha(this Color value, float scale) {
+        return new Color(value.R, value.G, value.B, (int)(255 * scale));
+    }
+    ```
+    You can then do: `Color.White.SetAlpha(0.5f)` instead of `Color.White * 0.5f`.
+- The default anti-aliasing value is now set to 1.5 instead of 2. It should make the shapes look slightly less blurry while still having a nice edge.
+- Anti-aliasing is now done using the gradient code. It makes the code be simpler.
+
+### Added
+
+- Gradients
+- Ring shape.
+- You can now pass the shader manually to the ShapeBatch constructor.
+
+### Fixed
+
+- The border and fill color used to overlap. It would look bad when using a transparent border color.
+
+### Optimized
+
+- Lines that have the same start and end positions are drawn as a circle.
+
 ## [0.3.2] - 2025-07-12
 
 ### Added
@@ -50,7 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-The filled shapes had a border when the color was transparent.
+- The filled shapes had a border when the color was transparent.
 
 ### Changed
 
@@ -167,7 +195,8 @@ The filled shapes had a border when the color was transparent.
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.2...v0.5.0
 [0.3.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.2.4...v0.3.0
