@@ -9,13 +9,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Game", "Game", "{9498B0C1-9
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Game.Shared", "Game\Game.Shared.csproj", "{B3D68B5B-79E5-8BF7-152B-47A31C840CFD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.Android", "Platforms\Example.Android\Example.Android.csproj", "{300B11B8-6F80-4218-81E0-F92FB9B66904}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.Android", "Platforms\Android.KNI\Android.csproj", "{300B11B8-6F80-4218-81E0-F92FB9B66904}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.WinFormsDX11", "Platforms\Example.WinFormsDX11\Example.WinFormsDX11.csproj", "{0855B974-9901-47A9-9C50-D67D1242876A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.BlazorGL", "Platforms\BlazorGL.KNI\BlazorGL.csproj", "{D8566A4F-0112-4D19-B407-D6DB4B816CDA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.SDL2GL", "Platforms\Example.SDL2GL\Example.SDL2GL.csproj", "{968DBE57-C297-4EB3-8191-05F0B4305619}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.SDL2GL", "Platforms\DesktopGL.KNI\DesktopGL.csproj", "{968DBE57-C297-4EB3-8191-05F0B4305619}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.BlazorGL", "Platforms\Example.BlazorGL\Example.BlazorGL.csproj", "{D8566A4F-0112-4D19-B407-D6DB4B816CDA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Example.WinFormsDX11", "Platforms\WindowsDX.KNI\WindowsDX.csproj", "{0855B974-9901-47A9-9C50-D67D1242876A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apos.Shapes.KNI", "..\Source\Apos.Shapes.KNI.csproj", "{BBE1343E-4B33-0A33-8DDF-C2887547BB3C}"
 EndProject
