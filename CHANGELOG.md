@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Gradient offsets for the first and second colors. This allows you to start a color as a solid color within the offset before transitioning to the other color.
 
+### Fixed
+
+- The anti-aliasing blur should look better. It had been made to be a linear blur in version 0.5.0 but it's now back to using a smoothstep function.
+
 ### Optimized
 
 - Simplified the gradient code a little bit.
