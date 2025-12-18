@@ -295,6 +295,10 @@ float SmoothDiscontinuity(float x, float size) {
     return saturate(v * a - (a - 1.0));
 }
 
+float RemapOffset(float x, float2 offset) {
+    return (x - offset.x) / ((1.0 - offset.y) - offset.x);
+}
+
 float SawtoothWave(float x) {
     return frac(x);
 }
@@ -348,10 +352,10 @@ float ShapeGradient(float a, float b, float c) {
     return (c - a) / (b - a);
 }
 
-float4 Gradient(float2 type, float4 colorA, float4 colorB, float4 posAB, float2 c, float d, float aaSize) {
-    float4 result;
+float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float2 offset) {
+    float result;
     if (type.x < 0.5) {
-        result = colorA;
+        result = 1.0;
     } else {
         float grad;
         if (type.x < 1.5) {
@@ -390,7 +394,9 @@ float4 Gradient(float2 type, float4 colorA, float4 colorB, float4 posAB, float2 
         } else if (type.y < 3.5) {
             grad = SineWave(grad);
         }
-        result = lerp(colorA, colorB, saturate(grad));
+        grad = RemapOffset(grad, offset);
+
+        result = saturate(grad);
     }
     return result;
 }
@@ -401,11 +407,11 @@ float2 Unpair(float n) {
     float f1 = floor(sqrt(n));
     float f2 = n - f1 * f1;
     if (f2 < f1) {
-        result.x = f2 / 255.0;
-        result.y = f1 / 255.0;
+        result.x = f2;
+        result.y = f1;
     } else {
-        result.x = f1 / 255.0;
-        result.y = (f2 - f1) / 255.0;
+        result.x = f1;
+        result.y = (f2 - f1);
     }
     return result;
 }
@@ -436,17 +442,17 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float sdfSize = p.Meta1.z;
     float lineSize = p.Meta1.x;
 
-    float2 fillR = Unpair(p.Fill.r);
-    float2 fillG = Unpair(p.Fill.g);
-    float2 fillB = Unpair(p.Fill.b);
-    float2 fillA = Unpair(p.Fill.a);
+    float2 fillR = Unpair(p.Fill.r) / 255.0;
+    float2 fillG = Unpair(p.Fill.g) / 255.0;
+    float2 fillB = Unpair(p.Fill.b) / 255.0;
+    float2 fillA = Unpair(p.Fill.a) / 255.0;
     float4 fill1 = float4(fillR.x, fillG.x, fillB.x, fillA.x);
     float4 fill2 = float4(fillR.y, fillG.y, fillB.y, fillA.y);
 
-    float2 borderR = Unpair(p.Border.r);
-    float2 borderG = Unpair(p.Border.g);
-    float2 borderB = Unpair(p.Border.b);
-    float2 borderA = Unpair(p.Border.a);
+    float2 borderR = Unpair(p.Border.r) / 255.0;
+    float2 borderG = Unpair(p.Border.g) / 255.0;
+    float2 borderB = Unpair(p.Border.b) / 255.0;
+    float2 borderA = Unpair(p.Border.a) / 255.0;
     float4 border1 = float4(borderR.x, borderG.x, borderB.x, borderA.x);
     float4 border2 = float4(borderR.y, borderG.y, borderB.y, borderA.y);
 
@@ -473,11 +479,15 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     d -= p.Meta2.z;
 
-    float4 fc = Gradient(p.Meta4.xy, RgbToOklab(fill1), RgbToOklab(fill2), p.FillCoord, p.Pos.xy, d, aaSize);
-    float4 bc = Gradient(p.Meta4.zw, RgbToOklab(border1), RgbToOklab(border2), p.BorderCoord, p.Pos.xy, d, aaSize);
-    bc = Gradient(10.0, bc, float4(bc.rgb, 0.0), float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize);
+    float2 gradientStyles = Unpair(p.Meta2.w);
+    float2 fillStyles = Unpair(gradientStyles.x);
+    float2 borderStyles = Unpair(gradientStyles.y);
 
-    float4 result = OkLabToRgb(Gradient(10.0, fc, bc, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize));
+    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta4.xy));
+    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta4.zw));
+    bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
+
+    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
     result.rgb *= result.a;
 
     return result;
@@ -489,8 +499,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // float4 c3 = c2 + c1 * (1.0 - c2.a);
     // // return c3;
 
-    // float4 c4 = float4(1.0, 0.0, 0.0, 1.0);
-    // return c3 + c4 * (1.0 - c3.a);
+    // float4 c4 = float4(0.3, 0.0, 0.0, 0.3);
+    // return result + c4 * (1.0 - result.a);
 }
 
 technique SpriteBatch {

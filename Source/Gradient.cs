@@ -2,19 +2,34 @@ using Microsoft.Xna.Framework;
 
 namespace Apos.Shapes {
     public struct Gradient {
-        public Gradient(Vector2 aXY, Color aC, Vector2 bXY, Color bC, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None) {
+        public Gradient(Vector2 aXY, Color aC, Vector2 bXY, Color bC, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f) {
+            if (aOffset != 0 || bOffset != 0) {
+                // Should there be a division by zero check even though this is using floating point numbers?
+                float length = Vector2.Distance(aXY, bXY);
+                if (aOffset != 0) {
+                    aOffset /= length;
+                }
+                if (bOffset != 0) {
+                    bOffset /= length;
+                }
+            }
+
             AC = aC;
             AXY = aXY;
+            AOffset = aOffset;
             BC = bC;
             BXY = bXY;
+            BOffset = bOffset;
             S = s;
             RS = rs;
         }
 
-        public Color AC;
         public Vector2 AXY;
-        public Color BC;
+        public Color AC;
+        public float AOffset;
         public Vector2 BXY;
+        public Color BC;
+        public float BOffset;
         public Shape S;
         public RepeatStyle RS;
 

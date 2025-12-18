@@ -22,9 +22,9 @@ namespace Apos.Shapes {
             BorderCoord = new Vector4(border.AXY.X, border.AXY.Y, border.BXY.X, border.BXY.Y);
 
             Meta1 = new Vector4(thickness, shape, sdfSize, height);
-            Meta2 = new Vector4(pixelSize, aaSize, rounded, 0f);
+            Meta2 = new Vector4(pixelSize, aaSize, rounded, Pair(Pair((int)fill.S, (int)fill.RS), Pair((int)border.S, (int)border.RS)));
             Meta3 = new Vector4(a, b, c, d);
-            Meta4 = new Vector4((int)fill.S, (int)fill.RS, (int)border.S, (int)border.RS);
+            Meta4 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
         }
 
         public Vector3 Position;
