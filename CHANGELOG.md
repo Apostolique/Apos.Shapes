@@ -8,17 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.5.1] - 2025-12-18
+
+### Added
+
+- Gradient offsets for the first and second colors. This allows you to start a color as a solid color within the offset before transitioning to the other color.
+
+### Optimized
+
+- Simplified the gradient code a little bit.
+
 ## [0.5.0] - 2025-10-15
 
 ### Changed
 
-- Colors are no longer using pre-multipled alpha. This is because for transparent values, the gradient interpolation code needed to have the full color values. If you want transparent white for example, you can pass `new Color(255, 255, 255, 0)` which was impossible when using pre-multipled alpha. This only matters for the colors that are being passed in. Here is a useful extension function that you can add to your project for quickly setting a color's alpha:
-    ```csharp
-    public static Color SetAlpha(this Color value, float scale) {
-        return new Color(value.R, value.G, value.B, (int)(255 * scale));
-    }
-    ```
-    You can then do: `Color.White.SetAlpha(0.5f)` instead of `Color.White * 0.5f`.
+- Colors are no longer using pre-multipled alpha. This is because for transparent values, the gradient interpolation code needed to have the full color values. If you want transparent white for example, you can pass `new Color(255, 255, 255, 0)` which was impossible when using pre-multipled alpha. This only matters for the colors that are being passed in. You can then do: `new Color(Color.White, 0.5f)` instead of `Color.White * 0.5f`.
 - The default anti-aliasing value is now set to 1.5 instead of 2. It should make the shapes look slightly less blurry while still having a nice edge.
 - Anti-aliasing is now done using the gradient code. It makes the code be simpler.
 
@@ -195,7 +199,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.2...v0.5.0
 [0.3.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.0...v0.3.1
