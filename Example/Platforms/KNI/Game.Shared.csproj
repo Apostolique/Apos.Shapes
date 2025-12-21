@@ -33,12 +33,12 @@
     <!--
     <PackageReference Include="Apos.Shapes.KNI" Version="0.5.0" />
     -->
-	<ProjectReference Include="../../Source/Apos.Shapes.KNI.csproj" />
+	<ProjectReference Include="../../../Source/Apos.Shapes.KNI.csproj" />
  </ItemGroup>
-	
+
   <ItemGroup>
-    <Compile Include="GameRoot.KNI.cs" />
-    <Compile Include="TWColor.cs" />
+    <Compile Include="../../Game/GameRootKNI.cs" />
+    <Compile Include="../../Game/TWColor.cs" />
   </ItemGroup>
 
 </Project>

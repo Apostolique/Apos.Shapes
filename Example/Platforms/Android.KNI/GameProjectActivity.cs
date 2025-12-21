@@ -19,10 +19,9 @@ namespace GameProject
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
-            var game = new GameRoot();
+            var game = new GameRootKNI();
             SetContentView((View)game.Services.GetService(typeof(View)));
             game.Run();
         }
     }
 }
-

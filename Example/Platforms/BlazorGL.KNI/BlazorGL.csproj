@@ -59,7 +59,7 @@
   <Import Project="../../../Source/Apos.Shapes.KNI.props" />
 
   <ItemGroup>
-	<ProjectReference Include="..\..\Game\Game.Shared.csproj" />
+	<ProjectReference Include="../KNI/Game.Shared.csproj" />
     <Compile Include="Pages\Index.razor.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>

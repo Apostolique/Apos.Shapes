@@ -13,7 +13,7 @@ namespace GameProject
         [STAThread]
         static void Main()
         {
-            using (var game = new GameRoot())
+            using (var game = new GameRootKNI())
                 game.Run();
         }
     }

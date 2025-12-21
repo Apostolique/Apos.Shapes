@@ -24,7 +24,7 @@ namespace GameProject.Pages
             // init game
             if (_game == null)
             {
-                _game = new GameRoot();
+                _game = new GameRootKNI();
                 _game.Run();
             }
 
