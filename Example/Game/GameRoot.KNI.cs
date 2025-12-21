@@ -6,8 +6,8 @@ using Apos.Shapes;
 using FontStashSharp;
 
 namespace GameProject {
-    public class GameRoot : Game {
-        public GameRoot() {
+    public class GameRootKni : Game {
+        public GameRootKni() {
             _graphics = new GraphicsDeviceManager(this);
 #if KNI
             _graphics.GraphicsProfile = GraphicsProfile.FL10_0;
