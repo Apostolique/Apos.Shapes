@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+### Added
+
+- It's now possible to skip the automatic shader build by setting `<SkipAposShapeContent>true</SkipAposShapeContent>` in your game's .csproj.
+
 ## [0.5.1] - 2025-12-18
 
 ### Added
