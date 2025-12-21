@@ -4,7 +4,7 @@
     <AposShapesPath>$([System.IO.Path]::Combine($(MSBuildThisFileDirectory),"Content/Content.mgcb"))</AposShapesPath>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(SkipAposShapeContent)' != 'true'">
     <MonoGameContentReference Include="$(AposShapesPath)">
       <Link>Content/%(RecursiveDir)%(Filename)%(Extension)</Link>
     </MonoGameContentReference>
