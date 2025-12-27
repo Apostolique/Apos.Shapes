@@ -36,7 +36,7 @@ namespace Apos.Shapes {
                 _projection = projection.Value;
             } else {
                 Viewport viewport = _graphicsDevice.Viewport;
-                _projection = Matrix.CreateOrthographicOffCenter(viewport.X, viewport.Width, viewport.Height, viewport.Y, 0, 1);
+                _projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
             }
 
             _pixelSize = ScreenToWorldScale();
