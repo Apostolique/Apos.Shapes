@@ -8,9 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.5.2] - 2025-12-27
+
 ### Added
 
 - It's now possible to skip the automatic shader build by setting `<SkipAposShapeContent>true</SkipAposShapeContent>` in your game's .csproj.
+
+### Fixed
+
+- The projection matrix was using the wrong viewport values. It would mess up split screen rendering.
 
 ## [0.5.1] - 2025-12-18
 
@@ -207,7 +213,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.2...v0.5.0
 [0.3.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.1...v0.3.2
