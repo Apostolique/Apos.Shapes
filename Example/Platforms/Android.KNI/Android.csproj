@@ -3,10 +3,9 @@
   <PropertyGroup>
     <EnableDefaultItems>false</EnableDefaultItems>
     <TargetFramework>net8.0-android</TargetFramework>
-    <ProjectGuid>300b11b8-6f80-4218-81e0-f92fb9b66904</ProjectGuid>
     <OutputType>Exe</OutputType>
     <IsTrimmable>True</IsTrimmable>
-	<TrimMode>partial</TrimMode>
+    <TrimMode>partial</TrimMode>
     <RootNamespace>GameProject</RootNamespace>
     <AssemblyName>Example</AssemblyName>
     <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
@@ -22,9 +21,6 @@
     <EmbedAssembliesIntoApk>True</EmbedAssembliesIntoApk>
   </PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001" />
     <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001" />
@@ -38,25 +34,17 @@
     <PackageReference Include="nkast.Xna.Framework.XR" Version="4.2.9001" />
     <PackageReference Include="nkast.Kni.Platform.Android.GL" Version="4.2.9001" />
     <PackageReference Include="nkast.Xna.Framework.Content.Pipeline.Builder" Version="4.2.9001" />
+
+    <PackageReference Include="Apos.Input.KNI" Version="2.5.0" />
+    <PackageReference Include="Apos.Camera.KNI" Version="0.4.1" />
+    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
+
+    <ProjectReference Include="../../../Source/Apos.Shapes.KNI.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!--
-    <PackageReference Include="Apos.Camera.KNI" Version="0.3.1" />
-    <PackageReference Include="Apos.Input.KNI" Version="2.4.1" />
-    -->
-    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
- </ItemGroup>
-
-  <!--
-  <ItemGroup>
-    <PackageReference Include="Apos.Shapes.KNI" Version="0.5.0" />
- </ItemGroup>
-  -->
   <Import Project="../../../Source/Apos.Shapes.KNI.props" />
 
   <ItemGroup>
-	<ProjectReference Include="../KNI/Game.Shared.csproj" />
     <Compile Include="GameProjectActivity.cs" />
   </ItemGroup>
 
@@ -69,6 +57,12 @@
     <AndroidResource Include="Resources\Values\Strings.xml" />
     <AndroidResource Include="Resources\Values\Styles.xml" />
     <Folder Include="Resources\Layout\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Game/**/*.cs">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

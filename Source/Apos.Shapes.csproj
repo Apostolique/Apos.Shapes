@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net8.0</TargetFrameworks>
 
     <PackageId>Apos.Shapes</PackageId>
     <Description>Shape rendering in MonoGame.</Description>
     <PackageTags>gamedev;monogame;shapes</PackageTags>
 
     <Authors>Jean-David Moisan</Authors>
-    <Copyright>Copyright 2021</Copyright>
+    <Copyright>Copyright 2026</Copyright>
 
     <RepositoryUrl>https://github.com/Apostolique/Apos.Shapes</RepositoryUrl>
     <PackageProjectUrl>https://github.com/Apostolique/Apos.Shapes</PackageProjectUrl>

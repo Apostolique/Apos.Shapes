@@ -16,12 +16,6 @@
     <KniPlatform>DesktopGL</KniPlatform>
   </PropertyGroup>
 
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-  </PropertyGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-  </PropertyGroup>
-
   <PropertyGroup>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
   </PropertyGroup>
@@ -42,25 +36,17 @@
     <PackageReference Include="nkast.Xna.Framework.XR" Version="4.2.9001" />
     <PackageReference Include="nkast.Kni.Platform.SDL2.GL" Version="4.2.9001" />
     <PackageReference Include="nkast.Xna.Framework.Content.Pipeline.Builder" Version="4.2.9001" />
+
+    <PackageReference Include="Apos.Input.KNI" Version="2.5.0" />
+    <PackageReference Include="Apos.Camera.KNI" Version="0.4.1" />
+    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
+
+    <ProjectReference Include="../../../Source/Apos.Shapes.KNI.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!--
-    <PackageReference Include="Apos.Camera.KNI" Version="0.3.1" />
-    <PackageReference Include="Apos.Input.KNI" Version="2.4.1" />
-    -->
-    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
- </ItemGroup>
-
-  <!--
-  <ItemGroup>
-    <PackageReference Include="Apos.Shapes.KNI" Version="0.5.0" />
- </ItemGroup>
-  -->
   <Import Project="../../../Source/Apos.Shapes.KNI.props" />
 
   <ItemGroup>
-	<ProjectReference Include="../KNI/Game.Shared.csproj" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 
@@ -68,6 +54,12 @@
     <EmbeddedResource Include="Icon.ico" />
     <EmbeddedResource Include="Icon.bmp" />
     <None Include="app.manifest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Game/**/*.cs">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

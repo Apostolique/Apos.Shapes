@@ -5,7 +5,6 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <RollForward>Major</RollForward>
     <UseWindowsForms>true</UseWindowsForms>
-    <ProjectGuid>0855b974-9901-47a9-9c50-d67d1242876a</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>GameProject</RootNamespace>
@@ -13,12 +12,6 @@
     <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
     <DefineConstants>$(DefineConstants);KNI;WINDOWSDX</DefineConstants>
     <KniPlatform>Windows</KniPlatform>
-  </PropertyGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-  </PropertyGroup>
-
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
   </PropertyGroup>
 
   <PropertyGroup>
@@ -39,31 +32,29 @@
     <PackageReference Include="nkast.Xna.Framework.Devices" Version="4.2.9001" />
     <PackageReference Include="nkast.Kni.Platform.WinForms.DX11" Version="4.2.9001" />
     <PackageReference Include="nkast.Xna.Framework.Content.Pipeline.Builder" Version="4.2.9001" />
+
+    <PackageReference Include="Apos.Input.KNI" Version="2.5.0" />
+    <PackageReference Include="Apos.Camera.KNI" Version="0.4.1" />
+    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
+
+    <ProjectReference Include="../../../Source/Apos.Shapes.KNI.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!--
-    <PackageReference Include="Apos.Camera.KNI" Version="0.3.1" />
-    <PackageReference Include="Apos.Input.KNI" Version="2.4.1" />
-    -->
-    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
- </ItemGroup>
-
-  <!--
-  <ItemGroup>
-    <PackageReference Include="Apos.Shapes.KNI" Version="0.5.0" />
- </ItemGroup>
-  -->
   <Import Project="../../../Source/Apos.Shapes.KNI.props" />
 
   <ItemGroup>
-	<ProjectReference Include="../KNI/Game.Shared.csproj" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="Icon.ico" />
     <None Include="app.manifest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Game/**/*.cs">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net8.0</TargetFrameworks>
 
     <PackageId>Apos.Shapes.KNI</PackageId>
     <Description>Shape rendering in KNI.</Description>
     <PackageTags>gamedev;kni;shapes</PackageTags>
 
     <Authors>Jean-David Moisan</Authors>
-    <Copyright>Copyright 2021</Copyright>
+    <Copyright>Copyright 2026</Copyright>
 
     <RepositoryUrl>https://github.com/Apostolique/Apos.Shapes</RepositoryUrl>
     <PackageProjectUrl>https://github.com/Apostolique/Apos.Shapes</PackageProjectUrl>
@@ -26,9 +26,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="nkast.Xna.Framework" Version="4.1.9001" />
-    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.1.9001" />
-    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.1.9001" />
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001" />
   </ItemGroup>
 
   <ItemGroup>
