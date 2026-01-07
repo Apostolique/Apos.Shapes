@@ -11,7 +11,11 @@ namespace GameProject {
     public class GameRoot : Game {
         public GameRoot() {
             _graphics = new GraphicsDeviceManager(this);
+#if KNI
+            _graphics.GraphicsProfile = GraphicsProfile.FL10_0;
+#else
             _graphics.GraphicsProfile = GraphicsProfile.HiDef;
+#endif
             IsMouseVisible = true;
             Content.RootDirectory = "Content";
         }
