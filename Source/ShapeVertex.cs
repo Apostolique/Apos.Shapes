@@ -78,7 +78,7 @@ namespace Apos.Shapes {
             return !(left == right);
         }
 
-        public override readonly bool Equals(object obj) {
+        public override readonly bool Equals(object? obj) {
             if (obj == null)
                 return false;
 
