@@ -53,6 +53,8 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius1);
             var bottomLeft = center + new Vector2(-radius1, radius1);
 
+            GradientToLocalSpace(ref fill, ref border, center, 0f);
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize);
@@ -103,13 +105,15 @@ namespace Apos.Shapes {
             var bottomRight = xy + size1;
             var bottomLeft = xy + new Vector2(0, size1.Y);
 
+            Vector2 center = xy + half1;
             if (rotation != 0f) {
-                Vector2 center = xy + half1;
                 topLeft = Rotate(topLeft, center, rotation);
                 topRight = Rotate(topRight, center, rotation);
                 bottomRight = Rotate(bottomRight, center, rotation);
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
+
+            GradientToLocalSpace(ref fill, ref border, center, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
@@ -154,22 +158,23 @@ namespace Apos.Shapes {
             float aaOffset = _pixelSize * aaSize;
             var radius1 = radius + aaOffset; // Account for AA.
 
-            var c = Slide(a, b, radius1);
-            var d = Slide(b, a, radius1);
+            var c = Slide(b, a, radius1);
+            var d = Slide(a, b, radius1);
 
-            var topLeft = CounterClockwise(d, c, radius1);
-            var topRight = Clockwise(d, c, radius1);
-            var bottomRight = CounterClockwise(c, d, radius1);
-            var bottomLeft = Clockwise(c, d, radius1);
+            var topLeft = Clockwise(c, d, radius1);
+            var topRight = CounterClockwise(d, c, radius1);
+            var bottomRight = Clockwise(d, c, radius1);
+            var bottomLeft = CounterClockwise(c, d, radius1);
 
-            var width1 = radius + radius1;
-            var height = Vector2.Distance(a, b) + radius;
-            var height1 = Vector2.Distance(topLeft, bottomLeft) - aaOffset; // Account for AA.
+            var width = Vector2.Distance(a, b);
+            var width1 = width + radius1; // Account for AA.
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-aaOffset, -aaOffset), 2f, fill, border, thickness, radius, _pixelSize, height, aaSize: aaSize);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -aaOffset), 2f, fill, border, thickness, radius, _pixelSize, height, aaSize: aaSize);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, height1), 2f, fill, border, thickness, radius, _pixelSize, height, aaSize: aaSize);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-aaOffset, height1), 2f, fill, border, thickness, radius, _pixelSize, height, aaSize: aaSize);
+            if (!fill.IsLocal || !border.IsLocal) GradientToLocalSpace(ref fill, ref border, a, MathF.Atan2(b.Y - a.Y, b.X - a.X));
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -222,6 +227,8 @@ namespace Apos.Shapes {
                 bottomRight = Rotate(bottomRight, center, rotation);
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
+
+            GradientToLocalSpace(ref fill, ref border, center, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded);
@@ -285,6 +292,8 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
+            GradientToLocalSpace(ref fill, ref border, center, rotation);
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded);
@@ -319,6 +328,10 @@ namespace Apos.Shapes {
         public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            if (fill.IsLocal || border.IsLocal) {
+                GradientToWorldSpace(ref fill, ref border, a, MathF.Atan2(b.Y - a.Y, b.X - a.X));
+            }
 
             float aaOffset = _pixelSize * aaSize;
             float winding = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
@@ -355,13 +368,13 @@ namespace Apos.Shapes {
 
             float offset = aaOffset;
 
-            var D = Slide(A, B, offset);
-            var E = Slide(B, A, offset);
+            var D = Slide(B, A, offset);
+            var E = Slide(A, B, offset);
 
-            var topLeft = Clockwise(D, E, offset);
-            var topRight = CounterClockwise(E, D, offset);
-            var bottomRight = Clockwise(E, D, height + offset);
-            var bottomLeft = CounterClockwise(D, E, height + offset);
+            var topLeft = Clockwise(E, D, offset);
+            var topRight = CounterClockwise(D, E, offset);
+            var bottomRight = Clockwise(D, E, height + offset);
+            var bottomLeft = CounterClockwise(E, D, height + offset);
 
             float inCenterX = (sideB * a.X + sideC * b.X + sideA * c.X) / (sideB + sideC + sideA);
             float inCenterY = (sideB * a.Y + sideC * b.Y + sideA * c.Y) / (sideB + sideC + sideA);
@@ -428,6 +441,8 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
+            GradientToLocalSpace(ref fill, ref border, center, rotation);
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize);
@@ -485,6 +500,9 @@ namespace Apos.Shapes {
                 bottomRight = Rotate(bottomRight, center, rotation);
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
+
+            GradientToLocalSpace(ref fill, ref border, center, rotation);
+            GradientToWorldSpace(ref fill, ref border, new Vector2(0, 0), -rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
@@ -544,6 +562,9 @@ namespace Apos.Shapes {
                 bottomRight = Rotate(bottomRight, center, rotation);
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
+
+            GradientToLocalSpace(ref fill, ref border, center, rotation);
+            GradientToWorldSpace(ref fill, ref border, new Vector2(0, 0), -rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
@@ -646,6 +667,28 @@ namespace Apos.Shapes {
         }
         private float Mod(float x, float m) {
             return (x % m + m) % m;
+        }
+        private void GradientToLocalSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
+            if (!g1.IsLocal) GradientToLocalSpace(ref g1, offset, rotation);
+            if (!g2.IsLocal) GradientToLocalSpace(ref g2, offset, rotation);
+        }
+        private void GradientToLocalSpace(ref Gradient g, Vector2 offset, float rotation) {
+            g.AXY = Rotate(g.AXY, offset, -rotation);
+            g.BXY = Rotate(g.BXY, offset, -rotation);
+
+            g.AXY -= offset;
+            g.BXY -= offset;
+        }
+        private void GradientToWorldSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
+            if (g1.IsLocal) GradientToWorldSpace(ref g1, offset, rotation);
+            if (g2.IsLocal) GradientToWorldSpace(ref g2, offset, rotation);
+        }
+        private void GradientToWorldSpace(ref Gradient g, Vector2 offset, float rotation) {
+            g.AXY += offset;
+            g.BXY += offset;
+
+            g.AXY = Rotate(g.AXY, offset, rotation);
+            g.BXY = Rotate(g.BXY, offset, rotation);
         }
 
         private bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {

@@ -34,7 +34,6 @@ struct PixelInput {
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
     float4 Meta4 : TEXCOORD8;
-    float4 Pos : TEXCOORD9;
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
@@ -433,7 +432,6 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
     output.Meta4 = v.Meta4;
-    output.Pos = v.Position;
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
@@ -462,7 +460,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     } else if (p.Meta1.y < 1.5) {
         d = BoxSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
     } else if (p.Meta1.y < 2.5) {
-        d = SegmentSDF(p.TexCoord.xy, float2(sdfSize, sdfSize), float2(sdfSize, p.Meta1.w)) - sdfSize;
+        d = SegmentSDF(p.TexCoord.xy, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
     } else if (p.Meta1.y < 3.5) {
         d = HexagonSDF(p.TexCoord.xy, sdfSize);
     } else if (p.Meta1.y < 4.5) {
@@ -483,11 +481,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float2 fillStyles = Unpair(gradientStyles.x);
     float2 borderStyles = Unpair(gradientStyles.y);
 
-    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta4.xy));
-    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta4.zw));
-    bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
+    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.TexCoord.xy, d, aaSize, p.Meta4.xy));
+    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.TexCoord.xy, d, aaSize, p.Meta4.zw));
+    bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
 
-    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
+    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
     result.rgb *= result.a;
 
     return result;
