@@ -2,6 +2,7 @@ using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
+using MonoGame.Extended;
 
 namespace Apos.Shapes {
     public class ShapeBatch {
@@ -597,6 +598,80 @@ namespace Apos.Shapes {
             DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, c, thickness, aaSize);
         }
 
+        public void Draw(Texture2D texture, Matrix3x2 world, Matrix3x2? source = null, Color? mask = null) {
+            if (_texture == null) {
+                _texture = texture;
+            } else if (_texture != texture) {
+                Flush();
+                _texture = texture;
+            }
+
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            Vector2 topLeft;
+            Vector2 topRight;
+            Vector2 bottomRight;
+            Vector2 bottomLeft;
+            if (source == null) {
+                topLeft = new Vector2(0, 0);
+                topRight = new Vector2(texture.Width, 0);
+                bottomRight = new Vector2(texture.Width, texture.Height);
+                bottomLeft = new Vector2(0, texture.Height);
+            } else {
+                topLeft = Vector2.Transform(new Vector2(0f, 0f), source.Value);
+                topRight = Vector2.Transform(new Vector2(1f, 0f), source.Value);
+                bottomRight = Vector2.Transform(new Vector2(1f, 1f), source.Value);
+                bottomLeft = Vector2.Transform(new Vector2(0, 1f), source.Value);
+            }
+
+            Vector2 wTopLeft = Vector2.Transform(new Vector2(0, 0), world);
+            Vector2 wTopRight = Vector2.Transform(new Vector2(1f, 0), world);
+            Vector2 wBottomRight = Vector2.Transform(new Vector2(1f, 1f), world);
+            Vector2 wBottomLeft = Vector2.Transform(new Vector2(0, 1f), world);
+
+            Gradient g = new Gradient(Vector2.Zero, mask ?? Color.White, Vector2.Zero, mask ?? Color.White, Gradient.Shape.None);
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), GetUV(texture, topLeft), 9f, g, g, 0f, 1f, _pixelSize);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(wTopRight.X, wTopRight.Y, 0f), GetUV(texture, topRight), 9f, g, g, 0f, 1f, _pixelSize);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(wBottomRight.X, wBottomRight.Y, 0f), GetUV(texture, bottomRight), 9f, g, g, 0f, 1f, _pixelSize);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(wBottomLeft.X, wBottomLeft.Y, 0f), GetUV(texture, bottomLeft), 9f, g, g, 0f, 1f, _pixelSize);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void Draw(Texture2D texture, Vector2 xy) {
+            Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(xy));
+        }
+        public void Draw(Texture2D texture, Vector2 xy, Color mask) {
+            Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(xy), mask: mask);
+        }
+        public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask) {
+            Draw(texture, Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(xy), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
+        }
+        public void Draw(Texture2D texture, Vector2 xy, Color mask, float rotation, Vector2 origin, Vector2 scale) {
+            Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(xy), Matrix3x2.CreateScale(texture.Width, texture.Height), mask: mask);
+        }
+        public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask, float rotation, Vector2 origin, Vector2 scale) {
+            Draw(texture, Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(xy), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
+        }
+        public void Draw(Texture2D texture, RectangleF destination) {
+            Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(destination.Position));
+        }
+        public void Draw(Texture2D texture, RectangleF destination, Color mask) {
+            Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(destination.Position), mask: mask);
+        }
+        public void Draw(Texture2D texture, RectangleF destination, RectangleF source, Color mask) {
+            Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
+        }
+        public void Draw(Texture2D texture, RectangleF destination, Color mask, float rotation, Vector2 origin, Vector2 scale) {
+            Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(texture.Width, texture.Height), mask: mask);
+        }
+        public void Draw(Texture2D texture, RectangleF destination, RectangleF source, Color mask, float rotation, Vector2 origin, Vector2 scale) {
+            Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
+        }
+
         public void End() {
             Flush();
 
@@ -632,6 +707,7 @@ namespace Apos.Shapes {
 
             foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
                 pass.Apply();
+                if (_texture != null) _graphicsDevice.Textures[0] = _texture;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -691,6 +767,10 @@ namespace Apos.Shapes {
             g.BXY = Rotate(g.BXY, offset, rotation);
         }
 
+        private Vector2 GetUV(Texture2D texture, Vector2 xy) {
+            return new Vector2(xy.X / texture.Width, xy.Y / texture.Height);
+        }
+
         private bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
             if (array.Length < neededCapacity) {
                 Array.Resize(ref array, array.Length * 2);
@@ -711,6 +791,8 @@ namespace Apos.Shapes {
             _fromIndex = (uint)_indices.Length;
             _fromVertex = (uint)_vertices.Length;
         }
+
+        private Texture2D? _texture = null;
 
         private const int _initialVertices = 2048 * 4;
         private const int _initialIndices = 2048 * 6;

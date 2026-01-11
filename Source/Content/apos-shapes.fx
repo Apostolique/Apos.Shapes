@@ -10,6 +10,7 @@
 #endif
 
 float4x4 view_projection;
+sampler TextureSampler : register(s0);
 
 struct VertexInput {
     float4 Position : POSITION0;
@@ -473,6 +474,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = ArcSDF(p.TexCoord.xy, p.Meta3.xy, sdfSize, p.Meta3.z);
     } else if (p.Meta1.y < 8.5) {
         d = RingSDF(p.TexCoord.xy, p.Meta3.xy, sdfSize, p.Meta3.z);
+    } else if (p.Meta1.y < 9.5) {
+        return tex2D(TextureSampler, p.TexCoord.xy) * fill1;
     }
 
     d -= p.Meta2.z;
