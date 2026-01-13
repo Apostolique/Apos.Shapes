@@ -31,6 +31,8 @@ namespace Apos.Shapes {
             _fsr = new FontStashRenderer(graphicsDevice, this);
         }
 
+        public GraphicsDevice GraphicsDevice => _graphicsDevice;
+
         public void Begin(Matrix? view = null, Matrix? projection = null) {
             if (view != null) {
                 _view = view.Value;
