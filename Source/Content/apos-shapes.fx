@@ -11,6 +11,7 @@
 
 float4x4 view_projection;
 sampler TextureSampler : register(s0);
+sampler FontSampler;
 
 struct VertexInput {
     float4 Position : POSITION0;
@@ -476,6 +477,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = RingSDF(p.TexCoord.xy, p.Meta3.xy, sdfSize, p.Meta3.z);
     } else if (p.Meta1.y < 9.5) {
         return tex2D(TextureSampler, p.TexCoord.xy) * fill1;
+    } else if (p.Meta1.y < 10.5) {
+        return tex2D(FontSampler, p.TexCoord.xy) * fill1;
     }
 
     d -= p.Meta2.z;

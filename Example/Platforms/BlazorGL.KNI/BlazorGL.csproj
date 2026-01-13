@@ -37,7 +37,7 @@
 
     <PackageReference Include="Apos.Input.KNI" Version="2.5.0" />
     <PackageReference Include="Apos.Camera.KNI" Version="0.4.1" />
-    <PackageReference Include="FontStashSharp.KNI" Version="1.5.1" />
+    <PackageReference Include="FontStashSharp.KNI" Version="1.5.2" />
 
     <ProjectReference Include="../../../Source/Apos.Shapes.KNI.csproj" />
  </ItemGroup>

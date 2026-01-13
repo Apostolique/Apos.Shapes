@@ -1,4 +1,7 @@
 using System;
+using System.Text;
+using FontStashSharp;
+using FontStashSharp.Interfaces;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
@@ -24,6 +27,8 @@ namespace Apos.Shapes {
 
             _indexBuffer = new IndexBuffer(_graphicsDevice, IndexElementSize.ThirtyTwoBits, _indices.Length, BufferUsage.WriteOnly);
             _indexBuffer.SetData(_indices);
+
+            _fsr = new FontStashRenderer(graphicsDevice, this);
         }
 
         public void Begin(Matrix? view = null, Matrix? projection = null) {
@@ -672,6 +677,51 @@ namespace Apos.Shapes {
             Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
 
+        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+            return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        }
+        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+            return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        }
+        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+            return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        }
+        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+            return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        }
+        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+            return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        }
+        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+            return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        }
+
+        private void DrawStringTexture(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
+            if (_fontTexture == null) {
+                _fontTexture = texture;
+            } else if (_fontTexture != texture) {
+                Flush();
+                _fontTexture = texture;
+            }
+
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+
+            Gradient gTopLeft = new Gradient(Vector2.Zero, topLeft.Color, Vector2.Zero, topLeft.Color, Gradient.Shape.None);
+            Gradient gTopRight = new Gradient(Vector2.Zero, topRight.Color, Vector2.Zero, topRight.Color, Gradient.Shape.None);
+            Gradient gBottomRight = new Gradient(Vector2.Zero, bottomRight.Color, Vector2.Zero, bottomRight.Color, Gradient.Shape.None);
+            Gradient gBottomLeft = new Gradient(Vector2.Zero, bottomLeft.Color, Vector2.Zero, bottomLeft.Color, Gradient.Shape.None);
+
+            _vertices[_vertexCount + 0] = new VertexShape(topLeft.Position, topLeft.TextureCoordinate, 10f, gTopLeft, gTopLeft, 0f, 1f, _pixelSize);
+            _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, 10f, gTopRight, gTopRight, 0f, 1f, _pixelSize);
+            _vertices[_vertexCount + 2] = new VertexShape(bottomRight.Position, bottomRight.TextureCoordinate, 10f, gBottomRight, gBottomRight, 0f, 1f, _pixelSize);
+            _vertices[_vertexCount + 3] = new VertexShape(bottomLeft.Position, bottomLeft.TextureCoordinate, 10f, gBottomLeft, gBottomLeft, 0f, 1f, _pixelSize);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
         public void End() {
             Flush();
 
@@ -708,6 +758,7 @@ namespace Apos.Shapes {
             foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
                 pass.Apply();
                 if (_texture != null) _graphicsDevice.Textures[0] = _texture;
+                if (_fontTexture != null) _graphicsDevice.Textures[1] = _fontTexture;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -792,7 +843,24 @@ namespace Apos.Shapes {
             _fromVertex = (uint)_vertices.Length;
         }
 
+        private class FontStashRenderer : IFontStashRenderer2 {
+            public FontStashRenderer(GraphicsDevice gd, ShapeBatch sb) {
+                _graphicsDevice = gd;
+                _sb = sb;
+            }
+
+            public GraphicsDevice GraphicsDevice => _graphicsDevice;
+
+            public void DrawQuad(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
+                _sb.DrawStringTexture(texture, ref topLeft, ref topRight, ref bottomLeft, ref bottomRight);
+            }
+
+            GraphicsDevice _graphicsDevice;
+            ShapeBatch _sb;
+        }
+
         private Texture2D? _texture = null;
+        private Texture2D? _fontTexture = null;
 
         private const int _initialVertices = 2048 * 4;
         private const int _initialIndices = 2048 * 6;
@@ -816,5 +884,7 @@ namespace Apos.Shapes {
         private bool _indicesChanged = false;
         private uint _fromIndex = 0;
         private uint _fromVertex = 0;
+
+        private FontStashRenderer _fsr;
     }
 }
