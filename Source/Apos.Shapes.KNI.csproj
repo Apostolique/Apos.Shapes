@@ -38,19 +38,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Apos.Shapes.KNI.props" PackagePath="build/" />
+    <Content Include="Apos.Shapes.KNI.props" PackagePath="buildTransitive/" />
 
     <None Include="Content/apos-shapes.fx">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
       <PackageFlatten>true</PackageFlatten>
-      <PackagePath>build/Content/</PackagePath>
+      <PackagePath>buildTransitive/Content/</PackagePath>
     </None>
     <None Include="Content/Content.mgcb">
       <Pack>true</Pack>
       <PackageCopyToOutput>true</PackageCopyToOutput>
       <PackageFlatten>true</PackageFlatten>
-      <PackagePath>build/Content/</PackagePath>
+      <PackagePath>buildTransitive/Content/</PackagePath>
     </None>
   </ItemGroup>
 
