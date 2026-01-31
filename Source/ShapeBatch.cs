@@ -33,7 +33,7 @@ namespace Apos.Shapes {
 
         public GraphicsDevice GraphicsDevice => _graphicsDevice;
 
-        public void Begin(Matrix? view = null, Matrix? projection = null) {
+        public void Begin(Matrix? view = null, Matrix? projection = null, BlendState? blendState = null, SamplerState? samplerState = null, DepthStencilState? depthStencilState = null, RasterizerState? rasterizerState = null) {
             if (view != null) {
                 _view = view.Value;
             } else {
@@ -48,6 +48,11 @@ namespace Apos.Shapes {
             }
 
             _pixelSize = ScreenToWorldScale();
+
+            _blendState = blendState ?? BlendState.AlphaBlend;
+            _samplerState = samplerState ?? SamplerState.LinearClamp;
+            _depthStencilState = depthStencilState ?? DepthStencilState.None;
+            _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
         public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
@@ -754,8 +759,10 @@ namespace Apos.Shapes {
 
             _graphicsDevice.Indices = _indexBuffer;
 
-            _graphicsDevice.DepthStencilState = DepthStencilState.None;
-            _graphicsDevice.BlendState = BlendState.AlphaBlend;
+            _graphicsDevice.BlendState = _blendState;
+            _graphicsDevice.SamplerStates[0] = _samplerState;
+            _graphicsDevice.DepthStencilState = _depthStencilState;
+            _graphicsDevice.RasterizerState = _rasterizerState;
 
             foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
                 pass.Apply();
@@ -876,6 +883,11 @@ namespace Apos.Shapes {
 
         private DynamicVertexBuffer _vertexBuffer;
         private IndexBuffer _indexBuffer;
+
+        private BlendState _blendState;
+        private SamplerState _samplerState;
+        private DepthStencilState _depthStencilState;
+        private RasterizerState _rasterizerState;
 
         private Matrix _view;
         private Matrix _projection;
