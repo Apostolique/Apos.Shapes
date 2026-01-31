@@ -884,10 +884,10 @@ namespace Apos.Shapes {
         private DynamicVertexBuffer _vertexBuffer;
         private IndexBuffer _indexBuffer;
 
-        private BlendState _blendState;
-        private SamplerState _samplerState;
-        private DepthStencilState _depthStencilState;
-        private RasterizerState _rasterizerState;
+        private BlendState _blendState = null!;
+        private SamplerState _samplerState = null!;
+        private DepthStencilState _depthStencilState = null!;
+        private RasterizerState _rasterizerState = null!;
 
         private Matrix _view;
         private Matrix _projection;
