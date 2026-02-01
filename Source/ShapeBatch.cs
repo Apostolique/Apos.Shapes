@@ -227,7 +227,7 @@ namespace Apos.Shapes {
 
             radius -= rounded;
 
-            Vector2 size = new Vector2(width1, radius1);
+            Vector2 size = new(width1, radius1);
 
             var topLeft = center - size;
             var topRight = center + new Vector2(size.X, -size.Y);
@@ -642,7 +642,7 @@ namespace Apos.Shapes {
             Vector2 wBottomRight = Vector2.Transform(new Vector2(1f, 1f), world);
             Vector2 wBottomLeft = Vector2.Transform(new Vector2(0, 1f), world);
 
-            Gradient g = new Gradient(Vector2.Zero, mask ?? Color.White, Vector2.Zero, mask ?? Color.White, Gradient.Shape.None);
+            Gradient g = new(Vector2.Zero, mask ?? Color.White, Vector2.Zero, mask ?? Color.White, Gradient.Shape.None);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), GetUV(texture, topLeft), 9f, g, g, 0f, 1f, _pixelSize);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(wTopRight.X, wTopRight.Y, 0f), GetUV(texture, topRight), 9f, g, g, 0f, 1f, _pixelSize);
@@ -684,22 +684,22 @@ namespace Apos.Shapes {
             Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
 
-        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
-        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
-        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
-        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
-        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
-        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default(Vector2), Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
+        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
 
@@ -714,10 +714,10 @@ namespace Apos.Shapes {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            Gradient gTopLeft = new Gradient(Vector2.Zero, topLeft.Color, Vector2.Zero, topLeft.Color, Gradient.Shape.None);
-            Gradient gTopRight = new Gradient(Vector2.Zero, topRight.Color, Vector2.Zero, topRight.Color, Gradient.Shape.None);
-            Gradient gBottomRight = new Gradient(Vector2.Zero, bottomRight.Color, Vector2.Zero, bottomRight.Color, Gradient.Shape.None);
-            Gradient gBottomLeft = new Gradient(Vector2.Zero, bottomLeft.Color, Vector2.Zero, bottomLeft.Color, Gradient.Shape.None);
+            Gradient gTopLeft = new(Vector2.Zero, topLeft.Color, Vector2.Zero, topLeft.Color, Gradient.Shape.None);
+            Gradient gTopRight = new(Vector2.Zero, topRight.Color, Vector2.Zero, topRight.Color, Gradient.Shape.None);
+            Gradient gBottomRight = new(Vector2.Zero, bottomRight.Color, Vector2.Zero, bottomRight.Color, Gradient.Shape.None);
+            Gradient gBottomLeft = new(Vector2.Zero, bottomLeft.Color, Vector2.Zero, bottomLeft.Color, Gradient.Shape.None);
 
             _vertices[_vertexCount + 0] = new VertexShape(topLeft.Position, topLeft.TextureCoordinate, 10f, gTopLeft, gTopLeft, 0f, 1f, _pixelSize);
             _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, 10f, gTopRight, gTopRight, 0f, 1f, _pixelSize);
@@ -786,40 +786,40 @@ namespace Apos.Shapes {
             return Vector2.Transform(xy, Matrix.Invert(_view));
         }
 
-        private Vector2 Slide(Vector2 a, Vector2 b, float distance) {
+        private static Vector2 Slide(Vector2 a, Vector2 b, float distance) {
             var c = Vector2.Normalize(b - a) * distance;
             return b + c;
         }
-        private Vector2 Clockwise(Vector2 a, Vector2 b, float distance) {
+        private static Vector2 Clockwise(Vector2 a, Vector2 b, float distance) {
             var c = Vector2.Normalize(b - a) * distance;
             return new Vector2(c.Y, -c.X) + a;
         }
-        private Vector2 CounterClockwise(Vector2 a, Vector2 b, float distance) {
+        private static Vector2 CounterClockwise(Vector2 a, Vector2 b, float distance) {
             var c = Vector2.Normalize(b - a) * distance;
             return new Vector2(-c.Y, c.X) + a;
         }
-        private Vector2 Rotate(Vector2 a, Vector2 origin, float rotation) {
+        private static Vector2 Rotate(Vector2 a, Vector2 origin, float rotation) {
             return new Vector2(origin.X + (a.X - origin.X) * MathF.Cos(rotation) - (a.Y - origin.Y) * MathF.Sin(rotation), origin.Y + (a.X - origin.X) * MathF.Sin(rotation) + (a.Y - origin.Y) * MathF.Cos(rotation));
         }
-        private float Mod(float x, float m) {
+        private static float Mod(float x, float m) {
             return (x % m + m) % m;
         }
-        private void GradientToLocalSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
+        private static void GradientToLocalSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
             if (!g1.IsLocal) GradientToLocalSpace(ref g1, offset, rotation);
             if (!g2.IsLocal) GradientToLocalSpace(ref g2, offset, rotation);
         }
-        private void GradientToLocalSpace(ref Gradient g, Vector2 offset, float rotation) {
+        private static void GradientToLocalSpace(ref Gradient g, Vector2 offset, float rotation) {
             g.AXY = Rotate(g.AXY, offset, -rotation);
             g.BXY = Rotate(g.BXY, offset, -rotation);
 
             g.AXY -= offset;
             g.BXY -= offset;
         }
-        private void GradientToWorldSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
+        private static void GradientToWorldSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
             if (g1.IsLocal) GradientToWorldSpace(ref g1, offset, rotation);
             if (g2.IsLocal) GradientToWorldSpace(ref g2, offset, rotation);
         }
-        private void GradientToWorldSpace(ref Gradient g, Vector2 offset, float rotation) {
+        private static void GradientToWorldSpace(ref Gradient g, Vector2 offset, float rotation) {
             g.AXY += offset;
             g.BXY += offset;
 
@@ -827,11 +827,11 @@ namespace Apos.Shapes {
             g.BXY = Rotate(g.BXY, offset, rotation);
         }
 
-        private Vector2 GetUV(Texture2D texture, Vector2 xy) {
+        private static Vector2 GetUV(Texture2D texture, Vector2 xy) {
             return new Vector2(xy.X / texture.Width, xy.Y / texture.Height);
         }
 
-        private bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
+        private static bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
             if (array.Length < neededCapacity) {
                 Array.Resize(ref array, array.Length * 2);
                 return true;
@@ -852,20 +852,15 @@ namespace Apos.Shapes {
             _fromVertex = (uint)_vertices.Length;
         }
 
-        private class FontStashRenderer : IFontStashRenderer2 {
-            public FontStashRenderer(GraphicsDevice gd, ShapeBatch sb) {
-                _graphicsDevice = gd;
-                _sb = sb;
-            }
-
+        private class FontStashRenderer(GraphicsDevice gd, ShapeBatch sb) : IFontStashRenderer2 {
             public GraphicsDevice GraphicsDevice => _graphicsDevice;
 
             public void DrawQuad(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
                 _sb.DrawStringTexture(texture, ref topLeft, ref topRight, ref bottomLeft, ref bottomRight);
             }
 
-            GraphicsDevice _graphicsDevice;
-            ShapeBatch _sb;
+            readonly GraphicsDevice _graphicsDevice = gd;
+            readonly ShapeBatch _sb = sb;
         }
 
         private Texture2D? _texture = null;
@@ -874,7 +869,7 @@ namespace Apos.Shapes {
         private const int _initialVertices = 2048 * 4;
         private const int _initialIndices = 2048 * 6;
 
-        private GraphicsDevice _graphicsDevice;
+        private readonly GraphicsDevice _graphicsDevice;
         private VertexShape[] _vertices;
         private uint[] _indices;
         private int _triangleCount = 0;
@@ -891,7 +886,7 @@ namespace Apos.Shapes {
 
         private Matrix _view;
         private Matrix _projection;
-        private Effect _effect;
+        private readonly Effect _effect;
 
         private float _pixelSize = 1f;
 
@@ -899,6 +894,6 @@ namespace Apos.Shapes {
         private uint _fromIndex = 0;
         private uint _fromVertex = 0;
 
-        private FontStashRenderer _fsr;
+        private readonly FontStashRenderer _fsr;
     }
 }
