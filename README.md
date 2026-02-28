@@ -19,16 +19,21 @@ This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_dista
 
 ## Features
 
-* Circles
-* Lines
-* Rectangles
-* Hexagons
-* Equilateral Triangles
-* Ellipses
+* Shapes
+  * Circle
+  * Line
+  * Rectangle
+  * Hexagon
+  * Equilateral Triangle
+  * Triangle
+  * Ellipse
+  * Arc
+  * Ring
 * Filled + Borders
-* Rounded
-* Rotations
 * Gradients
+* Rounded
+* Text (FontStashSharp API)
+* Textures (SpriteBatch API)
 
 ## Usage samples
 
