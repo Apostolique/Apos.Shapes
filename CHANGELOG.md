@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.6.7] - 2026-02-28
+
+### Added
+
+- It's now possible to draw gradients in the shape's local space.
+- Added the SpriteBatch texture API to the ShapeBatch. It's now possible to draw textures along with shapes without breaking the batch. The draw calls are backed by a Matrix3x2 which supports more drawing options than what the SpriteBatch provides.
+- Added the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API which makes it possible to draw text natively. The texture for the font uses a separate texture slot which makes it possible to draw text without breaking the batch.
+- The GraphicsDevice is now made available.
+
 ## [0.5.2] - 2025-12-27
 
 ### Added
@@ -213,7 +222,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.7...HEAD
+[0.6.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.2...v0.6.7
 [0.5.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.3.2...v0.5.0
