@@ -5,7 +5,7 @@ Shape rendering library for MonoGame.
 
 ## Description
 
-This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions.
+This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions. It can also draw text and textures.
 
 ![](./Images/example.png)
 
