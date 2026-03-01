@@ -12,7 +12,7 @@
 
     <RepositoryUrl>https://github.com/Apostolique/Apos.Shapes</RepositoryUrl>
     <PackageProjectUrl>https://github.com/Apostolique/Apos.Shapes</PackageProjectUrl>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <RepositoryType>git</RepositoryType>
 
@@ -33,6 +33,7 @@
 
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
+    <None Include="../LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>
