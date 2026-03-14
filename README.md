@@ -11,7 +11,7 @@ This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_dista
 
 ## Documentation
 
-* Coming soon!
+* [Getting started](https://apostolique.github.io/Apos.Shapes/getting-started/)
 
 ## Build
 
