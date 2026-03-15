@@ -8,6 +8,8 @@ Install using the following dotnet command:
 dotnet add package Apos.Shapes
 ```
 
+You can find other ways to install it on the [NuGet page](https://www.nuget.org/packages/Apos.Shapes/).
+
 ## Compilation
 
 This library includes a shader that gets compiled along your other content. If you are running on Linux or OSX, make sure that you have set up Wine correctly or you will get a build error. MonoGame has guides on setting up Wine for both. Make sure to read them:
