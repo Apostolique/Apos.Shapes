@@ -131,7 +131,6 @@ namespace Apos.Shapes {
             [VertexElementFormat.NormalizedShort4] = 8,
             [VertexElementFormat.HalfVector2] = 4,
             [VertexElementFormat.HalfVector4] = 8,
-            [VertexElementFormat.HalfVector4] = 8,
         };
 
         private static Vector4 PairColors(Color a, Color b) {
@@ -148,8 +147,7 @@ namespace Apos.Shapes {
             if (f2 < f1) {
                 a = f2;
                 b = f1;
-            }
-            else {
+            } else {
                 a = f1;
                 b = f2 - f1;
             }

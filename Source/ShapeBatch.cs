@@ -14,8 +14,7 @@ namespace Apos.Shapes {
 
             if (effect == null) {
                 _effect = content.Load<Effect>("apos-shapes");
-            }
-            else {
+            } else {
                 _effect = effect;
             }
 
@@ -37,15 +36,13 @@ namespace Apos.Shapes {
         public void Begin(Matrix? view = null, Matrix? projection = null, BlendState? blendState = null, SamplerState? samplerState = null, DepthStencilState? depthStencilState = null, RasterizerState? rasterizerState = null) {
             if (view != null) {
                 _view = view.Value;
-            }
-            else {
+            } else {
                 _view = Matrix.Identity;
             }
 
             if (projection != null) {
                 _projection = projection.Value;
-            }
-            else {
+            } else {
                 Viewport viewport = _graphicsDevice.Viewport;
                 _projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
             }
@@ -57,13 +54,13 @@ namespace Apos.Shapes {
             _depthStencilState = depthStencilState ?? DepthStencilState.None;
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
-        public void SetScissorRect(Rectangle rectangle, int rounding = 0) {
-            _scissorRectangle = rectangle with { Y = _graphicsDevice.Viewport.Height - rectangle.Y - rectangle.Height }; // flipping is required as i sussed out, i'm hoping that _graphicsDevice.Viewport.Height is the right to use :)
-            _scissorRectangleRounding = rounding;
+        public void SetClipRectangle(Rectangle rectangle, int rounding = 0) {
+            _clipRectangle = rectangle; // flipping is required as i sussed out, i'm hoping that _graphicsDevice.Viewport.Height is the right to use :)
+            _clipRectangleRounding = rounding;
         }
-        public void ResetScissorRect() {
-            _scissorRectangle = Rectangle.Empty;
-            _scissorRectangleRounding = 0;
+        public void ResetClipRectangle() {
+            _clipRectangle = Rectangle.Empty;
+            _clipRectangleRounding = 0;
         }
         public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
@@ -79,10 +76,10 @@ namespace Apos.Shapes {
 
             GradientToLocalSpace(ref fill, ref border, center, 0f);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), 0f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -139,10 +136,10 @@ namespace Apos.Shapes {
 
             GradientToLocalSpace(ref fill, ref border, center, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), 1f, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -195,10 +192,10 @@ namespace Apos.Shapes {
 
             if (!fill.IsLocal || !border.IsLocal) GradientToLocalSpace(ref fill, ref border, a, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), 2f, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -254,10 +251,10 @@ namespace Apos.Shapes {
 
             GradientToLocalSpace(ref fill, ref border, center, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), 3f, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -318,10 +315,10 @@ namespace Apos.Shapes {
 
             GradientToLocalSpace(ref fill, ref border, center, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), 4f, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -377,13 +374,11 @@ namespace Apos.Shapes {
                 longestSide = sideA;
                 A = a;
                 B = b;
-            }
-            else if (sideB > sideC) {
+            } else if (sideB > sideC) {
                 longestSide = sideB;
                 A = b;
                 B = c;
-            }
-            else {
+            } else {
                 longestSide = sideC;
                 A = c;
                 B = a;
@@ -416,10 +411,10 @@ namespace Apos.Shapes {
             B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
             C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft, 5f, fill, border, thickness, A.X, _pixelSize, height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -469,10 +464,10 @@ namespace Apos.Shapes {
 
             GradientToLocalSpace(ref fill, ref border, center, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), 6f, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -530,10 +525,10 @@ namespace Apos.Shapes {
             GradientToLocalSpace(ref fill, ref border, center, rotation);
             GradientToWorldSpace(ref fill, ref border, new Vector2(0, 0), -rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 7f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -592,10 +587,10 @@ namespace Apos.Shapes {
             GradientToLocalSpace(ref fill, ref border, center, rotation);
             GradientToWorldSpace(ref fill, ref border, new Vector2(0, 0), -rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), 8f, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -626,8 +621,7 @@ namespace Apos.Shapes {
         public void Draw(Texture2D texture, Matrix3x2 world, Matrix3x2? source = null, Color? mask = null) {
             if (_texture == null) {
                 _texture = texture;
-            }
-            else if (_texture != texture) {
+            } else if (_texture != texture) {
                 Flush();
                 _texture = texture;
             }
@@ -644,8 +638,7 @@ namespace Apos.Shapes {
                 topRight = new Vector2(texture.Width, 0);
                 bottomRight = new Vector2(texture.Width, texture.Height);
                 bottomLeft = new Vector2(0, texture.Height);
-            }
-            else {
+            } else {
                 topLeft = Vector2.Transform(new Vector2(0f, 0f), source.Value);
                 topRight = Vector2.Transform(new Vector2(1f, 0f), source.Value);
                 bottomRight = Vector2.Transform(new Vector2(1f, 1f), source.Value);
@@ -659,10 +652,10 @@ namespace Apos.Shapes {
 
             Gradient g = new(Vector2.Zero, mask ?? Color.White, Vector2.Zero, mask ?? Color.White, Gradient.Shape.None);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), GetUV(texture, topLeft), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(wTopRight.X, wTopRight.Y, 0f), GetUV(texture, topRight), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(wBottomRight.X, wBottomRight.Y, 0f), GetUV(texture, bottomRight), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(wBottomLeft.X, wBottomLeft.Y, 0f), GetUV(texture, bottomLeft), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), GetUV(texture, topLeft), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(wTopRight.X, wTopRight.Y, 0f), GetUV(texture, topRight), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(wBottomRight.X, wBottomRight.Y, 0f), GetUV(texture, bottomRight), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(wBottomLeft.X, wBottomLeft.Y, 0f), GetUV(texture, bottomLeft), 9f, g, g, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -745,8 +738,7 @@ namespace Apos.Shapes {
         private void DrawStringTexture(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
             if (_fontTexture == null) {
                 _fontTexture = texture;
-            }
-            else if (_fontTexture != texture) {
+            } else if (_fontTexture != texture) {
                 Flush();
                 _fontTexture = texture;
             }
@@ -759,10 +751,10 @@ namespace Apos.Shapes {
             Gradient gBottomRight = new(Vector2.Zero, bottomRight.Color, Vector2.Zero, bottomRight.Color, Gradient.Shape.None);
             Gradient gBottomLeft = new(Vector2.Zero, bottomLeft.Color, Vector2.Zero, bottomLeft.Color, Gradient.Shape.None);
 
-            _vertices[_vertexCount + 0] = new VertexShape(topLeft.Position, topLeft.TextureCoordinate, 10f, gTopLeft, gTopLeft, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, 10f, gTopRight, gTopRight, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 2] = new VertexShape(bottomRight.Position, bottomRight.TextureCoordinate, 10f, gBottomRight, gBottomRight, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
-            _vertices[_vertexCount + 3] = new VertexShape(bottomLeft.Position, bottomLeft.TextureCoordinate, 10f, gBottomLeft, gBottomLeft, 0f, 1f, _pixelSize, clipRect: _scissorRectangle, clipRounding: _scissorRectangleRounding);
+            _vertices[_vertexCount + 0] = new VertexShape(topLeft.Position, topLeft.TextureCoordinate, 10f, gTopLeft, gTopLeft, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, 10f, gTopRight, gTopRight, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 2] = new VertexShape(bottomRight.Position, bottomRight.TextureCoordinate, 10f, gBottomRight, gBottomRight, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
+            _vertices[_vertexCount + 3] = new VertexShape(bottomLeft.Position, bottomLeft.TextureCoordinate, 10f, gBottomLeft, gBottomLeft, 0f, 1f, _pixelSize, clipRect: _clipRectangle, clipRounding: _clipRectangleRounding);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -936,7 +928,7 @@ namespace Apos.Shapes {
 
         private readonly FontStashRenderer _fsr;
 
-        private Rectangle _scissorRectangle = Rectangle.Empty; //Empty(specifically of Zero Size) scissor rect means no clipping
-        private int _scissorRectangleRounding;
+        private Rectangle _clipRectangle = Rectangle.Empty; //Empty(specifically of Zero Size) scissor rect means no clipping
+        private int _clipRectangleRounding;
     }
 }
