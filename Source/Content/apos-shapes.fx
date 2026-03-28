@@ -511,7 +511,6 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
 
     float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
-
     result.rgb *= result.a;
 
     return result;
