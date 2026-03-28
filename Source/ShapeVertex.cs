@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, Rectangle clipRect = default, int clipRounding = 0) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -25,6 +25,9 @@ namespace Apos.Shapes {
             Meta2 = new Vector4(pixelSize, aaSize, rounded, Pair(Pair((int)fill.S, (int)fill.RS), Pair((int)border.S, (int)border.RS)));
             Meta3 = new Vector4(a, b, c, d);
             Meta4 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
+            float maxRadius = MathF.Min(clipRect.Width, clipRect.Height) * 0.5f;
+            float ratio = maxRadius > 0f ? Math.Clamp(clipRounding, 0f, maxRadius) / maxRadius : 0f;
+            ClipRectangle = new Vector4(clipRect.X + ratio, clipRect.Y, clipRect.Width, clipRect.Height);
         }
 
         public Vector3 Position;
@@ -37,6 +40,7 @@ namespace Apos.Shapes {
         public Vector4 Meta2;
         public Vector4 Meta3;
         public Vector4 Meta4;
+        public Vector4 ClipRectangle;
         public static readonly VertexDeclaration VertexDeclaration;
 
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
@@ -71,7 +75,8 @@ namespace Apos.Shapes {
                 left.Meta1 == right.Meta1 &&
                 left.Meta2 == right.Meta2 &&
                 left.Meta3 == right.Meta3 &&
-                left.Meta4 == right.Meta4;
+                left.Meta4 == right.Meta4 &&
+                left.ClipRectangle == right.ClipRectangle;
         }
 
         public static bool operator !=(VertexShape left, VertexShape right) {
@@ -101,6 +106,7 @@ namespace Apos.Shapes {
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 6),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 8),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 9),
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }
@@ -125,6 +131,7 @@ namespace Apos.Shapes {
             [VertexElementFormat.NormalizedShort4] = 8,
             [VertexElementFormat.HalfVector2] = 4,
             [VertexElementFormat.HalfVector4] = 8,
+            [VertexElementFormat.HalfVector4] = 8,
         };
 
         private static Vector4 PairColors(Color a, Color b) {
@@ -141,7 +148,8 @@ namespace Apos.Shapes {
             if (f2 < f1) {
                 a = f2;
                 b = f1;
-            } else {
+            }
+            else {
                 a = f1;
                 b = f2 - f1;
             }

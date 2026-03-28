@@ -24,6 +24,7 @@ struct VertexInput {
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
     float4 Meta4 : TEXCOORD8;
+    float4 ClipRectangle : TEXCOORD9;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
@@ -36,6 +37,7 @@ struct PixelInput {
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
     float4 Meta4 : TEXCOORD8;
+    float4 ClipRectangle : TEXCOORD9;
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
@@ -434,9 +436,26 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
     output.Meta4 = v.Meta4;
+    output.ClipRectangle = v.ClipRectangle;
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
+    float clipRatio = frac(p.ClipRectangle.x);
+    float2 clipPos = float2(floor(p.ClipRectangle.x), p.ClipRectangle.y);
+    float2 clipSize = p.ClipRectangle.zw;
+    float clipRadius = clipRatio * min(clipSize.x, clipSize.y) * 0.5;
+
+    float2 center = clipPos + clipSize * 0.5;
+    float2 q = abs(p.Position.xy - center) - clipSize * 0.5 + clipRadius;
+    float sdf = min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - clipRadius;
+
+    float clipMask = 1.0 - step(0.0, sdf);
+    float hasClip = sign(clipSize.x) * sign(clipSize.y);
+    clipMask = lerp(1.0, clipMask, hasClip);
+    
+    if (clipMask < 0.5f)
+        return float4(0, 0, 0, 0);
+    
     float ps = p.Meta2.x;
     float aaSize = ps * p.Meta2.y;
     float sdfSize = p.Meta1.z;
@@ -492,6 +511,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
 
     float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
+
     result.rgb *= result.a;
 
     return result;
