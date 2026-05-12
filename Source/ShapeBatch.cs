@@ -106,19 +106,21 @@ namespace Apos.Shapes {
             DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, rotation, aaSize);
         }
 
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            rounded = MathF.Min(MathF.Min(rounded, size.X / 2f), size.Y / 2f);
+            float maxR = MathF.Min(size.X, size.Y) / 2f;
+            float rTL = MathHelper.Clamp(cornerRadii.TopLeft,     0f, maxR);
+            float rTR = MathHelper.Clamp(cornerRadii.TopRight,    0f, maxR);
+            float rBR = MathHelper.Clamp(cornerRadii.BottomRight, 0f, maxR);
+            float rBL = MathHelper.Clamp(cornerRadii.BottomLeft,  0f, maxR);
 
             float aaOffset = _pixelSize * aaSize;
             Vector2 xy1 = xy - new Vector2(aaOffset); // Account for AA.
             Vector2 size1 = size + new Vector2(aaOffset * 2f); // Account for AA.
             Vector2 half = size / 2f;
             Vector2 half1 = half + new Vector2(aaOffset); // Account for AA.
-
-            half -= new Vector2(rounded);
 
             var topLeft = xy1;
             var topRight = xy1 + new Vector2(size1.X, 0);
@@ -135,35 +137,65 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, xy + half, -half, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
+            // Shader Meta2 packs (TR, BR, TL, BL) to match RoundBoxSDF's quadrant selector.
+            float rA = rTR;
+            float rB = rBR;
+            float rC = rTL;
+            float rD = rBL;
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
+        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, fill, border, thickness, new CornerRadii(rounded), rotation, aaSize);
+        }
         public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        }
+        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Color border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, cornerRadii, rotation, aaSize);
         }
         public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
         }
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, cornerRadii, rotation, aaSize);
+        }
         public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        }
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Color border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, cornerRadii, rotation, aaSize);
         }
         public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, g, g, 0f, rounded, rotation, aaSize);
         }
+        public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, g, g, 0f, cornerRadii, rotation, aaSize);
+        }
         public void FillRectangle(Vector2 xy, Vector2 size, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, c, c, 0f, rounded, rotation, aaSize);
+        }
+        public void FillRectangle(Vector2 xy, Vector2 size, Color c, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, c, c, 0f, cornerRadii, rotation, aaSize);
         }
         public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, Color.Transparent, g, thickness, rounded, rotation, aaSize);
         }
+        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, Color.Transparent, g, thickness, cornerRadii, rotation, aaSize);
+        }
         public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded, rotation, aaSize);
+        }
+        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+            DrawRectangle(xy, size, Color.Transparent, c, thickness, cornerRadii, rotation, aaSize);
         }
 
         public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {

@@ -45,6 +45,12 @@ float BoxSDF(float2 p, float2 b) {
     float2 d = abs(p) - b;
     return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
 }
+float RoundBoxSDF(float2 p, float2 b, float4 r) {
+    r.xy = (p.x > 0.0) ? r.xy : r.zw;
+    r.x  = (p.y > 0.0) ? r.y  : r.x;
+    float2 q = abs(p) - b + r.x;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
+}
 float SegmentSDF(float2 p, float2 a, float2 b) {
     float2 ba = b - a;
     float2 pa = p - a;
@@ -453,7 +459,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     if (shape < 0.5) {
         d = CircleSDF(p.TexCoord.xy, sdfSize);
     } else if (shape < 1.5) {
-        d = BoxSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
+        d = RoundBoxSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w), p.Meta2);
     } else if (shape < 2.5) {
         d = SegmentSDF(p.TexCoord.xy, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
     } else if (shape < 3.5) {
