@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, Vector2 clipXY, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -24,6 +24,7 @@ namespace Apos.Shapes {
             Meta1 = new Vector4(thickness, pixelSize * aaSize, sdfSize, height);
             Meta2 = new Vector4(a, b, c, d);
             Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
+            ClipRect = new Vector4(clipXY, 0f, 0f);
         }
 
         public Vector3 Position;
@@ -35,12 +36,13 @@ namespace Apos.Shapes {
         public Vector4 Meta1;
         public Vector4 Meta2;
         public Vector4 Meta3;
+        public Vector4 ClipRect;
         public static readonly VertexDeclaration VertexDeclaration;
 
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
 
         public override readonly int GetHashCode() {
-            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3));
+            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, ClipRect));
         }
 
         public override readonly string ToString() {
@@ -68,7 +70,8 @@ namespace Apos.Shapes {
                 left.BorderCoord == right.BorderCoord &&
                 left.Meta1 == right.Meta1 &&
                 left.Meta2 == right.Meta2 &&
-                left.Meta3 == right.Meta3;
+                left.Meta3 == right.Meta3 &&
+                left.ClipRect == right.ClipRect;
         }
 
         public static bool operator !=(VertexShape left, VertexShape right) {
@@ -110,7 +113,8 @@ namespace Apos.Shapes {
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 4),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 5),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 6),
-                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7)
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 8)
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }

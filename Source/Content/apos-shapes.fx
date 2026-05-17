@@ -23,6 +23,7 @@ struct VertexInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
+    float4 ClipRect : TEXCOORD8;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
@@ -34,7 +35,8 @@ struct PixelInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
-    float4 Pos : TEXCOORD8;
+    float4 ClipRect : TEXCOORD8;
+    float4 Pos : TEXCOORD9;
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
@@ -438,9 +440,11 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta1 = v.Meta1;
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
+    output.ClipRect = v.ClipRect;
     output.Pos = v.Position;
     return output;
 }
+
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float lineSize = p.Meta1.x;
     float aaSize = p.Meta1.y;
@@ -454,6 +458,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     float4 border1 = float4(Unpair(p.Border.x), Unpair(p.Border.y)) / 255.0;
     float4 border2 = float4(Unpair(p.Border.z), Unpair(p.Border.w)) / 255.0;
+
+    float clipD = BoxSDF(p.ClipRect.xy, float2(1.0, 1.0));
+    if (clipD > 0.0) {
+        discard;
+    }
 
     float d;
     if (shape < 0.5) {
