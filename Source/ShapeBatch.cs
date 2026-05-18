@@ -84,23 +84,8 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawCircle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize);
-        }
-        public void DrawCircle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rotation, aaSize);
-        }
-        public void DrawCircle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize);
-        }
-        public void FillCircle(Vector2 center, float radius, Color c, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, c, c, 0f, rotation, aaSize);
-        }
         public void FillCircle(Vector2 center, float radius, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawCircle(center, radius, g, g, 0f, rotation, aaSize);
-        }
-        public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, Color.Transparent, c, thickness, rotation, aaSize);
         }
         public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
             DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, rotation, aaSize);
