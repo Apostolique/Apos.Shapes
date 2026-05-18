@@ -55,5 +55,9 @@ namespace Apos.Shapes {
             Sine = 3,
             // Clamp = 4
         }
+
+        public static implicit operator Gradient(Color c) {
+            return new Gradient(Vector2.Zero, c, Vector2.Zero, c, Shape.None);
+        }
     }
 }

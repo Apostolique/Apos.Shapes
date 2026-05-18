@@ -32,5 +32,9 @@ namespace Apos.Shapes {
             BottomRight = bottomRight;
             BottomLeft = bottomLeft;
         }
+
+        public static implicit operator CornerRadii(float value) {
+            return new CornerRadii(value);
+        }
     }
 }

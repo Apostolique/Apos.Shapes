@@ -151,50 +151,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, fill, border, thickness, new CornerRadii(rounded), rotation, aaSize);
-        }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
-        }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Color border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, cornerRadii, rotation, aaSize);
-        }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
-        }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, cornerRadii, rotation, aaSize);
-        }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
-        }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Color border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, cornerRadii, rotation, aaSize);
-        }
-        public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, g, g, 0f, rounded, rotation, aaSize);
-        }
-        public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+        public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, g, g, 0f, cornerRadii, rotation, aaSize);
         }
-        public void FillRectangle(Vector2 xy, Vector2 size, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, c, c, 0f, rounded, rotation, aaSize);
-        }
-        public void FillRectangle(Vector2 xy, Vector2 size, Color c, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, c, c, 0f, cornerRadii, rotation, aaSize);
-        }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, Color.Transparent, g, thickness, rounded, rotation, aaSize);
-        }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, Color.Transparent, g, thickness, cornerRadii, rotation, aaSize);
-        }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded, rotation, aaSize);
-        }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, Color.Transparent, c, thickness, cornerRadii, rotation, aaSize);
         }
 
         public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
@@ -231,26 +192,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
-        }
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Color fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, aaSize);
-        }
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Color fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
-        }
         public void FillLine(Vector2 a, Vector2 b, float radius, Gradient g, float aaSize = 1.5f) {
             DrawLine(a, b, radius, g, g, 0f, aaSize);
         }
-        public void FillLine(Vector2 a, Vector2 b, float radius, Color c, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, c, c, 0f, aaSize);
-        }
         public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
             DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize);
-        }
-        public void BorderLine(Vector2 a, Vector2 b, float radius, Color c, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, Color.Transparent, c, thickness, aaSize);
         }
 
         public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
@@ -290,26 +236,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
-        }
-        public void DrawHexagon(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
-        }
-        public void DrawHexagon(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
-        }
         public void FillHexagon(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawHexagon(center, radius, g, g, 0f, rounded, rotation, aaSize);
         }
-        public void FillHexagon(Vector2 center, float radius, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, c, c, 0f, rounded, rotation, aaSize);
-        }
         public void BorderHexagon(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawHexagon(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
-        }
-        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, Color.Transparent, c, thickness, rounded, rotation, aaSize);
         }
 
         public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
@@ -354,26 +285,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
-        }
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
-        }
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
-        }
         public void FillEquilateralTriangle(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEquilateralTriangle(center, radius, g, g, 0f, rounded, rotation, aaSize);
         }
-        public void FillEquilateralTriangle(Vector2 center, float radius, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, c, c, 0f, rounded, rotation, aaSize);
-        }
         public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
-        }
-        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded, rotation, aaSize);
         }
 
         public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
@@ -448,26 +364,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, aaSize);
-        }
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, aaSize);
-        }
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color fill, Color border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, aaSize);
-        }
         public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float rounded = 0f, float aaSize = 1.5f) {
             DrawTriangle(a, b, c, g, g, 0f, rounded, aaSize);
         }
-        public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, c1, c1, 0f, rounded, aaSize);
-        }
         public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
             DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize);
-        }
-        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, Color.Transparent, c1, thickness, rounded, aaSize);
         }
 
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
@@ -501,26 +402,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, radius1, radius2, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize);
-        }
-        public void DrawEllipse(Vector2 center, float radius1, float radius2, Color fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, radius1, radius2, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rotation, aaSize);
-        }
-        public void DrawEllipse(Vector2 center, float radius1, float radius2, Color fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, radius1, radius2, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize);
-        }
         public void FillEllipse(Vector2 center, float width, float height, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawEllipse(center, width, height, g, g, 0f, rotation, aaSize);
         }
-        public void FillEllipse(Vector2 center, float width, float height, Color c, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, width, height, c, c, 0f, rotation, aaSize);
-        }
         public void BorderEllipse(Vector2 center, float width, float height, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize);
-        }
-        public void BorderEllipse(Vector2 center, float width, float height, Color c, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, width, height, Color.Transparent, c, thickness, rotation, aaSize);
         }
 
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
@@ -561,26 +447,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
-        }
-        public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, aaSize);
-        }
-        public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
-        }
         public void FillArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f) {
             DrawArc(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize);
         }
-        public void FillArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, c, c, 0f, aaSize);
-        }
         public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
             DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize);
-        }
-        public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float thickness = 1f, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, c, thickness, aaSize);
         }
 
         public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
@@ -622,26 +493,11 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
-        }
-        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, aaSize);
-        }
-        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
-        }
         public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f) {
             DrawRing(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize);
         }
-        public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, c, c, 0f, aaSize);
-        }
         public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
             DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize);
-        }
-        public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Color c, float thickness = 1f, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, c, thickness, aaSize);
         }
 
         public void Draw(Texture2D texture, Matrix3x2 world, Matrix3x2? source = null, Color? mask = null) {
