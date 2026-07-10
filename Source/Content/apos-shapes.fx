@@ -413,10 +413,7 @@ float2 Unpair(float n) {
     float2 result;
 
     float f1 = floor(sqrt(n));
-    // A perfect square's sqrt can land just below the integer on some GL drivers
-    // (macOS returns 254.9999... for sqrt(65025)), so floor() drops a whole step and a
-    // decoded byte that should be 0 comes back as ~255. Nudge f1 back up when (f1+1)^2
-    // still fits within n. Fixes filled shapes rendering with a wrong channel forced high.
+
     if ((f1 + 1.0) * (f1 + 1.0) <= n) {
         f1 += 1.0;
     }
