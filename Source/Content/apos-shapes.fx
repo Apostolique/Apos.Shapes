@@ -413,6 +413,10 @@ float2 Unpair(float n) {
     float2 result;
 
     float f1 = floor(sqrt(n));
+
+    if ((f1 + 1.0) * (f1 + 1.0) <= n) {
+        f1 += 1.0;
+    }
     float f2 = n - f1 * f1;
     if (f2 < f1) {
         result.x = f2;
