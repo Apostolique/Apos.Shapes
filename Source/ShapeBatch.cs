@@ -28,6 +28,8 @@ namespace Apos.Shapes {
             _indexBuffer = new IndexBuffer(_graphicsDevice, IndexElementSize.ThirtyTwoBits, _indices.Length, BufferUsage.WriteOnly);
             _indexBuffer.SetData(_indices);
 
+            _viewProjection = _effect.Parameters["view_projection"];
+
             _fsr = new FontStashRenderer(graphicsDevice, this);
         }
 
@@ -602,8 +604,25 @@ namespace Apos.Shapes {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
 
-        public void SetClipRect(RectangleF? clipRect) {
-            _clipRect = clipRect;
+        /// <summary>
+        /// Clips upcoming draws to the given rectangle without breaking the batch. Pass null to stop clipping.
+        /// </summary>
+        /// <param name="clipRect">The clip bounds in the same coordinate space as the shapes.</param>
+        /// <param name="rounding">Corner radius of the clip rectangle. A fully rounded square gives a circle mask.</param>
+        /// <param name="rotation">Rotation of the clip rectangle around its center in radians.</param>
+        /// <param name="aaSize">Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</param>
+        public void SetClipRect(RectangleF? clipRect, float rounding = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            if (clipRect == null) {
+                _hasClip = false;
+                return;
+            }
+            RectangleF r = clipRect.Value;
+            _hasClip = true;
+            _clipCenter = new Vector2(r.X + r.Width / 2f, r.Y + r.Height / 2f);
+            _clipHalf = new Vector2(r.Width / 2f, r.Height / 2f);
+            _clipRounding = MathHelper.Clamp(rounding, 0f, MathF.Min(_clipHalf.X, _clipHalf.Y));
+            _clipU = rotation != 0f ? new Vector2(MathF.Cos(rotation), MathF.Sin(rotation)) : Vector2.UnitX;
+            _clipAaSize = MathF.Max(aaSize, 0f);
         }
 
         private void DrawStringTexture(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
@@ -641,7 +660,7 @@ namespace Apos.Shapes {
         private void Flush() {
             if (_triangleCount == 0) return;
 
-            _effect.Parameters["view_projection"].SetValue(_view * _projection);
+            _viewProjection.SetValue(_view * _projection);
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -657,7 +676,7 @@ namespace Apos.Shapes {
                 _indicesChanged = false;
             }
 
-            _vertexBuffer.SetData(_vertices);
+            _vertexBuffer.SetData(_vertices, 0, _vertexCount, SetDataOptions.Discard);
             _graphicsDevice.SetVertexBuffer(_vertexBuffer);
 
             _graphicsDevice.Indices = _indexBuffer;
@@ -680,13 +699,8 @@ namespace Apos.Shapes {
             _indexCount = 0;
         }
         private float ScreenToWorldScale() {
-            return Vector2.Distance(ScreenToWorld(0f, 0f), ScreenToWorld(1f, 0f));
-        }
-        private Vector2 ScreenToWorld(float x, float y) {
-            return ScreenToWorld(new Vector2(x, y));
-        }
-        private Vector2 ScreenToWorld(Vector2 xy) {
-            return Vector2.Transform(xy, Matrix.Invert(_view));
+            Matrix inverseView = Matrix.Invert(_view);
+            return Vector2.Distance(Vector2.Transform(new Vector2(0f, 0f), inverseView), Vector2.Transform(new Vector2(1f, 0f), inverseView));
         }
 
         private static Vector2 Slide(Vector2 a, Vector2 b, float distance) {
@@ -723,18 +737,14 @@ namespace Apos.Shapes {
             return new Vector2(xy.X / texture.Width, xy.Y / texture.Height);
         }
 
-        private Vector2 GetClipSpace(Vector2 xy) {
-            if (_clipRect == null) return new Vector2(0.0f);
+        private ClipSpace GetClipSpace(Vector2 xy) {
+            if (!_hasClip) return ClipSpace.None;
 
-            float halfWidth = _clipRect.Value.Width / 2f;
-            float halfHeight = _clipRect.Value.Height / 2f;
-            float centerX = _clipRect.Value.X + halfWidth;
-            float centerY = _clipRect.Value.Y + halfHeight;
+            Vector2 d = xy - _clipCenter;
+            float lx = d.X * _clipU.X + d.Y * _clipU.Y;
+            float ly = d.Y * _clipU.X - d.X * _clipU.Y;
 
-            return new Vector2(
-                (xy.X - centerX) / halfWidth,
-                (xy.Y - centerY) / halfHeight
-            );
+            return new ClipSpace(new Vector4(lx + _clipHalf.X, ly + _clipHalf.Y, _clipHalf.X - lx, _clipHalf.Y - ly), _clipRounding, _clipAaSize * _pixelSize);
         }
 
         private static bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
@@ -793,6 +803,7 @@ namespace Apos.Shapes {
         private Matrix _view;
         private Matrix _projection;
         private readonly Effect _effect;
+        private readonly EffectParameter _viewProjection;
 
         private float _pixelSize = 1f;
 
@@ -802,6 +813,11 @@ namespace Apos.Shapes {
 
         private readonly FontStashRenderer _fsr;
 
-        private RectangleF? _clipRect = null;
+        private bool _hasClip = false;
+        private Vector2 _clipCenter;
+        private Vector2 _clipHalf;
+        private Vector2 _clipU = Vector2.UnitX;
+        private float _clipRounding;
+        private float _clipAaSize;
     }
 }

@@ -23,7 +23,8 @@ struct VertexInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
-    float4 ClipRect : TEXCOORD8;
+    float4 ClipDist : TEXCOORD8;
+    float2 ClipRoundAA : TEXCOORD9;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
@@ -35,17 +36,13 @@ struct PixelInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
-    float4 ClipRect : TEXCOORD8;
-    float4 Pos : TEXCOORD9;
+    float4 Pos : TEXCOORD8; // xy: world position, zw: left/top clip distances.
+    float4 ClipMeta : TEXCOORD9; // xy: right/bottom clip distances, z: clip rounding, w: clip AA size.
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
 float CircleSDF(float2 p, float r) {
     return length(p) - r;
-}
-float BoxSDF(float2 p, float2 b) {
-    float2 d = abs(p) - b;
-    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
 }
 float RoundBoxSDF(float2 p, float2 b, float4 r) {
     r.xy = (p.x > 0.0) ? r.xy : r.zw;
@@ -226,32 +223,8 @@ float RingSDF(float2 p, float2 n, float r, float th) {
     return max(abs(length(p) - r) - th * 0.5, length(float2(p.x, max(0.0, abs(r - p.y) - th * 0.5))) * sign(p.x));
 }
 
-float GammaToLinear(float c) {
-    return c >= 0.04045 ? pow(abs((c + 0.055) / 1.055), 2.4) : c / 12.92;
-}
 float LinearToGamma(float c) {
     return c >= 0.0031308 ? pow(abs(c), 1.0 / 2.4) * 1.055 - 0.055 : 12.92 * c;
-}
-
-float4 RgbToOklab(float4 c) {
-    c.r = GammaToLinear(c.r);
-    c.g = GammaToLinear(c.g);
-    c.b = GammaToLinear(c.b);
-
-    float l = 0.4122214708f * c.r + 0.5363325363f * c.g + 0.0514459929f * c.b;
-    float m = 0.2119034982f * c.r + 0.6806995451f * c.g + 0.1073969566f * c.b;
-    float s = 0.0883024619f * c.r + 0.2817188376f * c.g + 0.6299787005f * c.b;
-
-    float l_ = pow(abs(l), 1.0 / 3.0);
-    float m_ = pow(abs(m), 1.0 / 3.0);
-    float s_ = pow(abs(s), 1.0 / 3.0);
-
-    return float4(
-        0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_,
-        1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_,
-        0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_,
-        c.a
-    );
 }
 
 float4 OkLabToRgb(float4 c) {
@@ -416,6 +389,8 @@ float2 Unpair(float n) {
 
     if ((f1 + 1.0) * (f1 + 1.0) <= n) {
         f1 += 1.0;
+    } else if (f1 * f1 > n) {
+        f1 -= 1.0;
     }
     float f2 = n - f1 * f1;
     if (f2 < f1) {
@@ -428,8 +403,14 @@ float2 Unpair(float n) {
     return result;
 }
 
-float Antialias(float d, float size) {
-    return lerp(1.0, 0.0, smoothstep(0.0, size, d));
+// Colors are packed as two 11 bit channels per float.
+float4 UnpackRgb(float2 c) {
+    return float4(Unpair(c.x), Unpair(c.y)) / 2047.0;
+}
+float4 UnpackOklab(float2 c) {
+    float4 result = float4(Unpair(c.x), Unpair(c.y)) / 2047.0;
+    result.yz = result.yz * 0.8 - 0.4;
+    return result;
 }
 
 PixelInput SpriteVertexShader(VertexInput v) {
@@ -444,8 +425,8 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta1 = v.Meta1;
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
-    output.ClipRect = v.ClipRect;
-    output.Pos = v.Position;
+    output.Pos = float4(v.Position.xy, v.ClipDist.xy);
+    output.ClipMeta = float4(v.ClipDist.zw, v.ClipRoundAA);
     return output;
 }
 
@@ -457,15 +438,19 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float2 meta = Unpair(p.TexCoord.w);
     float shape = meta.x;
 
-    float4 fill1 = float4(Unpair(p.Fill.x), Unpair(p.Fill.y)) / 255.0;
-    float4 fill2 = float4(Unpair(p.Fill.z), Unpair(p.Fill.w)) / 255.0;
-
-    float4 border1 = float4(Unpair(p.Border.x), Unpair(p.Border.y)) / 255.0;
-    float4 border2 = float4(Unpair(p.Border.z), Unpair(p.Border.w)) / 255.0;
-
-    float clipD = BoxSDF(p.ClipRect.xy, float2(1.0, 1.0));
-    if (clipD > 0.0) {
+    // Rounded box SDF from the interpolated edge distances.
+    float2 clipQ = p.ClipMeta.z - min(p.Pos.zw, p.ClipMeta.xy);
+    float clipD = length(max(clipQ, 0.0)) + min(max(clipQ.x, clipQ.y), 0.0) - p.ClipMeta.z;
+    if (clipD >= p.ClipMeta.w) {
         discard;
+    }
+    float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / p.ClipMeta.w));
+
+    if (shape >= 8.5) {
+        if (shape < 9.5) {
+            return tex2D(TextureSampler, p.TexCoord.xy) * UnpackRgb(p.Fill.xy) * clipAlpha;
+        }
+        return tex2D(FontSampler, p.TexCoord.xy) * UnpackRgb(p.Fill.xy) * clipAlpha;
     }
 
     float d;
@@ -485,12 +470,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = EllipseSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
     } else if (shape < 7.5) {
         d = ArcSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
-    } else if (shape < 8.5) {
+    } else {
         d = RingSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
-    } else if (shape < 9.5) {
-        return tex2D(TextureSampler, p.TexCoord.xy) * fill1;
-    } else if (shape < 10.5) {
-        return tex2D(FontSampler, p.TexCoord.xy) * fill1;
     }
 
     d -= p.TexCoord.z;
@@ -499,14 +480,14 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float2 fillStyles = Unpair(gradientStyles.x);
     float2 borderStyles = Unpair(gradientStyles.y);
 
-    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy));
-    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw));
-    bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
+    float4 fc = lerp(UnpackOklab(p.Fill.xy), UnpackOklab(p.Fill.zw), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy));
+    float4 bc = lerp(UnpackOklab(p.Border.xy), UnpackOklab(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw));
+    bc.a *= 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
 
-    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
+    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize))));
     result.rgb *= result.a;
 
-    return result;
+    return result * clipAlpha;
 
     // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
     // d = abs(d + lineSize) - lineSize;

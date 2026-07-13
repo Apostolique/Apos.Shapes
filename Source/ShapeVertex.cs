@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, Vector2 clipXY, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, ClipSpace clip, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -15,8 +15,14 @@ namespace Apos.Shapes {
 
             Position = position;
             TextureCoordinate = new Vector4(textureCoordinate, rounded, Pair((int)shape, Pair(Pair((int)fill.S, (int)fill.RS), Pair((int)border.S, (int)border.RS))));
-            Fill = PairColors(fill.AC, fill.BC);
-            Border = PairColors(border.AC, border.BC);
+            if (shape == Shape.Texture || shape == Shape.String) {
+                // Texture masks are multiplied in RGBA space, everything else is blended in Oklab.
+                Fill = PairColorsRgb(fill.AC, fill.BC);
+                Border = PairColorsRgb(border.AC, border.BC);
+            } else {
+                Fill = PairColorsOklab(fill.AC, fill.BC);
+                Border = PairColorsOklab(border.AC, border.BC);
+            }
 
             FillCoord = new Vector4(fill.AXY.X, fill.AXY.Y, fill.BXY.X, fill.BXY.Y);
             BorderCoord = new Vector4(border.AXY.X, border.AXY.Y, border.BXY.X, border.BXY.Y);
@@ -24,7 +30,9 @@ namespace Apos.Shapes {
             Meta1 = new Vector4(thickness, pixelSize * aaSize, sdfSize, height);
             Meta2 = new Vector4(a, b, c, d);
             Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
-            ClipRect = new Vector4(clipXY, 0f, 0f);
+            ClipDistances = clip.Distances;
+            ClipRounding = clip.Rounding;
+            ClipAaSize = clip.AaSize;
         }
 
         public Vector3 Position;
@@ -36,13 +44,15 @@ namespace Apos.Shapes {
         public Vector4 Meta1;
         public Vector4 Meta2;
         public Vector4 Meta3;
-        public Vector4 ClipRect;
+        public Vector4 ClipDistances;
+        public float ClipRounding;
+        public float ClipAaSize;
         public static readonly VertexDeclaration VertexDeclaration;
 
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
 
         public override readonly int GetHashCode() {
-            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, ClipRect));
+            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, ClipDistances, ClipRounding, ClipAaSize));
         }
 
         public override readonly string ToString() {
@@ -71,7 +81,9 @@ namespace Apos.Shapes {
                 left.Meta1 == right.Meta1 &&
                 left.Meta2 == right.Meta2 &&
                 left.Meta3 == right.Meta3 &&
-                left.ClipRect == right.ClipRect;
+                left.ClipDistances == right.ClipDistances &&
+                left.ClipRounding == right.ClipRounding &&
+                left.ClipAaSize == right.ClipAaSize;
         }
 
         public static bool operator !=(VertexShape left, VertexShape right) {
@@ -114,7 +126,8 @@ namespace Apos.Shapes {
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 5),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 6),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7),
-                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 8)
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 8),
+                GetVertexElement(ref offset, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 9)
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }
@@ -141,8 +154,60 @@ namespace Apos.Shapes {
             [VertexElementFormat.HalfVector4] = 8,
         };
 
-        private static Vector4 PairColors(Color a, Color b) {
-            return new Vector4(Pair(a.R, a.G), Pair(a.B, a.A), Pair(b.R, b.G), Pair(b.B, b.A));
+        // Colors are packed as two 11 bit channels per float. 11 bits keeps Pair() results
+        // exactly representable in a float (max 2^22 - 1) while exceeding 8 bit sRGB precision.
+        private const int _channelMax = 2047;
+
+        private static Vector4 PairColorsRgb(Color a, Color b) {
+            return new Vector4(
+                Pair(QuantizeByte(a.R), QuantizeByte(a.G)), Pair(QuantizeByte(a.B), QuantizeByte(a.A)),
+                Pair(QuantizeByte(b.R), QuantizeByte(b.G)), Pair(QuantizeByte(b.B), QuantizeByte(b.A)));
+        }
+        private static Vector4 PairColorsOklab(Color a, Color b) {
+            Vector2 pa = PackOklab(a);
+            Vector2 pb = PackOklab(b);
+            return new Vector4(pa.X, pa.Y, pb.X, pb.Y);
+        }
+
+        private static int QuantizeByte(byte v) {
+            return (v * _channelMax + 128) / 255;
+        }
+        private static int QuantizeUnit(float v) {
+            return (int)(Math.Clamp(v, 0f, 1f) * _channelMax + 0.5f);
+        }
+
+        private static readonly Dictionary<uint, Vector2> _oklabCache = new();
+        private static Vector2 PackOklab(Color c) {
+            if (_oklabCache.TryGetValue(c.PackedValue, out Vector2 packed)) return packed;
+
+            float r = _srgbToLinear[c.R];
+            float g = _srgbToLinear[c.G];
+            float b = _srgbToLinear[c.B];
+
+            float l = MathF.Cbrt(0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b);
+            float m = MathF.Cbrt(0.2119034982f * r + 0.6806995451f * g + 0.1073969566f * b);
+            float s = MathF.Cbrt(0.0883024619f * r + 0.2817188376f * g + 0.6299787005f * b);
+
+            float okL = 0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s;
+            float okA = 1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s;
+            float okB = 0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s;
+
+            // a and b are remapped from [-0.4, 0.4] which covers the whole sRGB gamut.
+            packed = new Vector2(
+                Pair(QuantizeUnit(okL), QuantizeUnit(okA * 1.25f + 0.5f)),
+                Pair(QuantizeUnit(okB * 1.25f + 0.5f), QuantizeByte(c.A)));
+            _oklabCache[c.PackedValue] = packed;
+            return packed;
+        }
+
+        private static readonly float[] _srgbToLinear = CreateSrgbToLinear();
+        private static float[] CreateSrgbToLinear() {
+            var table = new float[256];
+            for (int i = 0; i < 256; i++) {
+                float c = i / 255f;
+                table[i] = c >= 0.04045f ? MathF.Pow((c + 0.055f) / 1.055f, 2.4f) : c / 12.92f;
+            }
+            return table;
         }
 
         private static int Pair(int a, int b) {
