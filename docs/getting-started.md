@@ -66,3 +66,8 @@ protected override void Draw(GameTime gameTime) {
 ```
 
 Everything that is drawn within the `Begin` and `End` calls will be batched together.
+
+## Follow up
+
+[Shapes](./shapes.md), a page that lists every shape that the ShapeBatch can draw.
+

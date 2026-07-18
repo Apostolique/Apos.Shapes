@@ -12,6 +12,11 @@ This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_dista
 ## Documentation
 
 * [Getting started](https://apostolique.github.io/Apos.Shapes/getting-started/)
+* [Shapes](https://apostolique.github.io/Apos.Shapes/shapes/)
+* [Gradients](https://apostolique.github.io/Apos.Shapes/gradients/)
+* [Clipping](https://apostolique.github.io/Apos.Shapes/clipping/)
+* [Text](https://apostolique.github.io/Apos.Shapes/text/)
+* [Textures](https://apostolique.github.io/Apos.Shapes/textures/)
 
 ## Build
 
