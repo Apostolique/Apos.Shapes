@@ -30,7 +30,6 @@ namespace GameProject {
         }
 
         protected override void LoadContent() {
-            _s = new SpriteBatch(GraphicsDevice);
             _sb = new ShapeBatch(GraphicsDevice, Content);
 
             InputHelper.Setup(this);
@@ -125,9 +124,9 @@ namespace GameProject {
 
             _sb.End();
 
-            _s.Begin();
-            _s.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 10), Color.White);
-            _s.End();
+            _sb.Begin();
+            _sb.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 10), Color.White);
+            _sb.End();
 
             base.Draw(gameTime);
         }
@@ -201,7 +200,6 @@ namespace GameProject {
         }
 
         GraphicsDeviceManager _graphics;
-        SpriteBatch _s;
         ShapeBatch _sb;
 
         FontSystem _fontSystem;
