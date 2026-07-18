@@ -12,7 +12,7 @@ namespace Apos.Shapes {
         public readonly Vector4 Distances;
         /// <summary>Corner radius of the clip rectangle.</summary>
         public readonly float Rounding;
-        /// <summary>Antialiasing band width of the clip edge in world units. 0 gives a hard scissor edge.</summary>
+        /// <summary>Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</summary>
         public readonly float AaSize;
 
         /// <summary>Far enough away that nothing gets clipped.</summary>

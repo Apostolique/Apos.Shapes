@@ -480,22 +480,46 @@ PixelInput SpriteVertexShader(VertexInput v) {
     return output;
 }
 
+// SDF values are true distances in world units, so the AA band only needs the
+// world-space footprint of one pixel. The footprint comes from derivatives of the
+// interpolated world position — exact per-triangle constants under affine views,
+// smooth and perspective-correct otherwise — never from derivatives of the SDF
+// alone, whose finite differences misfire in quads that straddle corner creases.
+// The screen-space SDF gradient picks the width within the footprint's singular
+// value range: direction-correct under anisotropy, and under uniform scale the
+// range collapses so corners stay as clean as a hardcoded pixel size.
+float2 PixelFootprint(float2 pos) {
+    float2 jx = ddx(pos);
+    float2 jy = ddy(pos);
+    float a = dot(jx, jx) + dot(jy, jy);
+    float det = abs(jx.x * jy.y - jx.y * jy.x);
+    float s = sqrt(max(a * a - 4.0 * det * det, 0.0));
+    float pixMax = sqrt(0.5 * (a + s));
+    return float2(det / max(pixMax, 1e-12), pixMax);
+}
+float PixelWidth(float d, float2 footprint) {
+    return clamp(length(float2(ddx(d), ddy(d))), footprint.x, footprint.y);
+}
+
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float lineSize = p.Meta1.x;
-    float aaSize = p.Meta1.y;
+    float aaPixels = p.Meta1.y;
     float sdfSize = p.Meta1.z;
 
     // Peel the packed meta apart field by field. Every intermediate stays an exact integer.
     float meta = p.TexCoord.w;
     float shape = DecodeDigit(meta, 16.0);
 
+    float2 footprint = PixelFootprint(p.Pos.xy);
+
     // Rounded box SDF from the interpolated edge distances.
     float2 clipQ = p.ClipMeta.z - min(p.Pos.zw, p.ClipMeta.xy);
     float clipD = length(max(clipQ, 0.0)) + min(max(clipQ.x, clipQ.y), 0.0) - p.ClipMeta.z;
-    if (clipD >= p.ClipMeta.w) {
+    float clipAa = PixelWidth(clipD, footprint) * p.ClipMeta.w;
+    if (clipD >= clipAa) {
         discard;
     }
-    float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / p.ClipMeta.w));
+    float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / clipAa));
 
     if (shape >= 8.5) {
         if (shape < 9.5) {
@@ -526,6 +550,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     }
 
     d -= p.TexCoord.z;
+
+    float aaSize = PixelWidth(d, footprint) * aaPixels;
 
     // Beyond the outer AA edge every branch below resolves to premultiplied zero.
     if (d >= aaSize) {

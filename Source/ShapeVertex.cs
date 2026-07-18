@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -39,7 +39,9 @@ namespace Apos.Shapes {
             FillCoord = new Vector4(fill.AXY.X, fill.AXY.Y, fill.BXY.X, fill.BXY.Y);
             BorderCoord = new Vector4(border.AXY.X, border.AXY.Y, border.BXY.X, border.BXY.Y);
 
-            Meta1 = new Vector4(thickness, pixelSize * aaSize, sdfSize, height);
+            // The AA width travels in pixels; the shader scales it by the per-pixel
+            // world footprint it derives from screen-space derivatives.
+            Meta1 = new Vector4(thickness, aaSize, sdfSize, height);
             Meta2 = new Vector4(a, b, c, d);
             Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
             ClipDistances = clip.Distances;

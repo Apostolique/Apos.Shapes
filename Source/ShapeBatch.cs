@@ -91,14 +91,20 @@ namespace Apos.Shapes {
                 _view = Matrix.Identity;
             }
 
+            Viewport viewport = _graphicsDevice.Viewport;
             if (projection != null) {
                 _projection = projection.Value;
             } else {
-                Viewport viewport = _graphicsDevice.Viewport;
                 _projection = Matrix.CreateOrthographicOffCenter(0, viewport.Width, viewport.Height, 0, 0, 1);
             }
 
-            _pixelSize = ScreenToWorldScale();
+            // Shapes live on the z = 0 plane, so the world→screen mapping only keeps a
+            // perspective term when x or y feeds into clip w. Affine projections have one
+            // pixel size everywhere; perspective ones resample it per draw call.
+            _worldToClip = _view * _projection;
+            _halfViewport = new Vector2(viewport.Width * 0.5f, viewport.Height * 0.5f);
+            _isPerspective = _worldToClip.M14 != 0f || _worldToClip.M24 != 0f;
+            _pixelSize = PixelSizeAt(Vector2.Zero);
 
             _blendState = blendState ?? BlendState.AlphaBlend;
             _samplerState = samplerState ?? SamplerState.LinearClamp;
@@ -106,6 +112,7 @@ namespace Apos.Shapes {
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
         public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            UpdatePixelSize(center, radius);
             float aaOffset = _pixelSize * aaSize;
 
             if (thickness > 0f && IsTransparent(fill)) {
@@ -135,10 +142,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomRight), aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomLeft), aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topRight), aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(bottomRight), aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(bottomLeft), aaSize: aaSize, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -160,6 +167,7 @@ namespace Apos.Shapes {
             float rBR = MathHelper.Clamp(cornerRadii.BottomRight, 0f, maxR);
             float rBL = MathHelper.Clamp(cornerRadii.BottomLeft,  0f, maxR);
 
+            UpdatePixelSize(xy + size / 2f, (size / 2f).Length());
             float aaOffset = _pixelSize * aaSize;
             Vector2 xy1 = xy - new Vector2(aaOffset); // Account for AA.
             Vector2 size1 = size + new Vector2(aaOffset * 2f); // Account for AA.
@@ -199,10 +207,10 @@ namespace Apos.Shapes {
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(topLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(topRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(bottomRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(bottomLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(bottomRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(bottomLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -221,6 +229,7 @@ namespace Apos.Shapes {
                 return;
             }
 
+            UpdatePixelSize(a, b, radius);
             float aaOffset = _pixelSize * aaSize;
 
             if (thickness > 0f && IsTransparent(fill)) {
@@ -264,10 +273,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, _pixelSize, GetClipSpace(topLeft), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, _pixelSize, GetClipSpace(topRight), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomRight), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomLeft), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topRight), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomRight), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomLeft), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -285,6 +294,7 @@ namespace Apos.Shapes {
 
             rounded = MathF.Min(rounded, radius);
 
+            UpdatePixelSize(center, 2f * radius / MathF.Sqrt(3f));
             float aaOffset = _pixelSize * aaSize;
             float radius1 = radius + aaOffset; // Account for AA.
             float width1 = 2f * radius / MathF.Sqrt(3f) + aaOffset; // Account for AA.
@@ -321,10 +331,10 @@ namespace Apos.Shapes {
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -342,6 +352,7 @@ namespace Apos.Shapes {
 
             rounded = MathF.Min(rounded, radius);
 
+            UpdatePixelSize(center, radius * 2f);
             float aaOffset = _pixelSize * aaSize;
             float height = radius * 3f;
 
@@ -388,10 +399,10 @@ namespace Apos.Shapes {
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -409,6 +420,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
+            UpdatePixelSize(a, b, c, 0f);
             float aaOffset = _pixelSize * aaSize;
             float winding = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
             if (winding > 0) {
@@ -487,10 +499,10 @@ namespace Apos.Shapes {
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(topLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(topRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(bottomRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(bottomLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(topLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(topRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(bottomRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(bottomLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -504,6 +516,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            UpdatePixelSize(center, MathF.Max(radius1, radius2));
             float aaOffset = _pixelSize * aaSize;
 
             if (thickness > 0f && IsTransparent(fill)) {
@@ -538,10 +551,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, _pixelSize, GetClipSpace(topLeft), radius2, aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, _pixelSize, GetClipSpace(topRight), radius2, aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, _pixelSize, GetClipSpace(bottomRight), radius2, aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, _pixelSize, GetClipSpace(bottomLeft), radius2, aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topRight), radius2, aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(bottomRight), radius2, aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(bottomLeft), radius2, aaSize: aaSize, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -563,6 +576,7 @@ namespace Apos.Shapes {
             float sin = MathF.Sin(angleSize);
             float cos = MathF.Cos(angleSize);
 
+            UpdatePixelSize(center, radius1 + radius2);
             float aaOffset = _pixelSize * aaSize;
             float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
 
@@ -593,10 +607,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, _pixelSize, GetClipSpace(bottomRight), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, _pixelSize, GetClipSpace(bottomLeft), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topLeft), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topRight), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(bottomRight), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(bottomLeft), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -619,6 +633,7 @@ namespace Apos.Shapes {
             float cos = MathF.Cos(angleSize);
             float sin = MathF.Sin(angleSize);
 
+            UpdatePixelSize(center, radius1 + radius2);
             float aaOffset = _pixelSize * aaSize;
             float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
 
@@ -650,10 +665,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, _pixelSize, GetClipSpace(bottomRight), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, _pixelSize, GetClipSpace(bottomLeft), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topLeft), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topRight), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(bottomRight), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(bottomLeft), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -699,10 +714,10 @@ namespace Apos.Shapes {
 
             Gradient g = new(Vector2.Zero, mask ?? Color.White, Vector2.Zero, mask ?? Color.White, Gradient.Shape.None);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), GetUV(texture, topLeft), VertexShape.Shape.Texture, g, g, 0f, 1f, _pixelSize, GetClipSpace(wTopLeft));
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(wTopRight.X, wTopRight.Y, 0f), GetUV(texture, topRight), VertexShape.Shape.Texture, g, g, 0f, 1f, _pixelSize, GetClipSpace(wTopRight));
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(wBottomRight.X, wBottomRight.Y, 0f), GetUV(texture, bottomRight), VertexShape.Shape.Texture, g, g, 0f, 1f, _pixelSize, GetClipSpace(wBottomRight));
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(wBottomLeft.X, wBottomLeft.Y, 0f), GetUV(texture, bottomLeft), VertexShape.Shape.Texture, g, g, 0f, 1f, _pixelSize, GetClipSpace(wBottomLeft));
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), GetUV(texture, topLeft), VertexShape.Shape.Texture, g, g, 0f, 1f, GetClipSpace(wTopLeft));
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(wTopRight.X, wTopRight.Y, 0f), GetUV(texture, topRight), VertexShape.Shape.Texture, g, g, 0f, 1f, GetClipSpace(wTopRight));
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(wBottomRight.X, wBottomRight.Y, 0f), GetUV(texture, bottomRight), VertexShape.Shape.Texture, g, g, 0f, 1f, GetClipSpace(wBottomRight));
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(wBottomLeft.X, wBottomLeft.Y, 0f), GetUV(texture, bottomLeft), VertexShape.Shape.Texture, g, g, 0f, 1f, GetClipSpace(wBottomLeft));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -818,10 +833,10 @@ namespace Apos.Shapes {
             Gradient gBottomRight = new(Vector2.Zero, bottomRight.Color, Vector2.Zero, bottomRight.Color, Gradient.Shape.None);
             Gradient gBottomLeft = new(Vector2.Zero, bottomLeft.Color, Vector2.Zero, bottomLeft.Color, Gradient.Shape.None);
 
-            _vertices[_vertexCount + 0] = new VertexShape(topLeft.Position, topLeft.TextureCoordinate, VertexShape.Shape.String, gTopLeft, gTopLeft, 0f, 1f, _pixelSize, GetClipSpace(new Vector2(topLeft.Position.X, topLeft.Position.Y)));
-            _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, VertexShape.Shape.String, gTopRight, gTopRight, 0f, 1f, _pixelSize, GetClipSpace(new Vector2(topRight.Position.X, topRight.Position.Y)));
-            _vertices[_vertexCount + 2] = new VertexShape(bottomRight.Position, bottomRight.TextureCoordinate, VertexShape.Shape.String, gBottomRight, gBottomRight, 0f, 1f, _pixelSize, GetClipSpace(new Vector2(bottomRight.Position.X, bottomRight.Position.Y)));
-            _vertices[_vertexCount + 3] = new VertexShape(bottomLeft.Position, bottomLeft.TextureCoordinate, VertexShape.Shape.String, gBottomLeft, gBottomLeft, 0f, 1f, _pixelSize, GetClipSpace(new Vector2(bottomLeft.Position.X, bottomLeft.Position.Y)));
+            _vertices[_vertexCount + 0] = new VertexShape(topLeft.Position, topLeft.TextureCoordinate, VertexShape.Shape.String, gTopLeft, gTopLeft, 0f, 1f, GetClipSpace(new Vector2(topLeft.Position.X, topLeft.Position.Y)));
+            _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, VertexShape.Shape.String, gTopRight, gTopRight, 0f, 1f, GetClipSpace(new Vector2(topRight.Position.X, topRight.Position.Y)));
+            _vertices[_vertexCount + 2] = new VertexShape(bottomRight.Position, bottomRight.TextureCoordinate, VertexShape.Shape.String, gBottomRight, gBottomRight, 0f, 1f, GetClipSpace(new Vector2(bottomRight.Position.X, bottomRight.Position.Y)));
+            _vertices[_vertexCount + 3] = new VertexShape(bottomLeft.Position, bottomLeft.TextureCoordinate, VertexShape.Shape.String, gBottomLeft, gBottomLeft, 0f, 1f, GetClipSpace(new Vector2(bottomLeft.Position.X, bottomLeft.Position.Y)));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -893,9 +908,55 @@ namespace Apos.Shapes {
             _vertexCount = 0;
             _indexCount = 0;
         }
-        private float ScreenToWorldScale() {
-            Matrix inverseView = Matrix.Invert(_view);
-            return Vector2.Distance(Vector2.Transform(new Vector2(0f, 0f), inverseView), Vector2.Transform(new Vector2(1f, 0f), inverseView));
+        // World units per pixel at a point on the z = 0 plane: the largest singular value
+        // of the screen→world Jacobian of the view, projection and viewport chain. It is a
+        // conservative bound used to grow quads around the AA band and to inset hollow
+        // holes; the shader derives the actual per-pixel AA width itself.
+        private float PixelSizeAt(Vector2 p) {
+            float cx = p.X * _worldToClip.M11 + p.Y * _worldToClip.M21 + _worldToClip.M41;
+            float cy = p.X * _worldToClip.M12 + p.Y * _worldToClip.M22 + _worldToClip.M42;
+            float cw = p.X * _worldToClip.M14 + p.Y * _worldToClip.M24 + _worldToClip.M44;
+            float iw2 = 1f / MathF.Max(cw * cw, 1e-12f);
+            // World→screen Jacobian. The screen y flip is dropped, only magnitudes matter.
+            float jxx = (_worldToClip.M11 * cw - cx * _worldToClip.M14) * iw2 * _halfViewport.X;
+            float jxy = (_worldToClip.M21 * cw - cx * _worldToClip.M24) * iw2 * _halfViewport.X;
+            float jyx = (_worldToClip.M12 * cw - cy * _worldToClip.M14) * iw2 * _halfViewport.Y;
+            float jyy = (_worldToClip.M22 * cw - cy * _worldToClip.M24) * iw2 * _halfViewport.Y;
+            float a = jxx * jxx + jxy * jxy + jyx * jyx + jyy * jyy;
+            float det = MathF.Abs(jxx * jyy - jxy * jyx);
+            if (det <= 1e-20f) return _pixelSize; // Degenerate view, keep the previous estimate.
+            float sMax = MathF.Sqrt(0.5f * (a + MathF.Sqrt(MathF.Max(a * a - 4f * det * det, 0f))));
+            return sMax / det; // 1 / σmin of world→screen = σmax of screen→world.
+        }
+
+        // Under perspective the pixel size varies across the plane, so each draw call
+        // resamples around its own shape and keeps the worst case for quad expansion.
+        // Clip w is linear over the plane, so boundary samples dominate interior ones.
+        private void UpdatePixelSize(Vector2 center, float extent) {
+            if (!_isPerspective) return;
+            _pixelSize = SamplePixelSize(center, extent);
+        }
+        private void UpdatePixelSize(Vector2 a, Vector2 b, float extent) {
+            if (!_isPerspective) return;
+            _pixelSize = MathF.Max(SamplePixelSize(a, extent), SamplePixelSize(b, extent));
+        }
+        private void UpdatePixelSize(Vector2 a, Vector2 b, Vector2 c, float extent) {
+            if (!_isPerspective) return;
+            _pixelSize = MathF.Max(MathF.Max(SamplePixelSize(a, extent), SamplePixelSize(b, extent)), SamplePixelSize(c, extent));
+        }
+        private float SamplePixelSize(Vector2 center, float extent) {
+            float p = PixelSizeAt(center);
+            if (extent <= 0f) return p;
+            float d = extent * 0.70710678f;
+            p = MathF.Max(p, PixelSizeAt(center + new Vector2(extent, 0f)));
+            p = MathF.Max(p, PixelSizeAt(center - new Vector2(extent, 0f)));
+            p = MathF.Max(p, PixelSizeAt(center + new Vector2(0f, extent)));
+            p = MathF.Max(p, PixelSizeAt(center - new Vector2(0f, extent)));
+            p = MathF.Max(p, PixelSizeAt(center + new Vector2(d, d)));
+            p = MathF.Max(p, PixelSizeAt(center - new Vector2(d, d)));
+            p = MathF.Max(p, PixelSizeAt(center + new Vector2(d, -d)));
+            p = MathF.Max(p, PixelSizeAt(center + new Vector2(-d, d)));
+            return p;
         }
 
         private static Vector2 Slide(Vector2 a, Vector2 b, float distance) {
@@ -957,10 +1018,10 @@ namespace Apos.Shapes {
         private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
             PrepareQuad();
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w0), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(w1, 0), l1, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w1), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(w2, 0), l2, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w2), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(w3, 0), l3, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w3), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, GetClipSpace(w0), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(w1, 0), l1, shape, fill, border, thickness, sdfSize, GetClipSpace(w1), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(w2, 0), l2, shape, fill, border, thickness, sdfSize, GetClipSpace(w2), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(w3, 0), l3, shape, fill, border, thickness, sdfSize, GetClipSpace(w3), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1038,7 +1099,7 @@ namespace Apos.Shapes {
             float lx = d.X * _clipU.X + d.Y * _clipU.Y;
             float ly = d.Y * _clipU.X - d.X * _clipU.Y;
 
-            return new ClipSpace(new Vector4(lx + _clipHalf.X, ly + _clipHalf.Y, _clipHalf.X - lx, _clipHalf.Y - ly), _clipRounding, _clipAaSize * _pixelSize);
+            return new ClipSpace(new Vector4(lx + _clipHalf.X, ly + _clipHalf.Y, _clipHalf.X - lx, _clipHalf.Y - ly), _clipRounding, _clipAaSize);
         }
 
         private static bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
@@ -1100,6 +1161,9 @@ namespace Apos.Shapes {
         private readonly EffectParameter _viewProjection;
 
         private float _pixelSize = 1f;
+        private Matrix _worldToClip = Matrix.Identity;
+        private Vector2 _halfViewport = Vector2.One;
+        private bool _isPerspective = false;
 
         private bool _beginCalled = false;
         private bool _disposed = false;
