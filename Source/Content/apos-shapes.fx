@@ -539,8 +539,13 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
     bc.a *= 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
 
-    float4 result = ToRgb(LerpColorPremul(fc, bc, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize)), space), space);
-    result.rgb *= result.a;
+    // The fill/border crossfade is coverage, not a gradient: blend premultiplied in
+    // sRGB so the inner AA fringe matches the framebuffer blend outside the edge.
+    float4 fr = ToRgb(fc, space);
+    float4 br = ToRgb(bc, space);
+    fr.rgb *= fr.a;
+    br.rgb *= br.a;
+    float4 result = lerp(fr, br, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize)));
 
     return result * clipAlpha;
 
