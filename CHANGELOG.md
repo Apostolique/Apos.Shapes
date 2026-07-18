@@ -6,10 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.1] - 2026-07-18
+
 ### Added
 
 - GPU clipping rect. `SetClipRect` clips upcoming draws to a rectangle without breaking the batch. The clip rectangle supports rounded corners, rotation, and an anti-aliased edge.
 - Per-corner radii for rectangles. `DrawRectangle`, `FillRectangle`, and `BorderRectangle` take a `CornerRadii` which allows a different rounding for each corner. A single float still works for uniform rounding.
+- `ColorSpace` property on the ShapeBatch. It selects the color space that gradient and border colors are interpolated in. `Oklab` is the default, `Oklch` keeps colors vivid, `Rgb` interpolates the raw channels. It's captured per shape so it can change mid batch without breaking it.
+- Spiral gradient shapes. `SpiralCW` winds clockwise around the first point, `SpiralCCW` winds counterclockwise.
 - `Color` implicitly converts to `Gradient` and `float` implicitly converts to `CornerRadii` which simplifies the draw call overloads.
 - `ShapeBatch` now implements `IDisposable` and disposes its vertex and index buffers.
 - `Begin` and `End` now throw when called out of order, and drawing before `Begin` throws instead of silently using stale states.
@@ -19,10 +25,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - On macOS OpenGL, a packed 0 byte could decode as ~255 in the shader which corrupted colors. (#33)
 - Drawing a line with the same start and end positions passed the anti-aliasing size as the circle's rotation.
 - Gradient offsets no longer divide by zero when both gradient positions are the same.
+- A transparent color in a gradient no longer tints the other color during the transition.
+- The seam on conical and repeating gradients is now anti-aliased correctly.
+- The anti-aliasing between the fill and the border now blends the same way as the shape's outside edge.
 
 ### Optimized
 
 - Improved the clip space and optimized the batcher.
+
+## [0.6.8] - 2026-02-28
+
+### Fixed
+
+- The license file is now included in the NuGet package.
 
 ## [0.6.7] - 2026-02-28
 
@@ -31,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - It's now possible to draw gradients in the shape's local space.
 - Added the SpriteBatch texture API to the ShapeBatch. It's now possible to draw textures along with shapes without breaking the batch. The draw calls are backed by a Matrix3x2 which supports more drawing options than what the SpriteBatch provides.
 - Added the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API which makes it possible to draw text natively. The texture for the font uses a separate texture slot which makes it possible to draw text without breaking the batch.
+- It's now possible to pass the BlendState, SamplerState, DepthStencilState, and RasterizerState to the Begin call.
 - The GraphicsDevice is now made available.
 
 ## [0.5.2] - 2025-12-27
@@ -53,27 +69,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - The anti-aliasing blur should look better. It had been made to be a linear blur in version 0.5.0 but it's now back to using a smoothstep function.
 
-### Optimized
-
-- Simplified the gradient code a little bit.
-
 ## [0.5.0] - 2025-10-15
 
 ### Changed
 
 - Colors are no longer using pre-multipled alpha. This is because for transparent values, the gradient interpolation code needed to have the full color values. If you want transparent white for example, you can pass `new Color(255, 255, 255, 0)` which was impossible when using pre-multipled alpha. This only matters for the colors that are being passed in. You can then do: `new Color(Color.White, 0.5f)` instead of `Color.White * 0.5f`.
 - The default anti-aliasing value is now set to 1.5 instead of 2. It should make the shapes look slightly less blurry while still having a nice edge.
-- Anti-aliasing is now done using the gradient code. It makes the code be simpler.
+- Updated to .NET 9 and MonoGame 3.8.4.
 
 ### Added
 
-- Gradients
+- Gradients. They come in multiple shapes (linear, radial, conical, and more) and repeat styles. The colors are interpolated in the Oklab color space which avoids muddy transitions.
 - Ring shape.
+- KNI support.
 - You can now pass the shader manually to the ShapeBatch constructor.
 
 ### Fixed
 
 - The border and fill color used to overlap. It would look bad when using a transparent border color.
+- The arc and ring angles were wrong. (#16)
 
 ### Optimized
 
@@ -103,10 +117,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - The viewport value wasn't used correctly for the projection matrix which prevented doing split screens.
 
-### Optimized
-
-- Simplified the ShapeVertex which should made the library be easier to maintain.
-
 ### Added
 
 - Triangle shape. Allows defining a triangle from three points.
@@ -125,7 +135,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- Adjusted the border thickness. It should be more accurate.
+- Adjusted the overlap between the border and fill. The border has slightly less anti-aliasing.
 
 ## [0.2.1] - 2023-11-23
 
@@ -146,10 +156,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The way the border is drawn is slightly different than before. In general borders will appear slightly thicker but will have a more accurate color and size.
 - Border thickness is now in world scale. In the previous version, borders were defined in screen scale which meant that they remained the same size no matter the view matrix.
 
-### Optimized
-
-- Simplified the math a bit to make the library easier to maintain. It should help add more shapes in the future.
-
 ## [0.1.10] - 2023-08-22
 
 ### Fixed
@@ -162,19 +168,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Bug where the floating point comparison used in the shader could fail on some GPUs ending up with the wrong shape.
 
-### Changed
-
-- The shape shader effect has been internally rename to `apos-shapes.fx` from `apos-shapes-effect.fx`.
-
 ## [0.1.8] - 2023-02-09
 
 ### Optimized
 
 - The shape batch now resizes itself. This makes it be faster based on my tests.
-
-### Changed
-
-- The shape shader effect has been internally rename to `apos-shapes-effect.fx` from `AposShapesEffect.fx`.
 
 ## [0.1.7] - 2022-04-16
 
@@ -187,7 +185,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Compatibility issue with the [MonoGame Compute fork](https://github.com/cpt-max/Docs/blob/master/Build%20Requirements.md).
-
 
 ## [0.1.5] - 2021-09-05
 
@@ -238,7 +235,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.7...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.8...v0.7.1
+[0.6.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.2...v0.6.7
 [0.5.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.0...v0.5.1
