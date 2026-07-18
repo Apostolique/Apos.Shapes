@@ -6,7 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- GPU clipping rect. `SetClipRect` clips upcoming draws to a rectangle without breaking the batch. The clip rectangle supports rounded corners, rotation, and an anti-aliased edge.
+- Per-corner radii for rectangles. `DrawRectangle`, `FillRectangle`, and `BorderRectangle` take a `CornerRadii` which allows a different rounding for each corner. A single float still works for uniform rounding.
+- `Color` implicitly converts to `Gradient` and `float` implicitly converts to `CornerRadii` which simplifies the draw call overloads.
+- `ShapeBatch` now implements `IDisposable` and disposes its vertex and index buffers.
+- `Begin` and `End` now throw when called out of order, and drawing before `Begin` throws instead of silently using stale states.
+
+### Fixed
+
+- On macOS OpenGL, a packed 0 byte could decode as ~255 in the shader which corrupted colors. (#33)
+- Drawing a line with the same start and end positions passed the anti-aliasing size as the circle's rotation.
+- Gradient offsets no longer divide by zero when both gradient positions are the same.
+
+### Optimized
+
+- Improved the clip space and optimized the batcher.
 
 ## [0.6.7] - 2026-02-28
 
@@ -237,7 +253,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 [0.2.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.10...v0.2.0
 [0.1.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.8...v0.1.9
-[0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
 [0.1.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.1.5...v0.1.6

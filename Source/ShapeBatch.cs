@@ -8,7 +8,7 @@ using Microsoft.Xna.Framework.Graphics;
 using MonoGame.Extended;
 
 namespace Apos.Shapes {
-    public class ShapeBatch {
+    public class ShapeBatch : IDisposable {
         public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) {
             _graphicsDevice = graphicsDevice;
 
@@ -36,6 +36,11 @@ namespace Apos.Shapes {
         public GraphicsDevice GraphicsDevice => _graphicsDevice;
 
         public void Begin(Matrix? view = null, Matrix? projection = null, BlendState? blendState = null, SamplerState? samplerState = null, DepthStencilState? depthStencilState = null, RasterizerState? rasterizerState = null) {
+            if (_beginCalled) {
+                throw new InvalidOperationException("Begin cannot be called again until End has been successfully called.");
+            }
+            _beginCalled = true;
+
             if (view != null) {
                 _view = view.Value;
             } else {
@@ -57,8 +62,7 @@ namespace Apos.Shapes {
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
         public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             float aaOffset = _pixelSize * aaSize;
             float radius1 = radius + aaOffset; // Account for AA.
@@ -90,12 +94,11 @@ namespace Apos.Shapes {
             DrawCircle(center, radius, g, g, 0f, rotation, aaSize);
         }
         public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, rotation, aaSize);
+            DrawCircle(center, radius, Color.Transparent, g, thickness, rotation, aaSize);
         }
 
         public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             float maxR = MathF.Min(size.X, size.Y) / 2f;
             float rTL = MathHelper.Clamp(cornerRadii.TopLeft,     0f, maxR);
@@ -147,12 +150,11 @@ namespace Apos.Shapes {
 
         public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
             if (a == b) {
-                DrawCircle(a, radius, fill, border, thickness, aaSize);
+                DrawCircle(a, radius, fill, border, thickness, aaSize: aaSize);
                 return;
             }
 
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             float aaOffset = _pixelSize * aaSize;
             var radius1 = radius + aaOffset; // Account for AA.
@@ -187,8 +189,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             rounded = MathF.Min(rounded, radius);
 
@@ -231,8 +232,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             rounded = MathF.Min(rounded, radius);
 
@@ -280,8 +280,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
@@ -359,8 +358,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             float aaOffset = _pixelSize * aaSize;
             float radius3 = radius1 + aaOffset; // Account for AA.
@@ -397,8 +395,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             radius1 -= 1f;
 
@@ -442,8 +439,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             radius1 -= 1f;
 
@@ -495,8 +491,7 @@ namespace Apos.Shapes {
                 _texture = texture;
             }
 
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             Vector2 topLeft;
             Vector2 topRight;
@@ -633,8 +628,7 @@ namespace Apos.Shapes {
                 _fontTexture = texture;
             }
 
-            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
-            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            PrepareQuad();
 
             Gradient gTopLeft = new(Vector2.Zero, topLeft.Color, Vector2.Zero, topLeft.Color, Gradient.Shape.None);
             Gradient gTopRight = new(Vector2.Zero, topRight.Color, Vector2.Zero, topRight.Color, Gradient.Shape.None);
@@ -652,9 +646,27 @@ namespace Apos.Shapes {
         }
 
         public void End() {
+            if (!_beginCalled) {
+                throw new InvalidOperationException("Begin must be called before calling End.");
+            }
+            _beginCalled = false;
+
             Flush();
 
             // TODO: Restore old states like rasterizer, depth stencil, blend state?
+        }
+
+        public void Dispose() {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+        protected virtual void Dispose(bool disposing) {
+            if (_disposed) return;
+            if (disposing) {
+                _vertexBuffer.Dispose();
+                _indexBuffer.Dispose();
+            }
+            _disposed = true;
         }
 
         private void Flush() {
@@ -737,6 +749,14 @@ namespace Apos.Shapes {
             return new Vector2(xy.X / texture.Width, xy.Y / texture.Height);
         }
 
+        private void PrepareQuad() {
+            if (!_beginCalled) {
+                throw new InvalidOperationException("Begin must be called before drawing.");
+            }
+            EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
+            _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+        }
+
         private ClipSpace GetClipSpace(Vector2 xy) {
             if (!_hasClip) return ClipSpace.None;
 
@@ -806,6 +826,9 @@ namespace Apos.Shapes {
         private readonly EffectParameter _viewProjection;
 
         private float _pixelSize = 1f;
+
+        private bool _beginCalled = false;
+        private bool _disposed = false;
 
         private bool _indicesChanged = false;
         private uint _fromIndex = 0;

@@ -4,13 +4,13 @@ namespace Apos.Shapes {
     public struct Gradient {
         public Gradient(Vector2 aXY, Color aC, Vector2 bXY, Color bC, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f, bool isLocal = false) {
             if (aOffset != 0 || bOffset != 0) {
-                // Should there be a division by zero check even though this is using floating point numbers?
                 float length = Vector2.Distance(aXY, bXY);
-                if (aOffset != 0) {
+                if (length > 0) {
                     aOffset /= length;
-                }
-                if (bOffset != 0) {
                     bOffset /= length;
+                } else {
+                    aOffset = 0;
+                    bOffset = 0;
                 }
             }
 

@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, ClipSpace clip, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -176,10 +176,7 @@ namespace Apos.Shapes {
             return (int)(Math.Clamp(v, 0f, 1f) * _channelMax + 0.5f);
         }
 
-        private static readonly Dictionary<uint, Vector2> _oklabCache = new();
         private static Vector2 PackOklab(Color c) {
-            if (_oklabCache.TryGetValue(c.PackedValue, out Vector2 packed)) return packed;
-
             float r = _srgbToLinear[c.R];
             float g = _srgbToLinear[c.G];
             float b = _srgbToLinear[c.B];
@@ -193,11 +190,9 @@ namespace Apos.Shapes {
             float okB = 0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s;
 
             // a and b are remapped from [-0.4, 0.4] which covers the whole sRGB gamut.
-            packed = new Vector2(
+            return new Vector2(
                 Pair(QuantizeUnit(okL), QuantizeUnit(okA * 1.25f + 0.5f)),
                 Pair(QuantizeUnit(okB * 1.25f + 0.5f), QuantizeByte(c.A)));
-            _oklabCache[c.PackedValue] = packed;
-            return packed;
         }
 
         private static readonly float[] _srgbToLinear = CreateSrgbToLinear();
