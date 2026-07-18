@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Changed
+
+- Hollow shapes now rasterize only their visible band instead of their full bounding quad. Rings, arcs, and any shape drawn with a transparent fill and a border emit a mesh with a hole in the middle, so big outlines no longer pay fill rate for their interior, and arcs no longer cover angles they don't span. Small shapes keep the single quad. Rendering is unchanged.
 
 ## [0.7.2] - 2026-07-18
 

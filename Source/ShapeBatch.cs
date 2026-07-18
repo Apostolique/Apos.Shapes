@@ -106,9 +106,19 @@ namespace Apos.Shapes {
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
         public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            float aaOffset = _pixelSize * aaSize;
+
+            if (thickness > 0f && IsTransparent(fill)) {
+                float holeRadius = radius - thickness - aaOffset - _pixelSize;
+                if (holeRadius > _hollowMinHolePixels * _pixelSize) {
+                    GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, 0f, 0f, 0f, 0f);
+                    return;
+                }
+            }
+
             PrepareQuad();
 
-            float aaOffset = _pixelSize * aaSize;
             float radius1 = radius + aaOffset; // Account for AA.
 
             var topLeft = center + new Vector2(-radius1);
@@ -176,6 +186,19 @@ namespace Apos.Shapes {
             float rC = rTL;
             float rD = rBL;
 
+            if (thickness > 0f && IsTransparent(fill)) {
+                float maxCorner = MathF.Max(MathF.Max(rTL, rTR), MathF.Max(rBR, rBL));
+                float inset = thickness + aaOffset + _pixelSize + maxCorner;
+                Vector2 hole = new(half.X - inset, half.Y - inset);
+                float minHole = _hollowMinHolePixels * _pixelSize;
+                if (hole.X > 4f * _pixelSize && hole.Y > 4f * _pixelSize && hole.X * hole.Y > minHole * minHole) {
+                    Span<Vector2> outerCorners = stackalloc Vector2[] { new(-half1.X, -half1.Y), new(half1.X, -half1.Y), new(half1.X, half1.Y), new(-half1.X, half1.Y) };
+                    Span<Vector2> innerCorners = stackalloc Vector2[] { new(-hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, hole.Y), new(-hole.X, hole.Y) };
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, rA, rB, rC, rD);
+                    return;
+                }
+            }
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(topLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(topRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, GetClipSpace(bottomRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
@@ -198,9 +221,34 @@ namespace Apos.Shapes {
                 return;
             }
 
+            float aaOffset = _pixelSize * aaSize;
+
+            if (thickness > 0f && IsTransparent(fill)) {
+                float holeRadius = radius - thickness - aaOffset - _pixelSize;
+                if (holeRadius > _hollowMinHolePixels * _pixelSize) {
+                    float length = Vector2.Distance(a, b);
+                    float lineRotation = MathF.Atan2(b.Y - a.Y, b.X - a.X);
+                    GradientToWorld(ref fill, ref border, a, Vector2.Zero, lineRotation);
+
+                    float outerRadius = radius + aaOffset + _pixelSize;
+                    (float sinL, float cosL) = MathF.SinCos(lineRotation);
+                    Vector2 dir = new(cosL, sinL);
+                    Vector2 perp = new(-sinL, cosL);
+
+                    EmitHollowQuad(a - perp * outerRadius, a + dir * length - perp * outerRadius, a + dir * length - perp * holeRadius, a - perp * holeRadius,
+                        new Vector2(0f, -outerRadius), new Vector2(length, -outerRadius), new Vector2(length, -holeRadius), new Vector2(0f, -holeRadius),
+                        VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
+                    EmitHollowQuad(a + dir * length + perp * outerRadius, a + perp * outerRadius, a + perp * holeRadius, a + dir * length + perp * holeRadius,
+                        new Vector2(length, outerRadius), new Vector2(0f, outerRadius), new Vector2(0f, holeRadius), new Vector2(length, holeRadius),
+                        VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
+                    EmitHollowAnnulus(a, lineRotation, Vector2.Zero, -MathF.PI * 0.5f, MathF.PI * 0.5f, new Vector2(holeRadius), new Vector2(outerRadius), false, VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
+                    EmitHollowAnnulus(a, lineRotation, new Vector2(length, 0f), MathF.PI * 0.5f, MathF.PI * 0.5f, new Vector2(holeRadius), new Vector2(outerRadius), false, VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
+                    return;
+                }
+            }
+
             PrepareQuad();
 
-            float aaOffset = _pixelSize * aaSize;
             var radius1 = radius + aaOffset; // Account for AA.
 
             var c = Slide(b, a, radius1);
@@ -259,6 +307,20 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
+            if (thickness > 0f && IsTransparent(fill)) {
+                float holeOffset = rounded - thickness - aaOffset - _pixelSize;
+                // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact hexagon.
+                float holeApothem = radius + (holeOffset <= 0f ? holeOffset : holeOffset * 0.8660254f);
+                if (holeApothem > _hollowMinHolePixels * _pixelSize) {
+                    Span<Vector2> outerCorners = stackalloc Vector2[6];
+                    Span<Vector2> innerCorners = stackalloc Vector2[6];
+                    HexagonCorners(radius + rounded + aaOffset + _pixelSize, outerCorners);
+                    HexagonCorners(holeApothem, innerCorners);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Hexagon, fill, border, thickness, radius, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    return;
+                }
+            }
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
@@ -306,6 +368,25 @@ namespace Apos.Shapes {
             }
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
+
+            if (thickness > 0f && IsTransparent(fill)) {
+                float inradius = halfWidth / MathF.Sqrt(3f);
+                float holeOffset = rounded - thickness - aaOffset - _pixelSize;
+                if (inradius + MathF.Min(holeOffset, 0f) > _hollowMinHolePixels * _pixelSize) {
+                    Span<Vector2> corners = stackalloc Vector2[] { new(-halfWidth, -inradius), new(halfWidth, -inradius), new(0f, 2f * inradius) };
+                    Span<Vector2> outerCorners = stackalloc Vector2[3];
+                    Span<Vector2> innerCorners = stackalloc Vector2[3];
+                    float scaleOut = (inradius + rounded + aaOffset + _pixelSize) / inradius;
+                    float scaleIn = (inradius + holeOffset) / inradius;
+                    for (int i = 0; i < 3; i++) {
+                        outerCorners[i] = corners[i] * scaleOut;
+                        // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
+                        innerCorners[i] = holeOffset <= 0f ? corners[i] * scaleIn : corners[i] + Vector2.Normalize(corners[i]) * holeOffset;
+                    }
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    return;
+                }
+            }
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
@@ -385,6 +466,27 @@ namespace Apos.Shapes {
             B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
             C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
 
+            if (thickness > 0f && IsTransparent(fill)) {
+                float inradius = inRadius * ratioDistance;
+                float holeOffset = rounded - thickness - aaOffset - _pixelSize;
+                if (inradius + MathF.Min(holeOffset, 0f) > _hollowMinHolePixels * _pixelSize) {
+                    Vector2 inCenter = new(inCenterX, inCenterY);
+                    float scaleOut = (inradius + rounded + aaOffset + _pixelSize) / inradius;
+                    float scaleIn = (inradius + holeOffset) / inradius;
+                    Span<Vector2> corners = stackalloc Vector2[] { A, C, B }; // Reversed: a, b, c are stored counter clockwise on screen.
+                    Span<Vector2> outerCorners = stackalloc Vector2[3];
+                    Span<Vector2> innerCorners = stackalloc Vector2[3];
+                    for (int i = 0; i < 3; i++) {
+                        outerCorners[i] = inCenter + (corners[i] - inCenter) * scaleOut;
+                        // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
+                        innerCorners[i] = holeOffset <= 0f ? inCenter + (corners[i] - inCenter) * scaleIn : corners[i] + Vector2.Normalize(corners[i] - inCenter) * holeOffset;
+                    }
+                    // This shape's local coordinates are the world coordinates themselves.
+                    EmitHollowFrame(Vector2.Zero, 0f, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, A.X, A.Y, aaSize, rounded, B.X, B.Y, C.X, C.Y);
+                    return;
+                }
+            }
+
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(topLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(topRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
             _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, _pixelSize, GetClipSpace(bottomRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
@@ -402,9 +504,23 @@ namespace Apos.Shapes {
         }
 
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            float aaOffset = _pixelSize * aaSize;
+
+            if (thickness > 0f && IsTransparent(fill)) {
+                float minAxis = MathF.Min(radius1, radius2);
+                float holeMin = minAxis - thickness - aaOffset - _pixelSize;
+                if (holeMin > _hollowMinHolePixels * _pixelSize) {
+                    GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
+                    Vector2 axes = new(radius1, radius2);
+                    // Scaling instead of a fixed offset: the ellipse offset outward by s fits inside the
+                    // ellipse scaled by 1 + s / minAxis, and the mirrored bound holds for the hole.
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, 0f, 0f, 0f, 0f);
+                    return;
+                }
+            }
+
             PrepareQuad();
 
-            float aaOffset = _pixelSize * aaSize;
             float radius3 = radius1 + aaOffset; // Account for AA.
             float radius4 = radius2 + aaOffset; // Account for AA.
 
@@ -448,14 +564,25 @@ namespace Apos.Shapes {
             float cos = MathF.Cos(angleSize);
 
             float aaOffset = _pixelSize * aaSize;
+            float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
+
+            float holeRadius = radius1 - radius2 - aaOffset - _pixelSize;
+            if (holeRadius > _hollowMinHolePixels * _pixelSize) {
+                GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
+                // Round caps and their AA fringe swing at most this far past the end angles.
+                float capMargin = MathF.Asin(MathF.Min((radius2 + aaOffset + _pixelSize) / holeRadius, 1f));
+                float halfSpan = angleSize + capMargin;
+                bool wrap = halfSpan >= MathF.PI;
+                EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, wrap ? MathF.PI : halfSpan, new Vector2(holeRadius), new Vector2(radius1 + radius2 + aaOffset + _pixelSize), wrap, VertexShape.Shape.Arc, fill, border, thickness, radius1, 1f, aaSize, 0f, sin, cos, radius2, 0f);
+                return;
+            }
+
             float radius3 = radius1 + radius2 + aaOffset; // Account for AA.
 
             var topLeft = center + new Vector2(-radius3);
             var topRight = center + new Vector2(radius3, -radius3);
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
-
-            float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
 
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
@@ -493,14 +620,26 @@ namespace Apos.Shapes {
             float sin = MathF.Sin(angleSize);
 
             float aaOffset = _pixelSize * aaSize;
+            float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
+
+            // The ring band is radius2 / 2 thick on each side of the centerline, see RingSDF.
+            float holeRadius = radius1 - radius2 * 0.5f - aaOffset - _pixelSize;
+            if (holeRadius > _hollowMinHolePixels * _pixelSize) {
+                GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
+                // Flat caps only swing past the end angles by their AA fringe.
+                float capMargin = MathF.Asin(MathF.Min((aaOffset + _pixelSize) / holeRadius, 1f));
+                float halfSpan = angleSize + capMargin;
+                bool wrap = halfSpan >= MathF.PI;
+                EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, wrap ? MathF.PI : halfSpan, new Vector2(holeRadius), new Vector2(radius1 + radius2 * 0.5f + aaOffset + _pixelSize), wrap, VertexShape.Shape.Ring, fill, border, thickness, radius1, 1f, aaSize, 0f, cos, sin, radius2, 0f);
+                return;
+            }
+
             float radius3 = radius1 + radius2 + aaOffset; // Account for AA.
 
             var topLeft = center + new Vector2(-radius3);
             var topRight = center + new Vector2(radius3, -radius3);
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
-
-            float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
 
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
@@ -799,6 +938,97 @@ namespace Apos.Shapes {
             }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+        }
+
+        // Hollow shapes (rings, arcs, transparent fills with a border) only shade a thin band, so they
+        // get a mesh that skips the interior instead of one big quad. The pixel shader reads the SDF
+        // from linearly interpolated local coordinates, so any mesh renders identically as long as each
+        // vertex carries the local coordinate that matches its world position. Only worth doing once
+        // the skipped interior is large on screen: the mesh multiplies vertex count.
+        private const float _hollowMinHolePixels = 32f;
+        // Chords may overshoot the band by up to this sagitta; sector counts scale with radius to hold it.
+        private const float _hollowMaxSagPixels = 2f;
+        private const int _hollowMaxSectors = 128;
+
+        private static bool IsTransparent(in Gradient g) {
+            return g.AC.A == 0 && g.BC.A == 0;
+        }
+
+        private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
+            PrepareQuad();
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w0), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(w1, 0), l1, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w1), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(w2, 0), l2, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w2), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(w3, 0), l3, shape, fill, border, thickness, sdfSize, _pixelSize, GetClipSpace(w3), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
+        // Covers the band between two concentric (possibly elliptical) rings with a fan of quads.
+        // Angles are measured from the local +y axis to line up with the arc and ring SDFs. Outer
+        // vertices circumscribe the band so the chords never clip it; inner vertices sit on the hole
+        // boundary so their chords only dip into the hole. Quads are wound clockwise on screen.
+        private void EmitHollowAnnulus(Vector2 origin, float rotation, Vector2 localCenter, float angleCenter, float halfSpan, Vector2 axesInner, Vector2 axesOuter, bool wrap, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
+            float rMax = MathF.Max(axesOuter.X, axesOuter.Y);
+            float phi = MathF.Acos(MathF.Max(1f - _hollowMaxSagPixels * _pixelSize / rMax, 0f));
+            int n = Math.Clamp((int)MathF.Ceiling(halfSpan / MathF.Max(phi, 1e-4f)), 3, _hollowMaxSectors);
+            float step = 2f * halfSpan / n;
+            float overshoot = 1f / MathF.Cos(step * 0.5f);
+
+            (float sinR, float cosR) = MathF.SinCos(rotation);
+            Vector2 W(Vector2 l) => origin + new Vector2(l.X * cosR - l.Y * sinR, l.X * sinR + l.Y * cosR);
+
+            (float sinT, float cosT) = MathF.SinCos(angleCenter - halfSpan);
+            Vector2 first = new(sinT, cosT);
+            Vector2 outerPrev = localCenter + axesOuter * first * overshoot;
+            Vector2 innerPrev = localCenter + axesInner * first;
+            for (int i = 1; i <= n; i++) {
+                Vector2 dir;
+                if (i < n) {
+                    (sinT, cosT) = MathF.SinCos(angleCenter - halfSpan + i * step);
+                    dir = new Vector2(sinT, cosT);
+                } else if (wrap) {
+                    dir = first; // Exact repeat keeps the wrap seam watertight.
+                } else {
+                    (sinT, cosT) = MathF.SinCos(angleCenter + halfSpan);
+                    dir = new Vector2(sinT, cosT);
+                }
+
+                Vector2 outerCur = localCenter + axesOuter * dir * overshoot;
+                Vector2 innerCur = localCenter + axesInner * dir;
+
+                EmitHollowQuad(W(outerCur), W(outerPrev), W(innerPrev), W(innerCur), outerCur, outerPrev, innerPrev, innerCur, shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d);
+
+                outerPrev = outerCur;
+                innerPrev = innerCur;
+            }
+        }
+
+        // One quad per edge between two nested convex polygons with matching corner counts. Adjacent
+        // quads share their mitre edges exactly so the frame is watertight. Corners must be listed
+        // clockwise on screen.
+        private void EmitHollowFrame(Vector2 origin, float rotation, ReadOnlySpan<Vector2> outer, ReadOnlySpan<Vector2> inner, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
+            (float sinR, float cosR) = MathF.SinCos(rotation);
+            Vector2 W(Vector2 l) => origin + new Vector2(l.X * cosR - l.Y * sinR, l.X * sinR + l.Y * cosR);
+
+            for (int i = 0; i < outer.Length; i++) {
+                int j = i + 1 == outer.Length ? 0 : i + 1;
+                EmitHollowQuad(W(outer[i]), W(outer[j]), W(inner[j]), W(inner[i]), outer[i], outer[j], inner[j], inner[i], shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d);
+            }
+        }
+
+        private static void HexagonCorners(float apothem, Span<Vector2> corners) {
+            float circumradius = 2f * apothem / MathF.Sqrt(3f);
+            float half = apothem / MathF.Sqrt(3f);
+            corners[0] = new Vector2(circumradius, 0f);
+            corners[1] = new Vector2(half, apothem);
+            corners[2] = new Vector2(-half, apothem);
+            corners[3] = new Vector2(-circumradius, 0f);
+            corners[4] = new Vector2(-half, -apothem);
+            corners[5] = new Vector2(half, -apothem);
         }
 
         private ClipSpace GetClipSpace(Vector2 xy) {
