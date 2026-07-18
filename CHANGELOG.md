@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.2] - 2026-07-18
+
 ### Changed
 
 - The shader is now precompiled with [ShadowDusk](https://github.com/kaltinril/ShadowDusk) when the library is packed and embedded in the assembly. It is no longer added to your content pipeline, which means building your game no longer requires a shader compiler — or Wine on Linux and macOS.
@@ -240,7 +244,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.8...v0.7.1
 [0.6.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.5.2...v0.6.7
