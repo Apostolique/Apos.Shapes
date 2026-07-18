@@ -15,21 +15,23 @@ sampler FontSampler;
 
 struct VertexInput {
     float4 Position : POSITION0;
-    float4 TexCoord : TEXCOORD0;
-    float4 Fill : TEXCOORD1;
-    float4 Border : TEXCOORD2;
-    float4 FillCoord : TEXCOORD3;
-    float4 BorderCoord : TEXCOORD4;
-    float4 Meta1 : TEXCOORD5;
-    float4 Meta2 : TEXCOORD6;
-    float4 Meta3 : TEXCOORD7;
-    float4 ClipDist : TEXCOORD8;
-    float2 ClipRoundAA : TEXCOORD9;
+    float4 TexCoord : TEXCOORD0; // xy: uv or local position, z: rounded, w: packed shape, gradient styles and color space.
+    float4 FillA : TEXCOORD1; // Colors arrive as normalized shorts, every channel is in [0, 1].
+    float4 FillB : TEXCOORD2;
+    float4 BorderA : TEXCOORD3;
+    float4 BorderB : TEXCOORD4;
+    float4 FillCoord : TEXCOORD5;
+    float4 BorderCoord : TEXCOORD6;
+    float4 Meta1 : TEXCOORD7;
+    float4 Meta2 : TEXCOORD8;
+    float4 Meta3 : TEXCOORD9;
+    float4 ClipDist : POSITION1;
+    float2 ClipRoundAA : NORMAL0;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
-    float4 TexCoord : TEXCOORD0;
-    float4 Fill : TEXCOORD1;
+    float4 TexCoord : TEXCOORD0; // xy: uv or local position, z: rounded, w: packed shape, gradient styles and color space.
+    float4 Fill : TEXCOORD1; // Two colors, each repacked as two 11 bit channels per float.
     float4 Border : TEXCOORD2;
     float4 FillCoord : TEXCOORD3;
     float4 BorderCoord : TEXCOORD4;
@@ -248,6 +250,32 @@ float4 OkLabToRgb(float4 c) {
     );
 }
 
+float HueLerp(float a, float b, float t) {
+    // Take the shortest path around the hue wheel.
+    float d = frac(b - a + 0.5) - 0.5;
+    return frac(a + d * t);
+}
+float4 LerpColor(float4 a, float4 b, float t, float space) {
+    float4 c = lerp(a, b, t);
+    if (space < 0.5) {
+        c.z = HueLerp(a.z, b.z, t);
+    }
+    return c;
+}
+float4 ToRgb(float4 c, float space) {
+    float4 result = c; // Raw sRGB passes through untouched.
+    if (space < 0.5) {
+        // Oklch. Chroma is remapped from [0, 0.4], hue from [-pi, pi].
+        float ch = c.y * 0.4;
+        float h = c.z * 6.283185307179586 - 3.14159265358979;
+        result = OkLabToRgb(float4(c.x, ch * cos(h), ch * sin(h), c.w));
+    } else if (space < 1.5) {
+        // Oklab. a and b are remapped from [-0.4, 0.4].
+        result = OkLabToRgb(float4(c.x, c.y * 0.8 - 0.4, c.z * 0.8 - 0.4, c.w));
+    }
+    return result;
+}
+
 float2 Rotate(float2 a, float2 b, float2 c) {
     float ux = b.x - a.x;
     float uy = b.y - a.y;
@@ -382,35 +410,37 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
     return result;
 }
 
-float2 Unpair(float n) {
-    float2 result;
-
-    float f1 = floor(sqrt(n));
-
-    if ((f1 + 1.0) * (f1 + 1.0) <= n) {
-        f1 += 1.0;
-    } else if (f1 * f1 > n) {
-        f1 -= 1.0;
-    }
-    float f2 = n - f1 * f1;
-    if (f2 < f1) {
-        result.x = f2;
-        result.y = f1;
-    } else {
-        result.x = f1;
-        result.y = (f2 - f1);
-    }
-    return result;
+// ps_3_0 only has 10 interpolators so the vertex shader repacks each color into
+// two floats with two 11 bit channels each. The packed value stays under 2^22 so
+// every intermediate is an exact integer in a float.
+float Pack11(float a, float b) {
+    return floor(a * 2047.0 + 0.5) * 2048.0 + floor(b * 2047.0 + 0.5);
+}
+float4 PackColors(float4 a, float4 b) {
+    return float4(Pack11(a.x, a.y), Pack11(a.z, a.w), Pack11(b.x, b.y), Pack11(b.z, b.w));
 }
 
-// Colors are packed as two 11 bit channels per float.
-float4 UnpackRgb(float2 c) {
-    return float4(Unpair(c.x), Unpair(c.y)) / 2047.0;
+// Pops the lowest base-radix digit off m. floor() can be off by one on some
+// driver and translator combos, the remainder check corrects for it.
+float DecodeDigit(inout float m, float radix) {
+    float q = floor(m / radix);
+    float r = m - q * radix;
+    if (r >= radix) {
+        q += 1.0;
+        r -= radix;
+    } else if (r < 0.0) {
+        q -= 1.0;
+        r += radix;
+    }
+    m = q;
+    return r;
 }
-float4 UnpackOklab(float2 c) {
-    float4 result = float4(Unpair(c.x), Unpair(c.y)) / 2047.0;
-    result.yz = result.yz * 0.8 - 0.4;
-    return result;
+float2 Unpack11(float v) {
+    float lo = DecodeDigit(v, 2048.0);
+    return float2(v, lo) / 2047.0;
+}
+float4 UnpackColor(float2 c) {
+    return float4(Unpack11(c.x), Unpack11(c.y));
 }
 
 PixelInput SpriteVertexShader(VertexInput v) {
@@ -418,8 +448,8 @@ PixelInput SpriteVertexShader(VertexInput v) {
 
     output.Position = mul(v.Position, view_projection);
     output.TexCoord = v.TexCoord;
-    output.Fill = v.Fill;
-    output.Border = v.Border;
+    output.Fill = PackColors(v.FillA, v.FillB);
+    output.Border = PackColors(v.BorderA, v.BorderB);
     output.FillCoord = v.FillCoord;
     output.BorderCoord = v.BorderCoord;
     output.Meta1 = v.Meta1;
@@ -435,8 +465,9 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float aaSize = p.Meta1.y;
     float sdfSize = p.Meta1.z;
 
-    float2 meta = Unpair(p.TexCoord.w);
-    float shape = meta.x;
+    // Peel the packed meta apart field by field. Every intermediate stays an exact integer.
+    float meta = p.TexCoord.w;
+    float shape = DecodeDigit(meta, 16.0);
 
     // Rounded box SDF from the interpolated edge distances.
     float2 clipQ = p.ClipMeta.z - min(p.Pos.zw, p.ClipMeta.xy);
@@ -448,9 +479,9 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     if (shape >= 8.5) {
         if (shape < 9.5) {
-            return tex2D(TextureSampler, p.TexCoord.xy) * UnpackRgb(p.Fill.xy) * clipAlpha;
+            return tex2D(TextureSampler, p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
         }
-        return tex2D(FontSampler, p.TexCoord.xy) * UnpackRgb(p.Fill.xy) * clipAlpha;
+        return tex2D(FontSampler, p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
     }
 
     float d;
@@ -476,15 +507,19 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     d -= p.TexCoord.z;
 
-    float2 gradientStyles = Unpair(meta.y);
-    float2 fillStyles = Unpair(gradientStyles.x);
-    float2 borderStyles = Unpair(gradientStyles.y);
+    float2 fillStyles;
+    float2 borderStyles;
+    fillStyles.x = DecodeDigit(meta, 16.0);
+    fillStyles.y = DecodeDigit(meta, 4.0);
+    borderStyles.x = DecodeDigit(meta, 16.0);
+    borderStyles.y = DecodeDigit(meta, 4.0);
+    float space = meta;
 
-    float4 fc = lerp(UnpackOklab(p.Fill.xy), UnpackOklab(p.Fill.zw), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy));
-    float4 bc = lerp(UnpackOklab(p.Border.xy), UnpackOklab(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw));
+    float4 fc = LerpColor(UnpackColor(p.Fill.xy), UnpackColor(p.Fill.zw), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
+    float4 bc = LerpColor(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
     bc.a *= 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
 
-    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize))));
+    float4 result = ToRgb(LerpColor(fc, bc, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize)), space), space);
     result.rgb *= result.a;
 
     return result * clipAlpha;

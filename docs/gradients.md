@@ -11,9 +11,23 @@ _sb.FillCircle(new Vector2(200, 200), 100, new Gradient(
 
 This draws a circle where the color transitions from blue at the left edge to red at the right edge. The fill and the border can each have their own gradient.
 
-The colors are interpolated in the [Oklab](https://bottosson.github.io/posts/oklab/) color space. It avoids the muddy colors that you would get from interpolating in RGB.
+The colors are interpolated in the [Oklab](https://bottosson.github.io/posts/oklab/) color space by default. It avoids the muddy colors that you would get from interpolating in RGB.
 
 Colors are not premultiplied. This matters for transparent colors since the gradient needs the full color values to interpolate correctly. For a transparent white, pass `new Color(255, 255, 255, 0)`.
+
+## Color spaces
+
+The `ColorSpace` property on the `ShapeBatch` selects the color space that the colors are interpolated in. It is captured per shape at draw time so it can change mid batch without breaking it:
+
+```csharp
+_sb.ColorSpace = ColorSpace.Oklch;
+```
+
+* `Oklab` interpolates in a straight line through Oklab. Distant hues pass through muted grays. This is the default.
+* `Oklch` holds chroma while the hue takes the shortest path around the hue wheel. Vivid transitions.
+* `Rgb` interpolates the raw sRGB channels.
+
+Gray stops have no hue of their own. In Oklch they take the hue of the other stop so a gray to color gradient holds a steady hue. Texture and string masks are always multiplied in raw RGBA.
 
 ## Gradient shapes
 
