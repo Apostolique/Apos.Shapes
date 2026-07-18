@@ -52,8 +52,9 @@
           Outputs="$(AposShaderDir)apos-shapes.knifx;$(AposShaderDir)apos-shapes.kni.dx11.mgfx">
     <MakeDir Directories="$(AposShaderDir)" />
     <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.knifx&quot; --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <!-- Roll forward so the net8.0 tool still runs when only a newer runtime is installed, like in CI. -->
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.knifx&quot; --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
   </Target>
 
   <ItemGroup>
