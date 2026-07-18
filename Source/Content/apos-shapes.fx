@@ -262,6 +262,14 @@ float4 LerpColor(float4 a, float4 b, float t, float space) {
     }
     return c;
 }
+// Weight the color lerp by each side's alpha (premultiplied-style blend) so a
+// transparent color's hidden RGB can't tint the blend on the other side.
+float4 LerpColorPremul(float4 a, float4 b, float t, float space) {
+    float oa = lerp(a.a, b.a, t);
+    float4 c = LerpColor(a, b, oa > 0.0 ? t * b.a / oa : t, space);
+    c.a = oa;
+    return c;
+}
 float4 ToRgb(float4 c, float space) {
     float4 result = c; // Raw sRGB passes through untouched.
     if (space < 0.5) {
@@ -298,10 +306,16 @@ float Mod(float x, float m) {
     return (x % m + m) % m;
 }
 
-float SmoothDiscontinuity(float x, float size) {
+// Smooths the wrap seam of a periodic gradient by pulling values within half a
+// band of the seam toward 0.5 — the box-filtered average of both sides, since
+// color is linear in the gradient value. When the band covers the whole period
+// (near a conical origin) everything collapses to 0.5 instead of biasing to 0.
+float SmoothWrapDiscontinuity(float x, float size) {
+    float h = max(0.5 * saturate(size), 1e-6);
     float v = frac(x);
-    float a = 1.0 / size;
-    return saturate(v * a - (a - 1.0));
+    float hi = saturate((v - (1.0 - h)) / h);
+    float lo = saturate((h - v) / h);
+    return lerp(v, 0.5, max(hi, lo));
 }
 
 float RemapOffset(float x, float2 offset) {
@@ -349,6 +363,14 @@ float CrossGradient(float2 a, float2 b, float2 c) {
     c = Rotate(a, b, c);
     return min(abs(c.x), abs(c.y)) / length(b - a);
 }
+// Magnitude of the spiral gradient per world unit. The radial term winds once
+// per gradient length, the angular term once per turn, and they are orthogonal
+// so the root sum keeps the smoothed seam aaSize wide at any radius.
+float SpiralGradientSize(float4 posAB, float2 c) {
+    float l = length(posAB.zw - posAB.xy);
+    float r = 6.283185307179586 * length(c - posAB.xy);
+    return sqrt(1.0 / (l * l) + 1.0 / max(r * r, 1e-12));
+}
 float SpiralCWGradient(float2 a, float2 b, float2 c) {
     c = Rotate(a, b, c);
     return SawtoothWave(1.0 * atan2(-c.y, -c.x) / 6.283185307179586 + length(c) / length(b - a));
@@ -377,19 +399,17 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
             grad = ConicalGradient(posAB.xy, posAB.zw, c);
         } else if (type.x < 5.5) {
             grad = ConicalAsymGradient(posAB.xy, posAB.zw, c);
-            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
+            grad = SmoothWrapDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
         } else if (type.x < 6.5) {
             grad = SquareGradient(posAB.xy, posAB.zw, c);
         } else if (type.x < 7.5) {
             grad = CrossGradient(posAB.xy, posAB.zw, c);
         } else if (type.x < 8.5) {
             grad = SpiralCWGradient(posAB.xy, posAB.zw, c);
-            // TODO: Fix this, the discontinuity is in the wrong coordinate system.
-            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+            grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB, c));
         } else if (type.x < 9.5) {
             grad = SpiralCCWGradient(posAB.xy, posAB.zw, c);
-            // TODO: Fix this, the discontinuity is in the wrong coordinate system.
-            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+            grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB, c));
         } else if (type.x < 10.5) {
             grad = ShapeGradient(posAB.x, posAB.y, d);
         }
@@ -397,7 +417,7 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
         if (type.y < 0.5) {
         } else if (type.y < 1.5) {
             grad = SawtoothWave(grad);
-            grad *= 1.0 - SmoothDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+            grad = SmoothWrapDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
         } else if (type.y < 2.5) {
             grad = TriangularWave(grad);
         } else if (type.y < 3.5) {
@@ -515,11 +535,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     borderStyles.y = DecodeDigit(meta, 4.0);
     float space = meta;
 
-    float4 fc = LerpColor(UnpackColor(p.Fill.xy), UnpackColor(p.Fill.zw), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
-    float4 bc = LerpColor(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
+    float4 fc = LerpColorPremul(UnpackColor(p.Fill.xy), UnpackColor(p.Fill.zw), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
+    float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
     bc.a *= 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
 
-    float4 result = ToRgb(LerpColor(fc, bc, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize)), space), space);
+    float4 result = ToRgb(LerpColorPremul(fc, bc, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize)), space), space);
     result.rgb *= result.a;
 
     return result * clipAlpha;

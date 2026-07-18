@@ -91,6 +91,8 @@ namespace GameProject {
             _sb.FillCircle(new Vector2(310, -250), 52, new Gradient(new Vector2(310, -250), TWColor.Fuchsia400, new Vector2(273, -287), TWColor.Purple800, Gradient.Shape.Square));
             _sb.FillCircle(new Vector2(440, -250), 52, new Gradient(new Vector2(440, -250), TWColor.Rose400, new Vector2(403, -213), TWColor.Pink800, Gradient.Shape.Cross));
             _sb.FillCircle(new Vector2(570, -250), 52, new Gradient(new Vector2(570, -250), TWColor.Cyan300, new Vector2(596, -250), TWColor.Blue700, Gradient.Shape.Radial, Gradient.RepeatStyle.Triangle));
+            _sb.FillCircle(new Vector2(440, -140), 52, new Gradient(new Vector2(440, -140), TWColor.Yellow300, new Vector2(440, -166), TWColor.Orange600, Gradient.Shape.SpiralCW));
+            _sb.FillCircle(new Vector2(570, -140), 52, new Gradient(new Vector2(570, -140), TWColor.Teal300, new Vector2(570, -166), TWColor.Sky700, Gradient.Shape.SpiralCCW));
 
             // Shapes with fills, borders, rounding and local gradients.
             _sb.DrawRectangle(new Vector2(-620, -60), new Vector2(190, 150), new Gradient(new Vector2(0, 0), TWColor.Sky400, new Vector2(190, 150), TWColor.Indigo700, isLocal: true), TWColor.Slate200, 3f, new CornerRadii(12, 48, 12, 48), rotation: 0.1f);
@@ -213,7 +215,7 @@ namespace GameProject {
         ICondition RotateLeft = new KeyboardCondition(Keys.OemComma);
         ICondition RotateRight = new KeyboardCondition(Keys.OemPeriod);
 
-        ICondition CameraDrag = new MouseCondition(MouseButton.MiddleButton);
+        ICondition CameraDrag = new MouseCondition(MouseButton.RightButton);
 
         ICondition CameraReset = new KeyboardCondition(Keys.R);
 

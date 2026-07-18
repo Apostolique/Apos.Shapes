@@ -44,8 +44,8 @@ namespace Apos.Shapes {
             ConicalAsym = 5,
             Square = 6,
             Cross = 7,
-            // SpiralCW = 8,
-            // SpiralCCW = 9,
+            SpiralCW = 8,
+            SpiralCCW = 9,
             // Shape = 10
         }
         public enum RepeatStyle {

@@ -44,6 +44,8 @@ new Gradient(a, aColor, b, bColor, Gradient.Shape.Radial);
 * `ConicalAsym` transitions with the angle around the first point over a full turn.
 * `Square` transitions in a square around the first point.
 * `Cross` transitions in a cross around the first point.
+* `SpiralCW` winds clockwise around the first point, transitioning with both the angle and the distance. The second point sets the width of one winding.
+* `SpiralCCW` is like `SpiralCW` but winds counterclockwise.
 * `None` gives a solid color. This is what the implicit `Color` conversion uses.
 
 ## Repeat styles
