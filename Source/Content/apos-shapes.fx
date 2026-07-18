@@ -527,6 +527,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     d -= p.TexCoord.z;
 
+    // Beyond the outer AA edge every branch below resolves to premultiplied zero.
+    if (d >= aaSize) {
+        discard;
+    }
+
     float2 fillStyles;
     float2 borderStyles;
     fillStyles.x = DecodeDigit(meta, 16.0);
@@ -535,17 +540,43 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     borderStyles.y = DecodeDigit(meta, 4.0);
     float space = meta;
 
-    float4 fc = LerpColorPremul(UnpackColor(p.Fill.xy), UnpackColor(p.Fill.zw), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
-    float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
-    bc.a *= 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
+    float4 fillA = UnpackColor(p.Fill.xy);
+    float4 fillB = UnpackColor(p.Fill.zw);
+
+    float edgeFade = 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
+    float borderMix = smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize));
 
     // The fill/border crossfade is coverage, not a gradient: blend premultiplied in
     // sRGB so the inner AA fringe matches the framebuffer blend outside the edge.
-    float4 fr = ToRgb(fc, space);
-    float4 br = ToRgb(bc, space);
-    fr.rgb *= fr.a;
-    br.rgb *= br.a;
-    float4 result = lerp(fr, br, smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize)));
+    // The vertex data is uniform per quad, so these branches are coherent.
+    float4 result;
+    if (all(p.Fill == p.Border) && all(p.FillCoord == p.BorderCoord) && all(fillStyles == borderStyles) && all(p.Meta3.xy == p.Meta3.zw)) {
+        // Fill and border are the same gradient, so the crossfade collapses to edge coverage.
+        float4 fc = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
+        fc.a *= edgeFade;
+        result = ToRgb(fc, space);
+        result.rgb *= result.a;
+    } else if (fillA.a == 0.0 && fillB.a == 0.0) {
+        // Transparent fill: everything inside the border band contributes nothing.
+        if (borderMix <= 0.0) {
+            discard;
+        }
+        float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
+        bc.a *= edgeFade;
+        result = ToRgb(bc, space);
+        result.rgb *= result.a;
+        result *= borderMix;
+    } else {
+        float4 fc = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
+        float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
+        bc.a *= edgeFade;
+
+        float4 fr = ToRgb(fc, space);
+        float4 br = ToRgb(bc, space);
+        fr.rgb *= fr.a;
+        br.rgb *= br.a;
+        result = lerp(fr, br, borderMix);
+    }
 
     return result * clipAlpha;
 
