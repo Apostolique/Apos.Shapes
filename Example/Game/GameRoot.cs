@@ -45,6 +45,7 @@ namespace GameProject {
             InputHelper.UpdateSetup();
 
             if (_resetDroppedFrames.Pressed()) _fps.DroppedFrames = 0;
+            if (_toggleDebug.Pressed()) _showDebug = !_showDebug;
             _fps.Update(gameTime);
 
             if (_quit.Pressed())
@@ -124,9 +125,11 @@ namespace GameProject {
 
             _sb.End();
 
-            _sb.Begin();
-            _sb.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 10), Color.White);
-            _sb.End();
+            if (_showDebug) {
+                _sb.Begin();
+                _sb.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 10), Color.White);
+                _sb.End();
+            }
 
             base.Draw(gameTime);
         }
@@ -217,6 +220,7 @@ namespace GameProject {
 
         ICondition CameraReset = new KeyboardCondition(Keys.R);
 
+        ICondition _toggleDebug = new KeyboardCondition(Keys.F1);
         ICondition _resetDroppedFrames = new KeyboardCondition(Keys.F2);
 
         Camera _camera;
@@ -232,5 +236,7 @@ namespace GameProject {
         float _expDistance = 0.002f;
         float _maxExp = -5f;
         float _minExp = 5f;
+
+        bool _showDebug = false;
     }
 }
