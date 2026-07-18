@@ -9,14 +9,10 @@ using MonoGame.Extended;
 
 namespace Apos.Shapes {
     public class ShapeBatch : IDisposable {
-        public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) {
+        public ShapeBatch(GraphicsDevice graphicsDevice, Effect? effect = null) {
             _graphicsDevice = graphicsDevice;
 
-            if (effect == null) {
-                _effect = content.Load<Effect>("apos-shapes");
-            } else {
-                _effect = effect;
-            }
+            _effect = effect ?? LoadEmbeddedEffect(graphicsDevice);
 
             _vertices = new VertexShape[_initialVertices];
             _indices = new uint[_initialIndices];
@@ -31,6 +27,48 @@ namespace Apos.Shapes {
             _viewProjection = _effect.Parameters["view_projection"];
 
             _fsr = new FontStashRenderer(graphicsDevice, this);
+        }
+
+        [Obsolete("ShapeBatch no longer needs a ContentManager. Use ShapeBatch(GraphicsDevice, Effect?) instead.")]
+        public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) : this(graphicsDevice, effect) { }
+
+        /// <summary>
+        /// Loads the shader that was precompiled at pack time and embedded in this assembly.
+        /// </summary>
+        private static Effect LoadEmbeddedEffect(GraphicsDevice graphicsDevice) {
+#if KNI
+            // The knifx covers KNI's GL family (desktop GL, GLES, WebGL); the DirectX backends load standard MGFX instead.
+            GraphicsBackend backend = graphicsDevice.Adapter.Backend;
+            if (backend == GraphicsBackend.DirectX11 || backend == GraphicsBackend.DirectX12) {
+                return new Effect(graphicsDevice, ReadEmbeddedBytes("Apos.Shapes.apos-shapes.dx11.mgfx"));
+            }
+            return new Effect(graphicsDevice, ReadEmbeddedBytes("Apos.Shapes.apos-shapes.knifx"));
+#else
+            string name = UsesOpenGL() ? "Apos.Shapes.apos-shapes.ogl.mgfx" : "Apos.Shapes.apos-shapes.dx11.mgfx";
+            return new Effect(graphicsDevice, ReadEmbeddedBytes(name));
+#endif
+        }
+
+#if !KNI
+        private static bool UsesOpenGL() {
+            // MonoGame.Framework has the same assembly name for every platform, so ask the internal
+            // Shader.Profile (0 = OpenGL, 1 = DirectX) which bytecode the runtime expects.
+            var shader = typeof(Effect).Assembly.GetType("Microsoft.Xna.Framework.Graphics.Shader");
+            var profile = shader?.GetProperty("Profile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            if (profile?.GetValue(null) is int p) {
+                return p == 0;
+            }
+            // Only the DesktopGL assembly bundles the SDL bindings.
+            return typeof(Effect).Assembly.GetType("Sdl") != null;
+        }
+#endif
+
+        private static byte[] ReadEmbeddedBytes(string name) {
+            using var stream = typeof(ShapeBatch).Assembly.GetManifestResourceStream(name)
+                ?? throw new InvalidOperationException($"Missing embedded resource \"{name}\".");
+            byte[] bytes = new byte[stream.Length];
+            stream.ReadExactly(bytes);
+            return bytes;
         }
 
         public GraphicsDevice GraphicsDevice => _graphicsDevice;

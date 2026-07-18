@@ -30,7 +30,7 @@ namespace GameProject {
         }
 
         protected override void LoadContent() {
-            _sb = new ShapeBatch(GraphicsDevice, Content);
+            _sb = new ShapeBatch(GraphicsDevice);
 
             InputHelper.Setup(this);
 

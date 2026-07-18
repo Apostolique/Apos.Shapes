@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "shadowdusk.cli": {
+      "version": "0.11.0",
+      "commands": [
+        "ShadowDuskCLI"
+      ]
+    }
+  }
+}

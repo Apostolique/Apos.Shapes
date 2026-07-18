@@ -23,6 +23,7 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <Nullable>enable</Nullable>
     <NoWarn>1591</NoWarn>
+    <DefineConstants>$(DefineConstants);KNI</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,22 +38,23 @@
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="Apos.Shapes.KNI.props" PackagePath="buildTransitive/" />
+  <PropertyGroup>
+    <AposShaderDir>$(BaseIntermediateOutputPath)shaders/</AposShaderDir>
+  </PropertyGroup>
 
-    <None Include="Content/apos-shapes.fx">
-      <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-      <PackageFlatten>true</PackageFlatten>
-      <PackagePath>buildTransitive/Content/</PackagePath>
-    </None>
-    <None Include="Content/Content.mgcb">
-      <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-      <PackageFlatten>true</PackageFlatten>
-      <PackagePath>buildTransitive/Content/</PackagePath>
-    </None>
+  <ItemGroup>
+    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.knifx" LogicalName="Apos.Shapes.apos-shapes.knifx" Visible="false" />
+    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.kni.dx11.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx" Visible="false" />
   </ItemGroup>
+
+  <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"
+          Inputs="Content/apos-shapes.fx;$(MSBuildProjectFullPath)"
+          Outputs="$(AposShaderDir)apos-shapes.knifx;$(AposShaderDir)apos-shapes.kni.dx11.mgfx">
+    <MakeDir Directories="$(AposShaderDir)" />
+    <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.knifx&quot; --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
 
   <ItemGroup>
     <SourceRoot Include="$(MSBuildThisFileDirectory)/" />

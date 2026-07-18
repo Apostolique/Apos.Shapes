@@ -59,7 +59,7 @@ _graphics.GraphicsProfile = GraphicsProfile.HiDef;
 
 // ...
 
-ShapeBatch _sb = new ShapeBatch(GraphicsDevice, Content);
+ShapeBatch _sb = new ShapeBatch(GraphicsDevice);
 
 // ...
 

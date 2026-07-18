@@ -23,8 +23,6 @@
     <ProjectReference Include="../../../Source/Apos.Shapes.csproj" />
   </ItemGroup>
 
-  <Import Project="../../../Source/Apos.Shapes.props" />
-
   <ItemGroup>
     <Compile Include="../../Game/**/*.cs">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>

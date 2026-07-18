@@ -5,7 +5,7 @@ The ShapeBatch implements the SpriteBatch texture API. This makes it possible to
 
 ```csharp
 protected override void LoadContent() {
-    _sb = new ShapeBatch(GraphicsDevice, Content);
+    _sb = new ShapeBatch(GraphicsDevice);
     _texture = Content.Load<Texture2D>("image");
 }
 

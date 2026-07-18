@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Changed
+
+- The shader is now precompiled with [ShadowDusk](https://github.com/kaltinril/ShadowDusk) when the library is packed and embedded in the assembly. It is no longer added to your content pipeline, which means building your game no longer requires a shader compiler — or Wine on Linux and macOS.
+- New `ShapeBatch(GraphicsDevice, Effect?)` constructor. The `ContentManager` overload still works but is obsolete since the content pipeline is no longer used.
+- The minimum supported MonoGame version is now 3.8.2. On KNI, the DirectX backends load a standard MGFX effect while the GL family (desktop GL, GLES, WebGL) loads a knifx effect; both are embedded.
+- The `SkipAposShapeContent` MSBuild property is gone along with the `buildTransitive` content.
 
 ## [0.7.1] - 2026-07-18
 

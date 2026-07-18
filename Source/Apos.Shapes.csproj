@@ -26,7 +26,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MonoGame.Framework.DesktopGL" PrivateAssets="All" Version="3.8.0.1641" />
+    <PackageReference Include="MonoGame.Framework.DesktopGL" PrivateAssets="All" Version="3.8.2.1105" />
     <PackageReference Include="MonoGame.Extended" Version="5.3.1" />
     <PackageReference Include="FontStashSharp.MonoGame" Version="1.5.2" />
   </ItemGroup>
@@ -36,22 +36,23 @@
     <None Include="../LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="Apos.Shapes.props" PackagePath="buildTransitive/" />
+  <PropertyGroup>
+    <AposShaderDir>$(BaseIntermediateOutputPath)shaders/</AposShaderDir>
+  </PropertyGroup>
 
-    <None Include="Content/apos-shapes.fx">
-      <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-      <PackageFlatten>true</PackageFlatten>
-      <PackagePath>buildTransitive/Content/</PackagePath>
-    </None>
-    <None Include="Content/Content.mgcb">
-      <Pack>true</Pack>
-      <PackageCopyToOutput>true</PackageCopyToOutput>
-      <PackageFlatten>true</PackageFlatten>
-      <PackagePath>buildTransitive/Content/</PackagePath>
-    </None>
+  <ItemGroup>
+    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.ogl.mgfx" LogicalName="Apos.Shapes.apos-shapes.ogl.mgfx" Visible="false" />
+    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx11.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx" Visible="false" />
   </ItemGroup>
+
+  <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"
+          Inputs="Content/apos-shapes.fx;$(MSBuildProjectFullPath)"
+          Outputs="$(AposShaderDir)apos-shapes.ogl.mgfx;$(AposShaderDir)apos-shapes.dx11.mgfx">
+    <MakeDir Directories="$(AposShaderDir)" />
+    <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.ogl.mgfx&quot; /Profile:OpenGL" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
 
   <ItemGroup>
     <SourceRoot Include="$(MSBuildThisFileDirectory)/" />

@@ -13,7 +13,7 @@ using FontStashSharp;
 
 ```csharp
 protected override void LoadContent() {
-    _sb = new ShapeBatch(GraphicsDevice, Content);
+    _sb = new ShapeBatch(GraphicsDevice);
 
     _fontSystem = new FontSystem();
     _fontSystem.AddFont(TitleContainer.OpenStream($"{Content.RootDirectory}/my-font.ttf"));

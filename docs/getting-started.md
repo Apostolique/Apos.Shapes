@@ -15,11 +15,7 @@ dotnet add package Apos.Shapes
 
 You can find other ways to install it on the [NuGet page](https://www.nuget.org/packages/Apos.Shapes/).
 
-## Linux / OSX warning
-
-This library includes a shader that gets compiled along your other content. If you are building your project on Linux or OSX, make sure that you have set up Wine correctly or you will get a build error. MonoGame has guides on setting up Wine for both. Make sure to read them:
-* [Linux](https://docs.monogame.net/articles/getting_started/1_setting_up_your_os_for_development_ubuntu.html#setup-wine-for-effect-compilation)
-* [OSX](https://docs.monogame.net/articles/getting_started/1_setting_up_your_os_for_development_macos.html#setup-wine-for-effect-compilation)
+The library ships with a precompiled shader that is embedded in its assembly. Nothing gets added to your content pipeline and no shader compiler (or Wine on Linux / macOS) is needed. The minimum supported MonoGame version is 3.8.2.
 
 ## Setup
 
@@ -43,7 +39,7 @@ In your game's `LoadContent()`, create a ShapeBatch instance:
 
 ```csharp
 protected override void LoadContent() {
-    _sb = new ShapeBatch(GraphicsDevice, Content);
+    _sb = new ShapeBatch(GraphicsDevice);
 }
 
 ShapeBatch _sb;

@@ -40,8 +40,6 @@
     <ProjectReference Include="../../../Source/Apos.Shapes.KNI.csproj" />
   </ItemGroup>
 
-  <Import Project="../../../Source/Apos.Shapes.KNI.props" />
-
   <ItemGroup>
     <Compile Include="Program.cs" />
   </ItemGroup>
