@@ -84,24 +84,24 @@ namespace GameProject {
             _sb.DrawString(font, "Gray to blue", new Vector2(-204, -154), TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Oklab;
 
-            // Gradient shapes.
-            _sb.FillCircle(new Vector2(-80, -250), 52, new Gradient(new Vector2(-80, -250), TWColor.Amber400, new Vector2(-28, -250), TWColor.Red600, Gradient.Shape.Radial));
-            _sb.FillCircle(new Vector2(50, -250), 52, new Gradient(new Vector2(50, -250), TWColor.Sky400, new Vector2(50, -302), TWColor.Indigo700, Gradient.Shape.Conical));
-            _sb.FillCircle(new Vector2(180, -250), 52, new Gradient(new Vector2(180, -250), TWColor.Lime400, new Vector2(180, -302), TWColor.Emerald700, Gradient.Shape.ConicalAsym));
-            _sb.FillCircle(new Vector2(310, -250), 52, new Gradient(new Vector2(310, -250), TWColor.Fuchsia400, new Vector2(273, -287), TWColor.Purple800, Gradient.Shape.Square));
-            _sb.FillCircle(new Vector2(440, -250), 52, new Gradient(new Vector2(440, -250), TWColor.Rose400, new Vector2(403, -213), TWColor.Pink800, Gradient.Shape.Cross));
-            _sb.FillCircle(new Vector2(570, -250), 52, new Gradient(new Vector2(570, -250), TWColor.Cyan300, new Vector2(596, -250), TWColor.Blue700, Gradient.Shape.Radial, Gradient.RepeatStyle.Triangle));
-            _sb.FillCircle(new Vector2(440, -140), 52, new Gradient(new Vector2(440, -140), TWColor.Yellow300, new Vector2(440, -166), TWColor.Orange600, Gradient.Shape.SpiralCW));
-            _sb.FillCircle(new Vector2(570, -140), 52, new Gradient(new Vector2(570, -140), TWColor.Teal300, new Vector2(570, -166), TWColor.Sky700, Gradient.Shape.SpiralCCW));
+            // Gradient shapes in a 4x2 grid, aligned vertically with the color space bars.
+            _sb.FillCircle(new Vector2(150, -278), 52, new Gradient(new Vector2(150, -278), TWColor.Amber400, new Vector2(202, -278), TWColor.Red600, Gradient.Shape.Radial));
+            _sb.FillCircle(new Vector2(280, -278), 52, new Gradient(new Vector2(280, -278), TWColor.Sky400, new Vector2(280, -330), TWColor.Indigo700, Gradient.Shape.Conical));
+            _sb.FillCircle(new Vector2(410, -278), 52, new Gradient(new Vector2(410, -278), TWColor.Lime400, new Vector2(410, -330), TWColor.Emerald700, Gradient.Shape.ConicalAsym));
+            _sb.FillCircle(new Vector2(540, -278), 52, new Gradient(new Vector2(540, -278), TWColor.Fuchsia400, new Vector2(503, -315), TWColor.Purple800, Gradient.Shape.Square));
+            _sb.FillCircle(new Vector2(150, -168), 52, new Gradient(new Vector2(150, -168), TWColor.Rose400, new Vector2(113, -131), TWColor.Pink800, Gradient.Shape.Cross));
+            _sb.FillCircle(new Vector2(280, -168), 52, new Gradient(new Vector2(280, -168), TWColor.Cyan300, new Vector2(306, -168), TWColor.Blue700, Gradient.Shape.Radial, Gradient.RepeatStyle.Triangle));
+            _sb.FillCircle(new Vector2(410, -168), 52, new Gradient(new Vector2(410, -168), TWColor.Yellow300, new Vector2(410, -194), TWColor.Orange600, Gradient.Shape.SpiralCW));
+            _sb.FillCircle(new Vector2(540, -168), 52, new Gradient(new Vector2(540, -168), TWColor.Teal300, new Vector2(540, -194), TWColor.Sky700, Gradient.Shape.SpiralCCW));
 
             // Shapes with fills, borders, rounding and local gradients.
             _sb.DrawRectangle(new Vector2(-620, -60), new Vector2(190, 150), new Gradient(new Vector2(0, 0), TWColor.Sky400, new Vector2(190, 150), TWColor.Indigo700, isLocal: true), TWColor.Slate200, 3f, new CornerRadii(12, 48, 12, 48), rotation: 0.1f);
             _sb.DrawHexagon(new Vector2(-310, 15), 75, new Gradient(new Vector2(0, 0), TWColor.Emerald400, new Vector2(0, 75), TWColor.Teal800, Gradient.Shape.Radial, isLocal: true), TWColor.Slate200, 3f, rounded: 8f);
             _sb.DrawEquilateralTriangle(new Vector2(-150, 15), 38, new Gradient(new Vector2(0, -60), TWColor.Amber300, new Vector2(0, 60), TWColor.Orange700, isLocal: true), TWColor.Slate200, 3f, rounded: 6f);
             _sb.DrawTriangle(new Vector2(-30, 85), new Vector2(60, -55), new Vector2(150, 85), new Gradient(new Vector2(60, -55), TWColor.Pink400, new Vector2(60, 85), TWColor.Rose800), TWColor.Slate200, 3f, rounded: 6f);
-            _sb.DrawEllipse(new Vector2(330, 15), 95, 55, new Gradient(new Vector2(330, -40), TWColor.Violet400, new Vector2(330, 70), TWColor.Purple800), TWColor.Slate200, 3f, rotation: -0.15f);
-            _sb.FillArc(new Vector2(480, 40), MathF.PI * 0.75f, MathF.PI * 2.25f, 48, 14, new Gradient(new Vector2(480, 40), TWColor.Red500, new Vector2(480, -22), TWColor.Amber400, Gradient.Shape.Conical));
-            _sb.FillRing(new Vector2(575, 40), MathF.PI * 0.75f, MathF.PI * 2.25f, 48, 14, new Gradient(new Vector2(575, 88), TWColor.Cyan400, new Vector2(575, -8), TWColor.Blue700));
+            _sb.DrawEllipse(new Vector2(305, 15), 95, 55, new Gradient(new Vector2(305, -40), TWColor.Violet400, new Vector2(305, 70), TWColor.Purple800), TWColor.Slate200, 3f, rotation: -0.15f);
+            _sb.FillArc(new Vector2(465, 20), MathF.PI * 0.75f, MathF.PI * 2.25f, 44, 13, new Gradient(new Vector2(465, 20), TWColor.Red500, new Vector2(465, -37), TWColor.Amber400, Gradient.Shape.Conical));
+            _sb.FillRing(new Vector2(585, 20), MathF.PI * 0.75f, MathF.PI * 2.25f, 44, 13, new Gradient(new Vector2(585, 64), TWColor.Cyan400, new Vector2(585, -24), TWColor.Blue700));
 
             // Repeat styles, plus offsets that hold the end colors solid before the transition starts.
             _sb.FillRectangle(new Vector2(-620, 150), new Vector2(360, 36), new Gradient(new Vector2(-620, 168), TWColor.Cyan400, new Vector2(-530, 168), TWColor.Blue800, Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 6f);
