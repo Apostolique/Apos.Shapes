@@ -130,7 +130,8 @@ namespace Apos.Shapes {
             Arc = 7,
             Ring = 8,
             Texture = 9,
-            String = 10
+            String = 10,
+            Path = 11
         }
 
         static VertexShape() {

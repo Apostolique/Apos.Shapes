@@ -122,6 +122,8 @@ namespace GameProject {
             _sb.FillLine(new Vector2(280, 170), new Vector2(620, 170), 10, new Gradient(new Vector2(280, 170), TWColor.Purple500, new Vector2(620, 170), TWColor.Orange400));
             _sb.BorderLine(new Vector2(280, 220), new Vector2(620, 220), 10, new Gradient(new Vector2(280, 220), TWColor.Teal400, new Vector2(620, 220), TWColor.Pink500), 3f);
             _sb.DrawString(titleFont, "Apos.Shapes", new Vector2(280, 250), TWColor.Gray100);
+            // A translucent path blends once even where segments meet, and gradients span the whole stroke.
+            _sb.FillPath([new Vector2(280, 335), new Vector2(355, 305), new Vector2(430, 335), new Vector2(505, 305), new Vector2(620, 335)], 9, new Gradient(new Vector2(280, 320), new Color(TWColor.Sky400, 0.6f), new Vector2(620, 320), new Color(TWColor.Fuchsia500, 0.6f)));
 
             _sb.End();
 

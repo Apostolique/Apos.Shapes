@@ -224,6 +224,59 @@ float RingSDF(float2 p, float2 n, float r, float th) {
     p = mul(p, float2x2(n.x, n.y, -n.y, n.x));
     return max(abs(length(p) - r) - th * 0.5, length(float2(p.x, max(0.0, abs(r - p.y) - th * 0.5))) * sign(p.x));
 }
+// Pops the lowest base-radix digit off m, defined early for StrokeSDF. floor() can be
+// off by one on some driver and translator combos, the remainder check corrects for it.
+float DecodeDigit(inout float m, float radix) {
+    float q = floor(m / radix);
+    float r = m - q * radix;
+    if (r >= radix) {
+        q += 1.0;
+        r -= radix;
+    } else if (r < 0.0) {
+        q -= 1.0;
+        r += radix;
+    }
+    m = q;
+    return r;
+}
+// Stroked path segment from (0, 0) to (len, 0) with half thickness r. Each end is round
+// (arc, also used for round joins), butt (sharp face at the endpoint), square (sharp face
+// pushed out by r), open (the slab runs on so quad geometry can shape a miter tip), or cut
+// by a bevel plane through the joint. data.x packs the two end modes in base 8, data.y and
+// data.z are the bevel plane directions as angles in the local frame.
+float StrokeSDF(float2 p, float len, float r, float4 data) {
+    float m = data.x;
+    float modeA = DecodeDigit(m, 8.0);
+    float modeB = m;
+    float ay = abs(p.y);
+    float xa = -p.x;
+    float xb = p.x - len;
+    // Excess past each end's face. Open and bevel ends never activate.
+    float ea = modeA >= 2.5 ? -1e6 : (modeA >= 1.5 ? xa - r : xa);
+    float eb = modeB >= 2.5 ? -1e6 : (modeB >= 1.5 ? xb - r : xb);
+    float e = max(ea, eb);
+    float mode = ea > eb ? modeA : modeB;
+    float d;
+    if (mode < 0.5) {
+        // Round: distance to the spine clamped at the end.
+        d = length(float2(max(e, 0.0), ay)) - r;
+    } else {
+        // Sharp: exact box corner. Interior still resolves to the plain slab.
+        float2 q = float2(e, ay - r);
+        d = min(max(q.x, q.y), 0.0) + length(max(q, 0.0));
+    }
+    if (modeA >= 3.5) {
+        float2 dir;
+        sincos(data.y, dir.y, dir.x);
+        d = max(d, dot(p, dir) - r * abs(dir.y));
+    }
+    if (modeB >= 3.5) {
+        float2 dir;
+        sincos(data.z, dir.y, dir.x);
+        d = max(d, dot(p - float2(len, 0.0), dir) - r * abs(dir.y));
+    }
+    return d;
+}
 
 float LinearToGamma(float c) {
     return c >= 0.0031308 ? pow(abs(c), 1.0 / 2.4) * 1.055 - 0.055 : 12.92 * c;
@@ -440,21 +493,6 @@ float4 PackColors(float4 a, float4 b) {
     return float4(Pack11(a.x, a.y), Pack11(a.z, a.w), Pack11(b.x, b.y), Pack11(b.z, b.w));
 }
 
-// Pops the lowest base-radix digit off m. floor() can be off by one on some
-// driver and translator combos, the remainder check corrects for it.
-float DecodeDigit(inout float m, float radix) {
-    float q = floor(m / radix);
-    float r = m - q * radix;
-    if (r >= radix) {
-        q += 1.0;
-        r -= radix;
-    } else if (r < 0.0) {
-        q -= 1.0;
-        r += radix;
-    }
-    m = q;
-    return r;
-}
 float2 Unpack11(float v) {
     float lo = DecodeDigit(v, 2048.0);
     return float2(v, lo) / 2047.0;
@@ -521,7 +559,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     }
     float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / clipAa));
 
-    if (shape >= 8.5) {
+    if (shape >= 8.5 && shape < 10.5) {
         if (shape < 9.5) {
             return tex2D(TextureSampler, p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
         }
@@ -545,8 +583,10 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = EllipseSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
     } else if (shape < 7.5) {
         d = ArcSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
-    } else {
+    } else if (shape < 8.5) {
         d = RingSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
+    } else {
+        d = StrokeSDF(p.TexCoord.xy, p.Meta1.w, sdfSize, p.Meta2);
     }
 
     d -= p.TexCoord.z;

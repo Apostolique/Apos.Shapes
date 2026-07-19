@@ -54,13 +54,57 @@ _sb.FillEllipse(new Vector2(120, 120), 100, 50, Color.White);
 
 ## Line
 
-A line is defined by two points and a radius. The radius is half the line's thickness. The end caps are rounded. A line with the same start and end positions is drawn as a circle.
+A line is defined by two points and a radius. The radius is half the line's thickness. The end caps are rounded. A line with the same start and end positions is drawn as a circle. To draw a line through more than two points, use a [Path](#path).
 
 ```csharp
 _sb.FillLine(new Vector2(100, 20), new Vector2(450, 80), 20, Color.White);
 ```
 
 ![A line](line.png)
+
+## Path
+
+A path is a line that goes through any number of points. The whole path renders as one continuous shape: a translucent path blends once even where segments meet, and a gradient spans the full stroke instead of restarting on every segment.
+
+```csharp
+_sb.FillPath([new Vector2(100, 40), new Vector2(220, 140), new Vector2(340, 40), new Vector2(450, 120)], 20, Color.White);
+```
+
+![A path](path.png)
+
+Joins can be `Round`, `Miter`, or `Bevel`. Caps can be `Round`, `Butt` to stop at the endpoint, or `Square` to extend past it by the radius:
+
+```csharp
+_sb.FillPath([new Vector2(170, 75), new Vector2(205, 25), new Vector2(240, 75)], 12, Color.White, join: PathJoin.Miter, cap: PathCap.Butt);
+```
+
+![Round, miter, and bevel joins above round, butt, and square caps](path-styles.png)
+
+Styles can also be mixed inside one path. The two caps are set independently with `cap` and `capEnd`. For joins, pass a point together with a join style: that style applies to the joint at that point and to every following joint until another point sets a different one.
+
+```csharp
+_sb.FillPath([
+    new Vector2(20, 130),
+    (new Vector2(110, 40), PathJoin.Miter),
+    new Vector2(200, 130),
+    (new Vector2(290, 40), PathJoin.Bevel),
+    new Vector2(380, 130)
+], 14, Color.White, cap: PathCap.Butt, capEnd: PathCap.Square);
+```
+
+![A path mixing miter and bevel joins with butt and square caps](path-mixed.png)
+
+A path can also be built one point at a time instead of passing an array, which is handy inside a loop. Start it with `BeginPath`, `BeginFillPath`, or `BeginBorderPath`, feed points with `PathTo`, then draw it with `EndPath`. `PathTo` takes the same optional join style as a styled point:
+
+```csharp
+_sb.BeginFillPath(10, Color.White);
+for (int i = 0; i <= 24; i++) {
+    _sb.PathTo(new Vector2(20 + i * 15, 80 + MathF.Sin(i * 0.7f) * 50));
+}
+_sb.EndPath();
+```
+
+Miter joins sharper than the `miterLimit` parameter, measured like SVG's `miterlimit` with a default of 4, fall back to bevel. A path that crosses over itself overlaps like two separate shapes would. The same happens at a joint whose segments are shorter than the stroke is wide.
 
 ## Rectangle
 

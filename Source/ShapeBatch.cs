@@ -84,6 +84,7 @@ namespace Apos.Shapes {
                 throw new InvalidOperationException("Begin cannot be called again until End has been successfully called.");
             }
             _beginCalled = true;
+            _pathOpen = false; // Recover from a path a failed frame left unfinished.
 
             if (view != null) {
                 _view = view.Value;
@@ -287,6 +288,326 @@ namespace Apos.Shapes {
         }
         public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
             DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize);
+        }
+
+        /// <summary>
+        /// Draws a polyline through the given points as one continuous shape. Segments partition the
+        /// stroke along shared seams, so translucent strokes blend once instead of stacking where
+        /// segments meet, and gradients span the whole stroke. Joins can be round, miter, or bevel and
+        /// caps can be round, butt, or square; capEnd styles the end of the path separately. Miter joins
+        /// sharper than the miter limit, measured like SVG's miterlimit, fall back to bevel. A path that
+        /// crosses over itself still overlaps like separate shapes would, as do joins whose segments are
+        /// much shorter than the stroke radius.
+        /// </summary>
+        public void DrawPath(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            // Every segment needs a direction, so drop consecutive duplicates.
+            Span<Vector2> pts = points.Length <= 256 ? stackalloc Vector2[points.Length] : new Vector2[points.Length];
+            int n = 0;
+            foreach (Vector2 p in points) {
+                if (n == 0 || Vector2.DistanceSquared(p, pts[n - 1]) > 1e-12f) pts[n++] = p;
+            }
+            DrawPathCore(pts[..n], default, radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize);
+        }
+        /// <summary>
+        /// Starts building a path point by point, an alternative to DrawPath that needs no point array.
+        /// Feed points with PathTo, then call EndPath to draw it. All the DrawPath rules apply: joins can
+        /// change along the way through PathTo, and the whole path draws as one continuous shape.
+        /// </summary>
+        public void BeginPath(float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            if (_pathOpen) {
+                throw new InvalidOperationException("BeginPath cannot be called again until EndPath has been called.");
+            }
+            _pathOpen = true;
+            _pathPointCount = 0;
+            _pathRadius = radius;
+            _pathFill = fill;
+            _pathBorder = border;
+            _pathThickness = thickness;
+            _pathJoin = join;
+            _pathCap = cap;
+            _pathCapEnd = capEnd;
+            _pathMiterLimit = miterLimit;
+            _pathAaSize = aaSize;
+        }
+        public void BeginFillPath(float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            BeginPath(radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize);
+        }
+        public void BeginBorderPath(float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            BeginPath(radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize);
+        }
+        /// <summary>
+        /// Adds the next point to the path started by BeginPath. Passing a join switches the style for
+        /// the joint at this point and every following joint until another point switches it again.
+        /// </summary>
+        public void PathTo(Vector2 point, PathJoin? join = null) {
+            if (!_pathOpen) {
+                throw new InvalidOperationException("BeginPath must be called before PathTo.");
+            }
+            EnsureSizeOrDouble(ref _pathPoints, _pathPointCount + 1);
+            _pathPoints[_pathPointCount++] = new PathPoint(point, join);
+        }
+        /// <summary>Draws the path built since BeginPath.</summary>
+        public void EndPath() {
+            if (!_pathOpen) {
+                throw new InvalidOperationException("BeginPath must be called before EndPath.");
+            }
+            _pathOpen = false;
+            DrawPathPoints(new ReadOnlySpan<PathPoint>(_pathPoints, 0, _pathPointCount), _pathRadius, _pathFill, _pathBorder, _pathThickness, _pathJoin, _pathCap, _pathCapEnd, _pathMiterLimit, _pathAaSize);
+        }
+
+        // The styled entry point behind the ShapeBatchPathExtensions overloads. Kept internal so plain
+        // Vector2 point lists keep binding the overload above without ambiguity on any C# version.
+        internal void DrawPathPoints(ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap cap, PathCap? capEnd, float miterLimit, float aaSize) {
+            Span<Vector2> pts = points.Length <= 256 ? stackalloc Vector2[points.Length] : new Vector2[points.Length];
+            Span<PathJoin> joins = points.Length <= 256 ? stackalloc PathJoin[points.Length] : new PathJoin[points.Length];
+            int n = 0;
+            PathJoin running = join;
+            foreach (PathPoint p in points) {
+                if (p.Join.HasValue) running = p.Join.Value;
+                if (n == 0 || Vector2.DistanceSquared(p.Position, pts[n - 1]) > 1e-12f) {
+                    pts[n] = p.Position;
+                    joins[n] = running;
+                    n++;
+                } else {
+                    // A dropped duplicate still carries its style forward.
+                    joins[n - 1] = running;
+                }
+            }
+            DrawPathCore(pts[..n], joins[..n], radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize);
+        }
+        // joins holds the effective join per point (empty for a uniform path); joint j reads entry j + 1.
+        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize) {
+            int n = pts.Length;
+            if (n == 0) return;
+            if (n == 1) {
+                if (capStart == PathCap.Round) {
+                    DrawCircle(pts[0], radius, fill, border, thickness, aaSize: aaSize);
+                } else if (capStart == PathCap.Square) {
+                    DrawRectangle(pts[0] - new Vector2(radius), new Vector2(radius * 2f), fill, border, thickness, default, aaSize: aaSize);
+                }
+                return;
+            }
+            if (n == 2 && capStart == PathCap.Round && capEnd == PathCap.Round) {
+                DrawLine(pts[0], pts[1], radius, fill, border, thickness, aaSize);
+                return;
+            }
+
+            if (_isPerspective) {
+                float worst = 0f;
+                for (int i = 0; i < n; i++) {
+                    worst = MathF.Max(worst, SamplePixelSize(pts[i], radius));
+                }
+                _pixelSize = worst;
+            }
+            float aaOffset = _pixelSize * aaSize;
+            float h = radius + aaOffset; // Quads reach the outer AA edge.
+
+            // One anchor for the whole path so gradients run seamlessly across segments.
+            GradientToWorld(ref fill, ref border, pts[0], Vector2.Zero, MathF.Atan2(pts[1].Y - pts[0].Y, pts[1].X - pts[0].X));
+
+            // The capsule SDFs of two segments agree along the bisector of their joint, so cutting both
+            // quads there splits the stroke into regions that each blend exactly once and meet invisibly.
+            Span<PathJoint> joints = n - 2 <= 256 ? stackalloc PathJoint[n - 2] : new PathJoint[n - 2];
+            Vector2 uPrev = (pts[1] - pts[0]) / Vector2.Distance(pts[0], pts[1]);
+            float lenPrev = Vector2.Distance(pts[0], pts[1]);
+            for (int j = 0; j < n - 2; j++) {
+                Vector2 joint = pts[j + 1];
+                Vector2 d = pts[j + 2] - joint;
+                float len = d.Length();
+                Vector2 u = d / len;
+                ref PathJoint jd = ref joints[j];
+
+                float c2 = Vector2.Dot(uPrev, u);
+                float s2 = uPrev.X * u.Y - uPrev.Y * u.X;
+                float cHalf = MathF.Sqrt(MathF.Max((1f + c2) * 0.5f, 0f));
+                if (cHalf < 0.05f) {
+                    // Near reversal the bisector degenerates; both sides fall back to overlapping round caps.
+                    jd.Mode = PathJointMode.Reversal;
+                } else {
+                    float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
+                    float sign = s2 >= 0f ? 1f : -1f;
+                    float run = h * sHalf / cHalf; // How far along each segment the inner miter reaches.
+                    jd.Sign = sign;
+                    jd.CHalf = cHalf;
+                    jd.SHalf = sHalf;
+                    jd.Theta = 2f * MathF.Atan2(sHalf, cHalf);
+                    if (run <= MathF.Min(lenPrev, len) * 0.5f) {
+                        jd.Mode = PathJointMode.Partition;
+                        Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
+                        jd.BIn = joint + m * (sign * h / cHalf);
+                        PathJoin requested = joins.IsEmpty ? join : joins[j + 1];
+                        if (requested != PathJoin.Round && jd.Theta > 1e-4f) {
+                            PathJoin effective = requested;
+                            // SVG semantics: the miter ratio is 1 / cos of the half turn.
+                            if (effective == PathJoin.Miter && 1f > cHalf * miterLimit) effective = PathJoin.Bevel;
+                            // A nearly straight bevel is a miter; its cut plane would run parallel to the stroke.
+                            if (effective == PathJoin.Bevel && sHalf < 0.01f) effective = PathJoin.Miter;
+                            jd.Join = effective;
+                            // Miter: the h-offset lines' outer intersection. Bevel: just past the cut plane's AA.
+                            jd.MOut = effective == PathJoin.Miter
+                                ? joint - m * (sign * h / cHalf)
+                                : joint - m * (sign * (radius * cHalf + aaOffset + _pixelSize));
+                        }
+                    } else {
+                        // The inner miter outruns a short segment. Overlapping slabs stay hole-free and only
+                        // double blend inside the joint, where the stroke genuinely covers itself.
+                        jd.Mode = PathJointMode.Overlap;
+                    }
+                    if (jd.Theta > 1e-4f) {
+                        // Same sagitta rule as EmitHollowAnnulus: chords circumscribe the join arc.
+                        float phi = MathF.Acos(MathF.Max(1f - _hollowMaxSagPixels * _pixelSize / h, 0f));
+                        jd.Chords = Math.Clamp((int)MathF.Ceiling(jd.Theta / MathF.Max(phi, 1e-4f)), 1, _hollowMaxSectors);
+                        float overshoot = 1f / MathF.Cos(jd.Theta / (2f * jd.Chords));
+                        jd.Overshoot = overshoot;
+                        jd.E1Prev = joint - new Vector2(-uPrev.Y, uPrev.X) * (sign * h * overshoot);
+                        jd.E1Next = joint - new Vector2(-u.Y, u.X) * (sign * h * overshoot);
+                    } else {
+                        // Straight through: one shared wall point keeps the seam watertight.
+                        jd.Chords = 0;
+                        jd.E1Prev = jd.E1Next = joint - new Vector2(-uPrev.Y, uPrev.X) * (sign * h);
+                    }
+                }
+                uPrev = u;
+                lenPrev = len;
+            }
+
+            // Cross sections at each end: two corners at a cap, up to three points at a joint.
+            // Every polygon is convex, so a fan from the first vertex triangulates it.
+            Span<Vector2> poly = stackalloc Vector2[6];
+            for (int i = 0; i < n - 1; i++) {
+                Vector2 a = pts[i];
+                Vector2 b = pts[i + 1];
+                Vector2 d = b - a;
+                float len = d.Length();
+                Vector2 u = d / len;
+                Vector2 nrm = new(-u.Y, u.X);
+
+                int count = 0;
+                float modeStart = 0f;
+                float modeEnd = 0f;
+                float angStart = 0f;
+                float angEnd = 0f;
+                // Start end, walked from +nrm to -nrm so the polygon winds clockwise on screen.
+                if (i == 0 || joints[i - 1].Mode == PathJointMode.Reversal) {
+                    // Reversal fallbacks keep round caps; only true path ends take the cap style.
+                    float ext = i == 0 && capStart == PathCap.Butt ? aaOffset : h;
+                    if (i == 0) modeStart = (float)capStart;
+                    Vector2 back = a - u * ext;
+                    poly[count++] = back + nrm * h;
+                    poly[count++] = back - nrm * h;
+                } else {
+                    ref PathJoint jd = ref joints[i - 1];
+                    if (jd.Join == PathJoin.Miter) {
+                        modeStart = 3f;
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                        } else {
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        }
+                    } else if (jd.Join == PathJoin.Bevel) {
+                        modeStart = 4f;
+                        angStart = MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf);
+                        // Where the cut plane's AA edge leaves the outer offset line.
+                        Vector2 x0 = a - u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * h);
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = x0;
+                        } else {
+                            poly[count++] = x0;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        }
+                    } else {
+                        Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : a + nrm * (jd.Sign * h);
+                        if (jd.Sign > 0f) {
+                            poly[count++] = inner;
+                            poly[count++] = a;
+                            poly[count++] = jd.E1Next;
+                        } else {
+                            poly[count++] = jd.E1Next;
+                            poly[count++] = a;
+                            poly[count++] = inner;
+                        }
+                    }
+                }
+                // End end, walked from -nrm back to +nrm.
+                if (i == n - 2 || joints[i].Mode == PathJointMode.Reversal) {
+                    float ext = i == n - 2 && capEnd == PathCap.Butt ? aaOffset : h;
+                    if (i == n - 2) modeEnd = (float)capEnd;
+                    Vector2 fwd = b + u * ext;
+                    poly[count++] = fwd - nrm * h;
+                    poly[count++] = fwd + nrm * h;
+                } else {
+                    ref PathJoint jd = ref joints[i];
+                    if (jd.Join == PathJoin.Miter) {
+                        modeEnd = 3f;
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        } else {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                        }
+                    } else if (jd.Join == PathJoin.Bevel) {
+                        modeEnd = 4f;
+                        angEnd = MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf);
+                        Vector2 x1 = b + u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * h);
+                        if (jd.Sign > 0f) {
+                            poly[count++] = x1;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        } else {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = x1;
+                        }
+                    } else {
+                        Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : b + nrm * (jd.Sign * h);
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.E1Prev;
+                            poly[count++] = b;
+                            poly[count++] = inner;
+                        } else {
+                            poly[count++] = inner;
+                            poly[count++] = b;
+                            poly[count++] = jd.E1Prev;
+                        }
+                    }
+                }
+
+                float modes = modeStart + 8f * modeEnd;
+                for (int k = 1; k + 1 < count; k += 2) {
+                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radius, aaSize, modes, angStart, angEnd);
+                }
+
+                // Round join: a fan around the joint covers the outer wedge between the two walls. Any
+                // point there is nearest the shared joint, so this segment's SDF is exact for the arc.
+                if (i < n - 2 && joints[i].Mode != PathJointMode.Reversal && joints[i].Join == PathJoin.Round && joints[i].Chords > 0) {
+                    ref PathJoint jd = ref joints[i];
+                    float baseAngle = MathF.Atan2(-jd.Sign * nrm.Y, -jd.Sign * nrm.X);
+                    float step = jd.Sign * jd.Theta / jd.Chords;
+                    float reach = h * jd.Overshoot;
+                    for (int t = 0; t < jd.Chords; t += 2) {
+                        Vector2 v0 = PathFanVertex(jd, b, baseAngle, step, reach, t);
+                        Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
+                        Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
+                        if (jd.Sign > 0f) {
+                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radius, aaSize, 0f, 0f, 0f);
+                        } else {
+                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radius, aaSize, 0f, 0f, 0f);
+                        }
+                    }
+                }
+            }
+        }
+        public void FillPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            DrawPath(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize);
+        }
+        public void BorderPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            DrawPath(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize);
         }
 
         public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
@@ -847,6 +1168,9 @@ namespace Apos.Shapes {
             if (!_beginCalled) {
                 throw new InvalidOperationException("Begin must be called before calling End.");
             }
+            if (_pathOpen) {
+                throw new InvalidOperationException("EndPath must be called before calling End.");
+            }
             _beginCalled = false;
 
             Flush();
@@ -1068,6 +1392,45 @@ namespace Apos.Shapes {
             }
         }
 
+        private enum PathJointMode : byte {
+            Partition = 0, // Both quads end on the shared inner miter point: exact single-blend seam.
+            Overlap = 1,   // Segment too short for the miter: slabs run to their full corners and overlap.
+            Reversal = 2   // Bisector degenerates: both segments get overlapping round caps.
+        }
+        private struct PathJoint {
+            public PathJointMode Mode;
+            public PathJoin Join;   // Effective join; non-round styles fall back to Round outside Partition mode.
+            public float Sign;      // Which side of the incoming segment the inner miter is on.
+            public Vector2 BIn;     // Inner miter point, on both offset lines (Partition mode only).
+            public Vector2 MOut;    // Outer miter tip, or the bevel cut's far corner on the bisector.
+            public Vector2 E1Prev;  // Outer wall corner of the incoming segment; first fan vertex.
+            public Vector2 E1Next;  // Outer wall corner of the outgoing segment; last fan vertex.
+            public float Theta;     // Turn angle of the joint.
+            public float CHalf;     // Cosine and sine of half the turn angle.
+            public float SHalf;
+            public int Chords;
+            public float Overshoot; // Chord vertices circumscribe the join arc by this factor.
+        }
+
+        // The first and last vertices reuse the stored wall corners so the fan shares them bitwise with
+        // the segment quads, mirroring the exact-repeat trick in EmitHollowAnnulus.
+        private static Vector2 PathFanVertex(in PathJoint jd, Vector2 joint, float baseAngle, float step, float reach, int t) {
+            if (t == 0) return jd.E1Prev;
+            if (t == jd.Chords) return jd.E1Next;
+            (float sin, float cos) = MathF.SinCos(baseAngle + step * t);
+            return joint + new Vector2(cos, sin) * reach;
+        }
+
+        // A path quad's local coordinates live in its segment's frame: x along the segment, y across it.
+        // Meta2 carries the packed end modes and the bevel plane angles for StrokeSDF.
+        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float aaSize, float modes, float angStart, float angEnd) {
+            Vector2 Local(Vector2 w) {
+                Vector2 r = w - origin;
+                return new Vector2(Vector2.Dot(r, u), Vector2.Dot(r, nrm));
+            }
+            EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, 0f);
+        }
+
         // One quad per edge between two nested convex polygons with matching corner counts. Adjacent
         // quads share their mitre edges exactly so the frame is watertight. Corners must be listed
         // clockwise on screen.
@@ -1180,5 +1543,38 @@ namespace Apos.Shapes {
         private Vector2 _clipU = Vector2.UnitX;
         private float _clipRounding;
         private float _clipAaSize;
+
+        // Streaming path state for BeginPath/PathTo/EndPath. The point buffer is reused across paths.
+        private PathPoint[] _pathPoints = new PathPoint[64];
+        private int _pathPointCount;
+        private bool _pathOpen;
+        private float _pathRadius;
+        private Gradient _pathFill;
+        private Gradient _pathBorder;
+        private float _pathThickness;
+        private PathJoin _pathJoin;
+        private PathCap _pathCap;
+        private PathCap? _pathCapEnd;
+        private float _pathMiterLimit;
+        private float _pathAaSize;
+    }
+
+    /// <summary>
+    /// Path overloads whose points carry join styles. A point's style applies to the joint at that
+    /// point and to every following joint until another point sets a different one; the join parameter
+    /// seeds the style before the first styled point. Points convert implicitly from Vector2 and from
+    /// (position, join) tuples. These are extension methods so plain Vector2 point lists keep binding
+    /// the ShapeBatch overloads without ambiguity on every C# language version.
+    /// </summary>
+    public static class ShapeBatchPathExtensions {
+        public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            sb.DrawPathPoints(points, radius, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize);
+        }
+        public static void FillPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            sb.DrawPathPoints(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize);
+        }
+        public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+            sb.DrawPathPoints(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize);
+        }
     }
 }

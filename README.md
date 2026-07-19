@@ -13,8 +13,9 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 
 ## Features
 
-* 9 shapes: Circle, Ellipse, Line, Rectangle, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
+* 10 shapes: Circle, Ellipse, Line, Path, Rectangle, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
 * `Fill`, `Border`, and `Draw` variants for every shape
+* Paths draw a polyline as one continuous shape: translucent strokes blend once even where segments meet, with round, miter, or bevel joins and round, butt, or square caps, mixable within one path. Points come from an array or one at a time with `BeginPath`/`PathTo`/`EndPath`
 * Rounded corners (per-corner radii on rectangles), rotation, and adjustable anti-aliasing
 * Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
 * Text (FontStashSharp API)
