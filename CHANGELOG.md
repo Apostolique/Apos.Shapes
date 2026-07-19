@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.3] - 2026-07-18
+
+### Added
+
+- Paths. `DrawPath`, `FillPath`, and `BorderPath` stroke a polyline as a single continuous shape with a fill and a border. Joints can be round, miter, or bevel — either for the whole path or per point using `PathPoint` — and the ends can be capped round, butt, or square, with an optional different cap for each end. Miters respect a miter limit and fall back to bevel past it, like SVG. There's also a streaming API, `BeginPath`/`PathTo`/`EndPath`, to feed points one at a time without building an array first.
+
 ### Changed
 
+- Anti-aliasing is now computed per pixel in the shader from screen-space derivatives instead of a per-shape pixel size. Edges stay crisp and consistent under any view matrix, including anisotropic scale, skew, and perspective.
 - Hollow shapes now rasterize only their visible band instead of their full bounding quad. Rings, arcs, and any shape drawn with a transparent fill and a border emit a mesh with a hole in the middle, so big outlines no longer pay fill rate for their interior, and arcs no longer cover angles they don't span. Small shapes keep the single quad. Rendering is unchanged.
 
 ## [0.7.2] - 2026-07-18
@@ -246,7 +255,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.8...v0.7.1
 [0.6.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.6.7...v0.6.8
