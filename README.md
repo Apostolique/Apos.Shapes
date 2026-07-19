@@ -1,13 +1,28 @@
 # Apos.Shapes
-Shape rendering library for MonoGame.
+Shape rendering library for MonoGame and KNI.
 
-[![Discord](https://img.shields.io/discord/355231098122272778.svg)](https://discord.gg/MonoGame)
+[![Discord](https://img.shields.io/discord/355231098122272778.svg)](https://discord.gg/MonoGame) [![NuGet](https://img.shields.io/nuget/v/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/) [![NuGet](https://img.shields.io/nuget/dt/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/)
 
 ## Description
 
-This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions. It can also draw text and textures.
+This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text with the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API and textures with the SpriteBatch API. Shapes, text, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
 
-![](./Images/example.png)
+Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions.
+
+![Shapes drawn with Apos.Shapes](./Images/example.png)
+
+## Features
+
+* 9 shapes: Circle, Ellipse, Line, Rectangle, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
+* `Fill`, `Border`, and `Draw` variants for every shape
+* Rounded corners (per-corner radii on rectangles), rotation, and adjustable anti-aliasing
+* Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
+* Text (FontStashSharp API)
+* Textures (SpriteBatch API)
+* Clipping to a rectangle
+* One batch for everything. Mixing shapes, text, and textures never breaks the batch
+* Precompiled shader embedded in the assembly using [ShadowDusk](https://github.com/kaltinril/ShadowDusk). No need for Wine to build on Linux or OSX.
+* Works with MonoGame 3.8.2+ and [KNI](https://github.com/kniengine/kni)
 
 ## Documentation
 
@@ -18,29 +33,9 @@ This library draws shapes using [SDF](https://en.wikipedia.org/wiki/Signed_dista
 * [Text](https://apostolique.github.io/Apos.Shapes/text/)
 * [Textures](https://apostolique.github.io/Apos.Shapes/textures/)
 
-## Build
+You can also try the library directly in your browser [here](https://xnafiddle.net/#code=H4sIAAAAAAAAA41S20rEMBB9X9h_mMcUllAFXxQf9uINLIi66puk6Ww7GJOSpFtU_HebWrsXF3ZDoe3MnDNzTqZypHN4-HAe38-Gg6r9TUha48zC8xct-KUV71gb-7Yvz6-sKAuSri8cl8bxh0KUGGLDQVmliiRIJZyD5OOqAcIptK-v4QCa80cxwyVJTIQWOVp4zVfMoaqlnAgvC3h1aUsdwh39LzGL_jjD6RngHDTWu_swX5CLznageml31ixIYcOyFeHXNMPFGvbGJaZy-ESO0hbgbYVr-WfSman5WClTzx3ae3T0GUzbqPzutVnjUXrMwCzRWsoQloYyuNHkSSj63BKcCod8PXko4a0R2dRoj9pvWejSzryV_WzTxxF0yIO7zctMeGThwh6pWYO8-2g67wfPrKh3QldDb87HpwqFZVOjjOUTJeRb1C9PJ5FPMCfN_scvSakpWamQBQ-emoGMPWbHcTyCoziORnASB_2B-rkgj_8pLnTG1tervaNWRD_7yrfm-QEZrfGonQMAAA).
 
-[![NuGet](https://img.shields.io/nuget/v/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/) [![NuGet](https://img.shields.io/nuget/dt/Apos.Shapes.svg)](https://www.nuget.org/packages/Apos.Shapes/)
-
-## Features
-
-* Shapes
-  * Circle
-  * Line
-  * Rectangle
-  * Hexagon
-  * Equilateral Triangle
-  * Triangle
-  * Ellipse
-  * Arc
-  * Ring
-* Filled + Borders
-* Gradients
-* Rounded
-* Text (FontStashSharp API)
-* Textures (SpriteBatch API)
-
-## Usage samples
+## Getting started
 
 Install with:
 
@@ -48,39 +43,39 @@ Install with:
 dotnet add package Apos.Shapes
 ```
 
-Add to your Game1.cs:
+Set the `HiDef` profile in your game's constructor. (With KNI, use `FL10_0` instead.) Create a `ShapeBatch`, then draw between `Begin` and `End`:
 
 ```csharp
 using Apos.Shapes;
 
-// ...
+public class Game1 : Game {
+    GraphicsDeviceManager _graphics;
+    ShapeBatch _sb;
 
-_graphics.GraphicsProfile = GraphicsProfile.HiDef;
+    public Game1() {
+        _graphics = new GraphicsDeviceManager(this);
+        _graphics.GraphicsProfile = GraphicsProfile.HiDef;
+    }
 
-// ...
+    protected override void LoadContent() {
+        _sb = new ShapeBatch(GraphicsDevice);
+    }
 
-ShapeBatch _sb = new ShapeBatch(GraphicsDevice);
+    protected override void Draw(GameTime gameTime) {
+        GraphicsDevice.Clear(new Color(17, 24, 39));
 
-// ...
+        _sb.Begin();
+        _sb.FillCircle(new Vector2(120, 120), 75, new Color(96, 165, 250));
+        _sb.DrawRectangle(new Vector2(240, 70), new Vector2(150, 100), new Color(220, 38, 38), Color.White, 4f, 20f);
+        _sb.BorderLine(new Vector2(120, 240), new Vector2(390, 240), 15, Color.White, 2f);
+        _sb.End();
 
-_sb.Begin();
-_sb.BorderLine(new Vector2(100, 20), new Vector2(450, -15), 20, Color.White, 2f);
-
-_sb.DrawCircle(new Vector2(120, 120), 75, new Color(96, 165, 250), new Color(191, 219, 254), 4f);
-_sb.DrawCircle(new Vector2(120, 120), 30, Color.White, Color.Black, 20f);
-
-_sb.DrawCircle(new Vector2(370, 120), 100, new Color(96, 165, 250), new Color(191, 219, 254), 4f);
-_sb.DrawCircle(new Vector2(370, 120), 40, Color.White, Color.Black, 20f);
-
-_sb.DrawCircle(new Vector2(190, 270), 10, Color.Black, Color.White, 2f);
-_sb.DrawCircle(new Vector2(220, 270), 10, Color.Black, Color.White, 2f);
-
-_sb.FillCircle(new Vector2(235, 400), 30, new Color(220, 38, 38));
-_sb.FillRectangle(new Vector2(235, 370), new Vector2(135, 60), new Color(220, 38, 38));
-_sb.FillCircle(new Vector2(235, 400), 20, Color.White);
-_sb.FillRectangle(new Vector2(235, 380), new Vector2(125, 40), Color.White);
-_sb.End();
+        base.Draw(gameTime);
+    }
+}
 ```
+
+Read the [Getting started](https://apostolique.github.io/Apos.Shapes/getting-started/) guide for the full walkthrough.
 
 ## Other projects you might like
 
