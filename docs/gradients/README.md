@@ -9,6 +9,8 @@ _sb.FillCircle(new Vector2(200, 200), 100, new Gradient(
     new Vector2(300, 200), new Color(220, 38, 38)));
 ```
 
+![A circle with a gradient from blue to red](gradient.png)
+
 This draws a circle where the color transitions from blue at the left edge to red at the right edge. The fill and the border can each have their own gradient.
 
 The colors are interpolated in the [Oklab](https://bottosson.github.io/posts/oklab/) color space by default. It avoids the muddy colors that you would get from interpolating in RGB.
@@ -24,8 +26,16 @@ _sb.ColorSpace = ColorSpace.Oklch;
 ```
 
 * `Oklab` interpolates in a straight line through Oklab. Distant hues pass through muted grays. This is the default.
+
+  ![A gradient from blue to red in Oklab](oklab.png)
+
 * `Oklch` holds chroma while the hue takes the shortest path around the hue wheel. Vivid transitions.
+
+  ![A gradient from blue to red in Oklch](oklch.png)
+
 * `Rgb` interpolates the raw sRGB channels.
+
+  ![A gradient from blue to red in Rgb](rgb.png)
 
 Gray stops have no hue of their own. In Oklch they take the hue of the other stop so a gray to color gradient holds a steady hue. Texture and string masks are always multiplied in raw RGBA.
 
@@ -38,15 +48,44 @@ new Gradient(a, aColor, b, bColor, Gradient.Shape.Radial);
 ```
 
 * `Linear` transitions along the line from the first point to the second point.
+
+  ![A linear gradient](linear.png)
+
 * `Radial` transitions in a circle around the first point. The second point sets the radius.
+
+  ![A radial gradient](radial.png)
+
 * `Bilinear` is like `Linear` but mirrored on both sides of the first point.
+
+  ![A bilinear gradient](bilinear.png)
+
 * `Conical` transitions with the angle around the first point and mirrors after half a turn. The second point sets the starting direction.
+
+  ![A conical gradient](conical.png)
+
 * `ConicalAsym` transitions with the angle around the first point over a full turn.
+
+  ![An asymmetric conical gradient](conical-asym.png)
+
 * `Square` transitions in a square around the first point.
+
+  ![A square gradient](square.png)
+
 * `Cross` transitions in a cross around the first point.
+
+  ![A cross gradient](cross.png)
+
 * `SpiralCW` winds clockwise around the first point, transitioning with both the angle and the distance. The second point sets the width of one winding.
+
+  ![A clockwise spiral gradient](spiral-cw.png)
+
 * `SpiralCCW` is like `SpiralCW` but winds counterclockwise.
+
+  ![A counterclockwise spiral gradient](spiral-ccw.png)
+
 * `None` gives a solid color. This is what the implicit `Color` conversion uses.
+
+  ![A solid color](none.png)
 
 ## Repeat styles
 
@@ -57,9 +96,20 @@ new Gradient(a, aColor, b, bColor, Gradient.Shape.Linear, Gradient.RepeatStyle.T
 ```
 
 * `None` clamps to the second color.
+
+  ![A gradient that clamps to the second color](repeat-none.png)
+
 * `Sawtooth` restarts from the first color with a hard edge.
+
+  ![A gradient that repeats with hard edges](repeat-sawtooth.png)
+
 * `Triangle` bounces back and forth between the two colors.
+
+  ![A gradient that bounces back and forth](repeat-triangle.png)
+
 * `Sine` bounces back and forth with a smooth ease.
+
+  ![A gradient that bounces back and forth smoothly](repeat-sine.png)
 
 ## Offsets
 
@@ -68,6 +118,10 @@ The offsets hold a color solid for a distance before it starts transitioning. Th
 ```csharp
 new Gradient(a, aColor, b, bColor, Gradient.Shape.Linear, Gradient.RepeatStyle.None, 20f, 20f);
 ```
+
+The first bar has no offsets. The second bar has an offset of 100 on each side:
+
+![Two gradient bars, one without offsets and one with offsets](offsets.png)
 
 ## Local space
 
@@ -79,6 +133,8 @@ _sb.FillCircle(new Vector2(200, 200), 100, new Gradient(
     new Vector2(100, 0), new Color(220, 38, 38), isLocal: true), rotation: MathF.PI / 4f);
 ```
 
+![A circle with a local gradient that rotated along with it](local-space.png)
+
 The local origin follows the shape:
 
 * Circles, ellipses, hexagons, equilateral triangles, arcs and rings use their center.
@@ -87,4 +143,4 @@ The local origin follows the shape:
 
 ## Follow up
 
-[Clipping](./clipping.md), a guide that shows how to clip your draws to a rectangle.
+[Clipping](../clipping/README.md), a guide that shows how to clip your draws to a rectangle.

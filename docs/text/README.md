@@ -44,8 +44,10 @@ protected override void Draw(GameTime gameTime) {
 }
 ```
 
+![Text drawn on top of a circle](text.png)
+
 Shapes and text are drawn in the order that you call them. `DrawString` also takes optional parameters for rotation, origin, scale, character spacing, line spacing, text styles, and effects.
 
 ## Follow up
 
-[Textures](./textures.md), a guide that shows how to draw textures with the ShapeBatch.
+[Textures](../textures/README.md), a guide that shows how to draw textures with the ShapeBatch.

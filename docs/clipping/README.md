@@ -17,7 +17,9 @@ _sb.SetClipRect(null);
 _sb.End();
 ```
 
-The circle gets cut off at the edges of the clip rectangle. Clipping is done on the GPU and doesn't break the batch. It applies to shapes, text, and textures alike.
+![A circle cut off by a clip rectangle](clipping.png)
+
+The circle gets cut off at the edges of the clip rectangle. The outline shows where the clip rectangle is. Clipping is done on the GPU and doesn't break the batch. It applies to shapes, text, and textures alike.
 
 The clip rectangle is independent from `Begin` and `End`. It stays active until you clear it with `null`.
 
@@ -29,6 +31,8 @@ The second parameter rounds the corners of the clip rectangle. Fully rounding a 
 _sb.SetClipRect(new RectangleF(100, 100, 200, 200), 100f);
 ```
 
+![A gradient clipped to a circle mask](clipping-rounded.png)
+
 ## Rotation
 
 The third parameter rotates the clip rectangle around its center. The angle is in radians.
@@ -36,6 +40,8 @@ The third parameter rotates the clip rectangle around its center. The angle is i
 ```csharp
 _sb.SetClipRect(new RectangleF(100, 100, 200, 150), 0f, MathF.PI / 4f);
 ```
+
+![A gradient clipped to a rotated rectangle](clipping-rotation.png)
 
 ## Anti-aliasing
 
@@ -45,6 +51,11 @@ The fourth parameter is the size of the anti-aliasing edge in pixels. The defaul
 _sb.SetClipRect(new RectangleF(100, 100, 200, 150), aaSize: 0f);
 ```
 
+Both images are zoomed in. The first one uses the default anti-aliasing, the second one has it turned off:
+
+![A zoomed clip edge with the default anti-aliasing](clipping-aa-default.png)
+![A zoomed clip edge with a hard scissor edge](clipping-aa-zero.png)
+
 ## Follow up
 
-[Text](./text.md), a guide that shows how to draw text with the ShapeBatch.
+[Text](../text/README.md), a guide that shows how to draw text with the ShapeBatch.
