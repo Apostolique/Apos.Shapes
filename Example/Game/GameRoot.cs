@@ -46,6 +46,10 @@ namespace GameProject {
 
             if (_resetDroppedFrames.Pressed()) _fps.DroppedFrames = 0;
             if (_toggleDebug.Pressed()) _showDebug = !_showDebug;
+            if (_toggleDither.Pressed()) _ditherMode = (_ditherMode + 1) % 3;
+            if (_strengthUp.Pressed()) _demoStrength = MathF.Min(_demoStrength + 1f, 16f);
+            if (_strengthDown.Pressed()) _demoStrength = MathF.Max(_demoStrength - 1f, 1f);
+            if (_toggleScene.Pressed()) _bandingScene = !_bandingScene;
             _fps.Update(gameTime);
 
             if (_quit.Pressed())
@@ -65,6 +69,15 @@ namespace GameProject {
 
             var font = _fontSystem.GetFont(24);
             var titleFont = _fontSystem.GetFont(48);
+
+            _sb.DitherStrength = _ditherMode == 2 ? 0f : _demoStrength;
+            _sb.DitherNoiseSource = _ditherMode == 1 ? DitherNoise.InterleavedGradient : DitherNoise.BlueNoise;
+
+            if (_bandingScene) {
+                DrawBandingScene(font);
+                base.Draw(gameTime);
+                return;
+            }
 
             _sb.Begin(_camera.View);
 
@@ -134,6 +147,28 @@ namespace GameProject {
             }
 
             base.Draw(gameTime);
+        }
+
+        // Night scene built from slow dark gradients, the worst case for 8-bit banding.
+        // Space toggles the dither so the bands snap in and out; zoom and drag still work.
+        private void DrawBandingScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            _sb.ColorSpace = ColorSpace.Rgb;
+
+            // Sky: 12 quantization steps stretched over the whole screen height.
+            _sb.FillRectangle(new Vector2(-640, -360), new Vector2(1280, 720),
+                new Gradient(new Vector2(0, -360), new Color(14, 16, 30), new Vector2(0, 360), new Color(2, 3, 8)));
+            // Moon glow: radial falloff to transparent, banding from color and alpha together.
+            _sb.FillCircle(new Vector2(-250, -130), 640,
+                new Gradient(new Vector2(-250, -130), new Color(44, 48, 70), new Vector2(-250, 510), new Color(44, 48, 70, 0), Gradient.Shape.Radial));
+            // Warm lamp glow.
+            _sb.FillCircle(new Vector2(420, 260), 520,
+                new Gradient(new Vector2(420, 260), new Color(66, 44, 20), new Vector2(420, 780), new Color(66, 44, 20, 0), Gradient.Shape.Radial));
+
+            _sb.ColorSpace = ColorSpace.Oklab;
+            string mode = _ditherMode == 0 ? "Blue noise" : _ditherMode == 1 ? "IGN" : "Off";
+            _sb.DrawString(font, $"Dither: {mode}  strength: {_demoStrength}  [Space] mode  [Up/Down] strength  [Tab] example scene", new Vector2(-620, -344), TWColor.Gray300);
+            _sb.End();
         }
 
         private void UpdateCameraInput() {
@@ -224,6 +259,10 @@ namespace GameProject {
 
         ICondition _toggleDebug = new KeyboardCondition(Keys.F1);
         ICondition _resetDroppedFrames = new KeyboardCondition(Keys.F2);
+        ICondition _toggleDither = new KeyboardCondition(Keys.Space);
+        ICondition _strengthUp = new KeyboardCondition(Keys.Up);
+        ICondition _strengthDown = new KeyboardCondition(Keys.Down);
+        ICondition _toggleScene = new KeyboardCondition(Keys.Tab);
 
         Camera _camera;
         Vector2 _mouseWorld = Vector2.Zero;
@@ -240,5 +279,8 @@ namespace GameProject {
         float _minExp = 5f;
 
         bool _showDebug = false;
+        bool _bandingScene = false;
+        int _ditherMode = 0;
+        float _demoStrength = 1f;
     }
 }

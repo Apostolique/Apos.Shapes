@@ -18,6 +18,7 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * Paths draw a polyline as one continuous shape: translucent strokes blend once even where segments meet, with round, miter, or bevel joins and round, butt, or square caps, mixable within one path. Points come from an array or one at a time with `BeginPath`/`PathTo`/`EndPath`
 * Rounded corners (per-corner radii on rectangles), rotation, and adjustable anti-aliasing
 * Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
+* Blue noise dithering so slow gradients don't band on 8-bit displays
 * Text (FontStashSharp API)
 * Textures (SpriteBatch API)
 * Clipping to a rectangle

@@ -25,6 +25,12 @@ namespace Apos.Shapes {
             _indexBuffer.SetData(_indices);
 
             _viewProjection = _effect.Parameters["view_projection"];
+            // Null-safe so custom effects compiled before these parameters existed keep working.
+            _halfViewportParam = _effect.Parameters["half_viewport"];
+            _ditherScale = _effect.Parameters["dither_scale"];
+            _ditherMode = _effect.Parameters["dither_mode"];
+
+            _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
 
             _fsr = new FontStashRenderer(graphicsDevice, this);
         }
@@ -78,6 +84,20 @@ namespace Apos.Shapes {
         /// at draw time so it can change mid batch without breaking it. Textures and strings always use raw RGBA masks.
         /// </summary>
         public ColorSpace ColorSpace { get; set; } = ColorSpace.Oklab;
+
+        /// <summary>
+        /// Strength of the screen-space dither that hides gradient color banding on 8-bit render
+        /// targets, in 8-bit color steps of peak-to-peak noise. The default of 1 covers exactly the
+        /// quantization interval, which removes banding while staying imperceptible. Set 0 to disable,
+        /// or higher when rendering to a target that gets posterized further downstream.
+        /// </summary>
+        public float DitherStrength { get; set; } = 1f;
+
+        /// <summary>
+        /// Noise pattern behind the banding dither. Same GPU cost either way; see the enum for
+        /// the quality trade-off.
+        /// </summary>
+        public DitherNoise DitherNoiseSource { get; set; } = DitherNoise.BlueNoise;
 
         public void Begin(Matrix? view = null, Matrix? projection = null, BlendState? blendState = null, SamplerState? samplerState = null, DepthStencilState? depthStencilState = null, RasterizerState? rasterizerState = null) {
             if (_beginCalled) {
@@ -1187,6 +1207,7 @@ namespace Apos.Shapes {
             if (disposing) {
                 _vertexBuffer.Dispose();
                 _indexBuffer.Dispose();
+                _blueNoise.Dispose();
             }
             _disposed = true;
         }
@@ -1195,6 +1216,9 @@ namespace Apos.Shapes {
             if (_triangleCount == 0) return;
 
             _viewProjection.SetValue(_view * _projection);
+            _halfViewportParam?.SetValue(_halfViewport);
+            _ditherScale?.SetValue(DitherStrength / 255f);
+            _ditherMode?.SetValue(DitherNoiseSource == DitherNoise.BlueNoise ? 1f : 0f);
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -1224,6 +1248,8 @@ namespace Apos.Shapes {
                 pass.Apply();
                 if (_texture != null) _graphicsDevice.Textures[0] = _texture;
                 if (_fontTexture != null) _graphicsDevice.Textures[1] = _fontTexture;
+                _graphicsDevice.Textures[2] = _blueNoise;
+                _graphicsDevice.SamplerStates[2] = SamplerState.PointWrap;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -1522,6 +1548,10 @@ namespace Apos.Shapes {
         private Matrix _projection;
         private readonly Effect _effect;
         private readonly EffectParameter _viewProjection;
+        private readonly EffectParameter? _halfViewportParam;
+        private readonly EffectParameter? _ditherScale;
+        private readonly EffectParameter? _ditherMode;
+        private readonly Texture2D _blueNoise;
 
         private float _pixelSize = 1f;
         private Matrix _worldToClip = Matrix.Identity;

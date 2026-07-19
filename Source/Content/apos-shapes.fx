@@ -10,8 +10,12 @@
 #endif
 
 float4x4 view_projection;
+float2 half_viewport;
+float dither_scale; // DitherStrength / 255, folded on the CPU so the shader adds ±half an 8-bit LSB directly.
+float dither_mode; // 0: interleaved gradient noise, 1: the blue noise tile.
 sampler TextureSampler : register(s0);
 sampler FontSampler;
+sampler BlueNoiseSampler : register(s2); // 64x64 tile, bound with wrapped point sampling.
 
 struct VertexInput {
     float4 Position : POSITION0;
@@ -539,6 +543,24 @@ float PixelWidth(float d, float2 footprint) {
     return clamp(length(float2(ddx(d), ddy(d))), footprint.x, footprint.y);
 }
 
+// Interleaved gradient noise (Jimenez 2014). Screen-space noise with a spectrum close
+// enough to blue noise to dither away gradient banding without a texture. The pattern
+// is static: at half-LSB amplitude a fixed pattern is invisible whether the gradient
+// moves under it or sits still, while animating it would shimmer. The coordinate is
+// rebuilt from the interpolated world position because ps_3_0 offers no pixel position
+// and every interpolator is taken; any affine map of true pixel coordinates works, so
+// the viewport half-offset and y flip are dropped. The saturate guards the flaky
+// ps_3_0 frac (see DecodeDigit): a rare off-by-one pixel stays a valid dither value.
+float DitherNoise(float2 worldPos) {
+    float4 clip = mul(float4(worldPos, 0.0, 1.0), view_projection);
+    float2 px = clip.xy / clip.w * half_viewport;
+    float ign = saturate(frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715)))));
+    // Both sources are always evaluated so no gradient op sits inside flow control;
+    // the blue noise fetch hits a 64x64 tile that never leaves the texture cache.
+    float blue = tex2D(BlueNoiseSampler, px / 64.0).r;
+    return dither_mode < 0.5 ? ign : blue;
+}
+
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float lineSize = p.Meta1.x;
     float aaPixels = p.Meta1.y;
@@ -644,7 +666,13 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         result = lerp(fr, br, borderMix);
     }
 
-    return result * clipAlpha;
+    result *= clipAlpha;
+    // With premultiplied blending the source color adds straight into the framebuffer, so
+    // offsetting rgb here dithers the post-blend value that actually quantizes to 8 bits —
+    // covering banding from color and alpha gradients alike. Left unclamped on purpose:
+    // the negative half must survive to dither near-black, and the target clamps on write.
+    result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
+    return result;
 
     // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
     // d = abs(d + lineSize) - lineSize;

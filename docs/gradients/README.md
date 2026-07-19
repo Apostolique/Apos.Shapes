@@ -141,6 +141,40 @@ The local origin follows the shape:
 * Rectangles use their top left corner.
 * Lines and triangles use their first point, with the x axis pointing towards the second point.
 
+## Banding
+
+An 8-bit display steps each color channel in 256 increments. A gradient that transitions slower than one increment per pixel quantizes into visible bands with hard edges between them. The batch dithers every shape with half an increment of screen-space noise, which dissolves the bands into the true gradient. The noise pattern is static, so it looks the same whether a gradient moves across the screen or holds still.
+
+The `DitherStrength` property scales the noise in 8-bit increments. The default of 1 covers exactly one quantization step, which removes the banding while staying imperceptible. Set it to 0 to turn the dither off:
+
+```csharp
+_sb.DitherStrength = 0f;
+```
+
+![A dark glow with visible bands](banding.png)
+
+```csharp
+_sb.DitherStrength = 1f;
+```
+
+![The same glow, dithered smooth](dithering.png)
+
+Both images are contrast-stretched five times to make the comparison easy to see. At true contrast the bands are subtle and the noise is invisible — banding shows the most on large, slow, dark gradients like night skies, glows, and vignettes.
+
+## Dither noise
+
+The `DitherNoiseSource` property selects the noise pattern. Both cost the same on the GPU:
+
+* `BlueNoise` samples a 64x64 [blue noise](https://en.wikipedia.org/wiki/Colors_of_noise#Blue_noise) tile embedded in the library. Structureless grain with no pattern for the eye to lock onto. This is the default.
+
+  ![Blue noise](noise-blue.png)
+
+* `InterleavedGradient` computes [interleaved gradient noise](https://blog.demofox.org/2022/01/01/interleaved-gradient-noise-a-different-kind-of-low-discrepancy-sequence/) in the shader without touching a texture. It shows a faint diagonal weave. Use it if the texture path ever misbehaves on a platform.
+
+  ![Interleaved gradient noise](noise-ign.png)
+
+These two are rendered at strength 8 and zoomed in twice, on top of the same contrast stretch, to make the patterns visible. At the default strength both are imperceptible.
+
 ## Follow up
 
 [Clipping](../clipping/README.md), a guide that shows how to clip your draws to a rectangle.

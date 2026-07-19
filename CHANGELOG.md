@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.7.4] - 2026-07-19
+
+### Added
+
+- Gradient banding dither. (#25) Shape colors get half an 8-bit step of screen-space noise before quantization, which dissolves the bands slow gradients produce on 8-bit render targets — from color and alpha gradients alike. The noise pattern is static and imperceptible at the default strength, whether a gradient moves across the screen or holds still. `DitherStrength` on the ShapeBatch scales it in 8-bit steps (0 disables it), and `DitherNoiseSource` selects the pattern: an embedded 64x64 blue noise tile by default, or `InterleavedGradient` computed in the shader — both cost the same on the GPU.
+- The example gained a banding showcase scene on the Tab key: a night sky built from slow dark gradients, with Space cycling the dither mode and Up/Down exaggerating the strength.
+
 ## [0.7.3] - 2026-07-18
 
 ### Added
