@@ -159,7 +159,7 @@ _sb.DitherStrength = 1f;
 
 ![The same glow, dithered smooth](dithering.png)
 
-Both images are contrast-stretched five times to make the comparison easy to see. At true contrast the bands are subtle and the noise is invisible — banding shows the most on large, slow, dark gradients like night skies, glows, and vignettes.
+Both images are contrast-stretched five times to make the comparison easy to see. At true contrast the bands are subtle and the noise is invisible. Banding shows the most on large, slow, dark gradients like night skies, glows, and vignettes.
 
 ## Dither noise
 

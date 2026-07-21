@@ -15,8 +15,9 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 
 * 10 shapes: Circle, Ellipse, Line, Path, Rectangle, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
 * `Fill`, `Border`, and `Draw` variants for every shape
-* Paths draw a polyline as one continuous shape: translucent strokes blend once even where segments meet, with round, miter, or bevel joins and round, butt, or square caps, mixable within one path. Points come from an array or one at a time with `BeginPath`/`PathTo`/`EndPath`
+* Paths draw a polyline as one continuous shape: translucent strokes blend once even where segments meet, with round, miter, or bevel joins and round, butt, or square caps, mixable within one path. Points come from an array or one at a time with `BeginPath`/`PathTo`/`EndPath`. `closed: true`, or `ClosePath()`, joins the last point back to the first, which is also how a curve or an ellipse gets dashed: flatten it to a closed path
 * Rounded corners (per-corner radii on rectangles), rotation, and adjustable anti-aliasing
+* Dashed outlines and strokes: borders dash along the perimeter, lines, arcs, rings, and paths cut into dashes (flat or round-capped, down to dotted lines), with the pattern fitted to the shape so it closes seamlessly
 * Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
 * Blue noise dithering so slow gradients don't band on 8-bit displays
 * Text (FontStashSharp API)

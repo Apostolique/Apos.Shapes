@@ -282,6 +282,503 @@ float StrokeSDF(float2 p, float len, float r, float4 data) {
     return d;
 }
 
+// Signed distance along the contour to the nearest dash edge, negative inside a dash.
+// data.x is the period in world units; data.y packs the dash fraction and the phase as two
+// 11 bit values, both period-relative so the quantization stays subpixel. A dash's center
+// sits at u = phase * period. The wrap seam lands mid gap where both sides agree, and a
+// frac that lands exactly on 1.0 (see DecodeDigit) is absorbed by the abs symmetry.
+float DashDistance(float u, float2 data) {
+    float m = data.y;
+    float ph = DecodeDigit(m, 2048.0) / 2047.0;
+    float fr = m / 2047.0;
+    float t = frac(u / data.x - ph + 0.5) - 0.5;
+    return (abs(t) - fr * 0.5) * data.x;
+}
+
+// Signed pattern distance to the nearest dash edge, plus the contour positions of the two
+// edges bounding the pixel's dash or gap, so the caller can measure to both edges' real
+// geometry: near a corner they sit on different zones, and using only the nearest one
+// would jump where the pattern midpoint flips between them.
+float3 DashEdges(float u, float2 data) {
+    float m = data.y;
+    float ph = DecodeDigit(m, 2048.0) / 2047.0;
+    float h = m / 2047.0 * 0.5;
+    float t = frac(u / data.x - ph + 0.5) - 0.5;
+    float db = min(frac(t - h), frac(t + h));
+    float da = min(frac(h - t), frac(-h - t));
+    return float3((abs(t) - h) * data.x, u - db * data.x, u + da * data.x);
+}
+
+float2 Perp(float2 v) {
+    return float2(-v.y, v.x);
+}
+
+float2 Rot(float2 v, float a) {
+    float s, c;
+    sincos(a, s, c);
+    return float2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
+// Signed world distance to the nearest dash edge of a closed outline, negative inside a dash.
+// Every dash edge is a straight line: perpendicular to a straight run, or a ray out of a
+// corner arc's center. So the distance to one is exact, taken from any point on it and its
+// unit tangent, and for an arc the center serves as that point since it lies on every ray.
+// The alternative, rescaling the contour offset by the local gradient of the perimeter
+// coordinate, is only right when the pixel and the dash edge sit in the same zone. That
+// gradient jumps where a run meets a corner - parallel lines on one side, converging rays on
+// the other - so a dash edge landing near a corner rather than on it puts a step in the
+// middle of the anti-aliasing ramp, and coverage climbs again as it falls off.
+float DashCutFromEdges(float2 q, float3 de, float2 pb, float2 nb, float2 pa, float2 na) {
+    float m = min(dot(q - pb, nb), -dot(q - pa, na));
+    return de.x >= 0.0 ? m : -m;
+}
+
+// Spine point crossed by the dash edge at contour position ue: on this segment in the
+// linear zone, on the corner arc through the arc spans, and on the neighbor past them.
+// fr is each end's fillet radius, which is not the stroke radius; see PathDashCut.
+float2 PathEdgePoint(float ue, float2 fr, float startLen, float thA, float thB, float uA, float uB, float2 cA, float2 cB) {
+    float aA = abs(thA);
+    float aB = abs(thB);
+    if (ue > uB && aB > 1e-4) {
+        float sB = sign(thB);
+        float se = ue - uB - aB * fr.y;
+        if (se > 0.0) {
+            float2 nb;
+            sincos(thB, nb.y, nb.x);
+            return cB + float2(sin(aB), -sB * cos(aB)) * fr.y + nb * se;
+        }
+        float psi = (ue - uB) / fr.y;
+        return cB + float2(sin(psi), -sB * cos(psi)) * fr.y;
+    }
+    if (ue < uA && aA > 1e-4) {
+        float sA = sign(thA);
+        float se = uA - aA * fr.x - ue;
+        if (se > 0.0) {
+            float2 pv = float2(cos(thA), -sin(thA));
+            return cA + float2(-sin(aA), -sA * cos(aA)) * fr.x - pv * se;
+        }
+        float psi = (uA - ue) / fr.x;
+        return cA + float2(-sin(psi), -sA * cos(psi)) * fr.x;
+    }
+    return float2(ue - startLen, 0.0);
+}
+
+// Dash cut for a path segment, negative inside a dash. For dashing, each joint rounds the
+// spine corner with a fillet arc tangent to both segments, and the pattern runs at unit
+// speed along that rounded spine. The fillet radius, fr per end, is deliberately NOT the
+// stroke radius: at exactly the stroke radius the fillet's inward offset collapses to a
+// single point that lies on the stroke's own inner edge, every dash boundary in the fan is
+// a ray out of that point, so all of them meet there and the gaps pinch shut to nothing.
+// Whatever is done about it downstream, the anti-aliasing blur around that point still
+// paints a speck adrift in the gap. A wider fillet puts its center clear of the stroke, so
+// no two dash boundaries meet anywhere that gets drawn and the degeneracy is gone rather
+// than patched. The CPU picks the radius per joint and sends it quantized, so both quads at
+// the joint derive the same field and the partition seam stays invisible.
+// Flat dashes are cut purely by the pixel's own contour coordinate, which can never ghost a
+// cut across the joint, converted to a true distance so edges, borders and AA keep their
+// true width through the corner fans. In a fan the cut is a ray out of the fillet center,
+// so a contour offset at distance lw from it spans lw / fr of world distance; taking that
+// factor from the geometry rather than from the coordinate's screen derivative is what
+// keeps it exact where the derivative is worthless. Rounded dashes are the exact capsule
+// around the rounded spine, built from the bounding edges' spine points. thA and thB are
+// the signed turn angles at the ends, zero at caps and at collinear, overlapping, and
+// reversed joints, where the pattern just runs straight out, matching the line shape.
+// type >= 1.5 selects rounded dashes.
+float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float thA, float thB, float2 data, float type) {
+    float aA = abs(thA);
+    float aB = abs(thB);
+    float sA = sign(thA);
+    float sB = sign(thB);
+    float tA = aA > 1e-4 ? fr.x * tan(aA * 0.5) : 0.0;
+    float tB = aB > 1e-4 ? fr.y * tan(aB * 0.5) : 0.0;
+    float uA = startLen + tA;
+    float uB = startLen + len - tB;
+    float2 cA = float2(tA, sA * fr.x);
+    float2 cB = float2(len - tB, sB * fr.y);
+
+    float u = startLen + q.x;
+    float v = q.y;
+    float sc = 1.0; // World distance per unit of contour offset, 1 outside the fans.
+    if (aB > 1e-4 && q.x > len - tB) {
+        float2 w = q - cB;
+        float lw = length(w);
+        u = uB + clamp(atan2(w.x, -sB * w.y), 0.0, aB) * fr.y;
+        v = lw - fr.y;
+        sc = lw / fr.y;
+    } else if (aA > 1e-4 && q.x < tA) {
+        float2 w = q - cA;
+        float lw = length(w);
+        u = uA - clamp(atan2(-w.x, -sA * w.y), 0.0, aA) * fr.x;
+        v = lw - fr.x;
+        sc = lw / fr.x;
+    }
+
+    float3 de = DashEdges(u, data);
+
+    if (type >= 1.5) {
+        // The exact capsule around the rounded spine: inside the dash's span the distance
+        // to the spine, outside it the distance to the nearer of the two cap circles.
+        if (de.x < 0.0) {
+            return abs(v) - r;
+        }
+        float2 pb = PathEdgePoint(de.y, fr, startLen, thA, thB, uA, uB, cA, cB);
+        float2 pa = PathEdgePoint(de.z, fr, startLen, thA, thB, uA, uB, cA, cB);
+        return min(length(q - pb), length(q - pa)) - r;
+    }
+    float du = de.x * sc;
+
+    // Miter and bevel tips reach past the joint disc. A dash edge near the corner would
+    // sweep them as a needle, so out there the dash is bounded by the disc instead and
+    // the tip only grows back out, receding edge first, as the dash covers the whole
+    // corner span with margin to spare. The margin comes from the exact maximum of the
+    // sawtooth over the span, so the growth animates smoothly.
+    float corner = -1e6;
+    if (aB > 1e-4 && q.x > len) {
+        float wB = aB * fr.y * 0.5;
+        corner = length(q - float2(len, 0.0)) - r + min(DashDistance(uB + wB, data) + wB, 0.0) * 2.0;
+    } else if (aA > 1e-4 && q.x < 0.0) {
+        float wA = aA * fr.x * 0.5;
+        corner = length(q) - r + min(DashDistance(uA - wA, data) + wA, 0.0) * 2.0;
+    }
+    return max(du, corner);
+}
+
+// The radius the dash pattern walks a corner on. Every dash cut in a corner is a ray out of
+// that arc's center, so all of them meet there. At the shape's own rounding that center is
+// the border band's inner vertex whenever the band is as thick as the rounding, and the
+// anti-aliasing blur around it paints a speck adrift in the gap. Running the pattern on a
+// wider arc puts the center past the band's inner edge, so nothing that gets drawn sees it.
+// The cap keeps the widened corner inside the shape; at a rounding already wider than the
+// band this returns the rounding untouched, so the usual case is bit for bit as before.
+float PatternRadius(float ro, float lineSize, float cap) {
+    return max(ro, min(1.5 * lineSize, cap));
+}
+
+// Perimeter coordinate of a regular polygon with the given apothem and half side, dilated
+// outward by ro. Edge k's outward normal sits at normal0 + k * step; u runs one edge then
+// one corner arc per sector, with sectors bounded by the rays through the corners. Sector
+// indices from atan2 can differ by a full turn, which shifts u by the exact perimeter and
+// washes out in the pattern wrap once the period is snapped. The corners run on the pattern
+// radius, so the polygon is re-inset to keep those arcs tangent to the edges; the inset is
+// radial, which leaves the sector rays exactly where they were.
+float RegularPerimeter(float2 q, float aP, float hsP, float step, float normal0, float rp) {
+    float th = atan2(q.y, q.x);
+    float sector = floor((th - normal0) / step + 0.5);
+    float ang = normal0 + sector * step;
+    float2 dirN;
+    sincos(ang, dirN.y, dirN.x);
+    float t = dirN.x * q.y - dirN.y * q.x;
+    float tc = clamp(t, -hsP, hsP);
+    float u = sector * (2.0 * hsP + rp * step) + tc + hsP;
+    float ex = t - tc;
+    if (abs(ex) > 0.0) {
+        float2 vtx = dirN * aP + Perp(dirN) * (sign(ex) * hsP);
+        u += rp * atan2(dirN.x * (q.y - vtx.y) - dirN.y * (q.x - vtx.x), dot(q - vtx, dirN));
+    }
+    return u;
+}
+
+// Point on the perimeter at contour position ue, the unit tangent there, and the point the
+// band's centerline crosses. The first two pin down the dash edge (see DashCutFromEdges); the
+// third is a rounded dash's cap center. One sector is one edge run followed by one corner arc,
+// so the sector index falls out of a floor and needs no wrapping.
+void RegularFrame(float ue, float aP, float hsP, float step, float normal0, float rp, float rd,
+                  out float2 pt, out float2 tng, out float2 ctr) {
+    float sl = 2.0 * hsP + rp * step;
+    float k = floor(ue / sl);
+    float s = ue - k * sl;
+    float2 dirN;
+    sincos(normal0 + k * step, dirN.y, dirN.x);
+    float2 e = Perp(dirN);
+    float2 nh = dirN;
+    if (s <= 2.0 * hsP) {
+        pt = dirN * aP + e * (s - hsP);
+        tng = e;
+    } else {
+        pt = dirN * aP + e * hsP; // The arc center, which every ray out of it passes through.
+        nh = Rot(dirN, (s - 2.0 * hsP) / max(rp, 1e-6));
+        tng = Perp(nh);
+    }
+    ctr = pt + nh * (rp - rd);
+}
+
+float RegularDashCut(float2 q, float apothem, float hs, float step, float normal0, float ro,
+                     float lineSize, float2 data, out float2 capA, out float2 capB) {
+    float aOut = apothem + ro; // Apothem of the outline itself.
+    float rp = PatternRadius(ro, lineSize, aOut * 0.5);
+    float aP = aOut - rp;
+    float hsP = apothem > 1e-6 ? hs * aP / apothem : hs;
+
+    float3 de = DashEdges(RegularPerimeter(q, aP, hsP, step, normal0, rp), data);
+    float2 pb, nb, pa, na;
+    RegularFrame(de.y, aP, hsP, step, normal0, rp, lineSize * 0.5, pb, nb, capA);
+    RegularFrame(de.z, aP, hsP, step, normal0, rp, lineSize * 0.5, pa, na, capB);
+    return DashCutFromEdges(q, de, pb, nb, pa, na);
+}
+
+// Perimeter coordinate of the rounded box, zero where the top edge leaves the top-left arc,
+// increasing clockwise on screen. r is (top-right, bottom-right, top-left, bottom-left).
+// Each corner runs on its own pattern radius, so the straight runs between them shorten to
+// match; see PatternRadius. The CPU walks the same widened perimeter.
+float RoundBoxPerimeter(float2 q, float2 b, float4 r) {
+    float lRight = 2.0 * b.y - r.x - r.y;
+    const float hpi = 1.5707963267948966;
+    float uTR = 2.0 * b.x - r.z - r.x;
+    float uRight = uTR + hpi * r.x;
+    float uBottom = uRight + lRight + hpi * r.y;
+    float uBL = uBottom + 2.0 * b.x - r.y - r.w;
+    float uLeft = uBL + hpi * r.w;
+    float uTL = uLeft + 2.0 * b.y - r.w - r.z;
+
+    float rq = q.x > 0.0 ? (q.y > 0.0 ? r.y : r.x) : (q.y > 0.0 ? r.w : r.z);
+    float2 c = float2(sign(q.x) * (b.x - rq), sign(q.y) * (b.y - rq));
+    if (abs(q.x) > b.x - rq && abs(q.y) > b.y - rq) {
+        // Corner arc: the angle from the arc's start direction, which rotates clockwise
+        // on screen through top-right, bottom-right, bottom-left, top-left.
+        float2 w = q - c;
+        float2 s;
+        float u0;
+        if (q.x > 0.0) {
+            if (q.y < 0.0) { s = float2(0.0, -1.0); u0 = uTR; }
+            else { s = float2(1.0, 0.0); u0 = uRight + lRight; }
+        } else {
+            if (q.y > 0.0) { s = float2(0.0, 1.0); u0 = uBL; }
+            else { s = float2(-1.0, 0.0); u0 = uTL; }
+        }
+        return u0 + rq * atan2(s.x * w.y - s.y * w.x, dot(s, w));
+    }
+    if (abs(q.x) - b.x > abs(q.y) - b.y) {
+        return q.x > 0.0 ? uRight + q.y + b.y - r.x : uLeft + b.y - r.w - q.y;
+    }
+    return q.y > 0.0 ? uBottom + b.x - r.y - q.x : q.x + b.x - r.z;
+}
+
+// Point on the perimeter at contour position ue and the unit tangent there; the eight zones
+// run in the same order the coordinate does. Unlike the regular polygon the corners differ,
+// so ue wraps against the whole perimeter rather than falling out of one sector.
+void RoundBoxFrame(float ue, float2 b, float4 r, float rd, out float2 pt, out float2 tng, out float2 ctr) {
+    const float hpi = 1.5707963267948966;
+    float uTR = 2.0 * b.x - r.z - r.x;
+    float uRight = uTR + hpi * r.x;
+    float uBR = uRight + 2.0 * b.y - r.x - r.y;
+    float uBottom = uBR + hpi * r.y;
+    float uBL = uBottom + 2.0 * b.x - r.y - r.w;
+    float uLeft = uBL + hpi * r.w;
+    float uTL = uLeft + 2.0 * b.y - r.w - r.z;
+    float per = uTL + hpi * r.z;
+    float s = ue - floor(ue / max(per, 1e-6)) * per;
+
+    // On a run the perimeter point sits on the outline, so the centerline is one band radius
+    // inward; on an arc it is that much in from the arc's own radius.
+    if (s < uTR) {
+        pt = float2(-b.x + r.z + s, -b.y);
+        tng = float2(1.0, 0.0);
+        ctr = float2(pt.x, -b.y + rd);
+    } else if (s < uRight) {
+        pt = float2(b.x - r.x, -b.y + r.x);
+        float2 nh = Rot(float2(0.0, -1.0), (s - uTR) / max(r.x, 1e-6));
+        tng = Perp(nh);
+        ctr = pt + nh * (r.x - rd);
+    } else if (s < uBR) {
+        pt = float2(b.x, -b.y + r.x + (s - uRight));
+        tng = float2(0.0, 1.0);
+        ctr = float2(b.x - rd, pt.y);
+    } else if (s < uBottom) {
+        pt = float2(b.x - r.y, b.y - r.y);
+        float2 nh = Rot(float2(1.0, 0.0), (s - uBR) / max(r.y, 1e-6));
+        tng = Perp(nh);
+        ctr = pt + nh * (r.y - rd);
+    } else if (s < uBL) {
+        pt = float2(b.x - r.y - (s - uBottom), b.y);
+        tng = float2(-1.0, 0.0);
+        ctr = float2(pt.x, b.y - rd);
+    } else if (s < uLeft) {
+        pt = float2(-b.x + r.w, b.y - r.w);
+        float2 nh = Rot(float2(0.0, 1.0), (s - uBL) / max(r.w, 1e-6));
+        tng = Perp(nh);
+        ctr = pt + nh * (r.w - rd);
+    } else if (s < uTL) {
+        pt = float2(-b.x, b.y - r.w - (s - uLeft));
+        tng = float2(0.0, -1.0);
+        ctr = float2(-b.x + rd, pt.y);
+    } else {
+        pt = float2(-b.x + r.z, -b.y + r.z);
+        float2 nh = Rot(float2(-1.0, 0.0), (s - uTL) / max(r.z, 1e-6));
+        tng = Perp(nh);
+        ctr = pt + nh * (r.z - rd);
+    }
+}
+
+float RoundBoxDashCut(float2 q, float2 b, float4 rr, float lineSize, float2 data,
+                      out float2 capA, out float2 capB) {
+    float cap = min(b.x, b.y) * 0.5;
+    float4 r = float4(PatternRadius(rr.x, lineSize, cap), PatternRadius(rr.y, lineSize, cap),
+                      PatternRadius(rr.z, lineSize, cap), PatternRadius(rr.w, lineSize, cap));
+
+    float3 de = DashEdges(RoundBoxPerimeter(q, b, r), data);
+    float2 pb, nb, pa, na;
+    RoundBoxFrame(de.y, b, r, lineSize * 0.5, pb, nb, capA);
+    RoundBoxFrame(de.z, b, r, lineSize * 0.5, pa, na, capB);
+    return DashCutFromEdges(q, de, pb, nb, pa, na);
+}
+
+// How far a vertex slides when both its edges are pushed inward by delta.
+float2 MiterShift(float2 nIn, float2 nOut, float delta) {
+    float2 s = nIn + nOut;
+    return -s * (delta / max(1.0 + dot(nIn, nOut), 1e-3));
+}
+
+// Perimeter coordinate of the triangle vA → vB → vC, dilated outward by the pattern radius.
+// The edges are walked in order with a corner arc of that radius times the exterior angle
+// between them; the vertex wedges hand the angle term the way RegularPerimeter does.
+float TrianglePerimeter(float2 q, float2 vA, float2 vB, float2 vC, float rp, float orr) {
+    float2 e0 = vB - vA;
+    float2 e1 = vC - vB;
+    float2 e2 = vA - vC;
+    float l0 = length(e0);
+    float l1 = length(e1);
+    float l2 = length(e2);
+    float2 d0 = e0 / l0;
+    float2 d1 = e1 / l1;
+    float2 d2 = e2 / l2;
+
+    // Exterior angles at b (between edge 0 and 1) and at c (between edge 1 and 2).
+    float extB = orr * atan2(d0.x * d1.y - d0.y * d1.x, dot(d0, d1));
+    float extC = orr * atan2(d1.x * d2.y - d1.y * d2.x, dot(d1, d2));
+
+    // Unclamped along-edge coordinates and squared distances to each clamped edge.
+    float t0 = dot(q - vA, d0);
+    float t1 = dot(q - vB, d1);
+    float t2 = dot(q - vC, d2);
+    float2 p0 = q - vA - d0 * clamp(t0, 0.0, l0);
+    float2 p1 = q - vB - d1 * clamp(t1, 0.0, l1);
+    float2 p2 = q - vC - d2 * clamp(t2, 0.0, l2);
+    float q0 = dot(p0, p0);
+    float q1 = dot(p1, p1);
+    float q2 = dot(p2, p2);
+
+    float cum;
+    float t;
+    float len;
+    float2 dir;
+    float2 v0;
+    if (q0 <= q1 && q0 <= q2) {
+        cum = 0.0; t = t0; len = l0; dir = d0; v0 = vA;
+    } else if (q1 <= q2) {
+        cum = l0 + rp * extB; t = t1; len = l1; dir = d1; v0 = vB;
+    } else {
+        cum = l0 + l1 + rp * (extB + extC); t = t2; len = l2; dir = d2; v0 = vC;
+    }
+    float tc = clamp(t, 0.0, len);
+    float u = cum + tc;
+    float ex = t - tc;
+    if (abs(ex) > 0.0) {
+        // Vertex wedge: the angle of q around the vertex, measured from the edge's outward
+        // normal so it runs negative before an edge and positive past it.
+        float2 n = orr * Perp(-dir);
+        float2 w = q - (v0 + dir * tc);
+        u += rp * orr * atan2(n.x * w.y - n.y * w.x, dot(n, w));
+    }
+    return u;
+}
+
+// Point on the perimeter at contour position ue and the unit tangent there. The six zones are
+// the three edge runs, each followed by the corner arc at the vertex it ends on.
+void TriangleFrame(float ue, float2 vA, float2 vB, float2 vC, float rp, float orr, float rd,
+                   out float2 pt, out float2 tng, out float2 ctr) {
+    float2 e0 = vB - vA;
+    float2 e1 = vC - vB;
+    float2 e2 = vA - vC;
+    float l0 = length(e0);
+    float l1 = length(e1);
+    float l2 = length(e2);
+    float2 d0 = e0 / l0;
+    float2 d1 = e1 / l1;
+    float2 d2 = e2 / l2;
+
+    float aB = rp * orr * atan2(d0.x * d1.y - d0.y * d1.x, dot(d0, d1));
+    float aC = rp * orr * atan2(d1.x * d2.y - d1.y * d2.x, dot(d1, d2));
+    float aA = rp * orr * atan2(d2.x * d0.y - d2.y * d0.x, dot(d2, d0));
+    float per = l0 + l1 + l2 + aB + aC + aA;
+    float s = ue - floor(ue / max(per, 1e-6)) * per;
+
+    // Walk the zones in order, peeling each one off s as it is ruled out. The perimeter point
+    // on a run sits on the inset triangle, so the centerline is that far out along the run's
+    // outward normal; on an arc it is the same distance out from the vertex.
+    float2 v = vB;
+    float2 dIn = d0;
+    if (s < l0) {
+        pt = vA + d0 * s;
+        tng = d0;
+        ctr = pt + orr * Perp(-d0) * (rp - rd);
+        return;
+    }
+    s -= l0;
+    if (s >= aB) {
+        s -= aB;
+        if (s < l1) {
+            pt = vB + d1 * s;
+            tng = d1;
+            ctr = pt + orr * Perp(-d1) * (rp - rd);
+            return;
+        }
+        s -= l1;
+        v = vC;
+        dIn = d1;
+        if (s >= aC) {
+            s -= aC;
+            if (s < l2) {
+                pt = vC + d2 * s;
+                tng = d2;
+                ctr = pt + orr * Perp(-d2) * (rp - rd);
+                return;
+            }
+            s -= l2;
+            v = vA;
+            dIn = d2;
+        }
+    }
+    // Corner arc: a ray out of the vertex, so the vertex itself pins the line down. The arc
+    // starts on the outward normal of the edge that runs into it and sweeps by the exterior
+    // angle, and the tangent is a quarter turn ahead of wherever it has swept to.
+    float2 nh = Rot(orr * Perp(-dIn), orr * s / max(rp, 1e-6));
+    pt = v;
+    tng = orr * Perp(nh);
+    ctr = v + nh * (rp - rd);
+}
+
+// Dash cut for the triangle A(0,0) → b → c. The corner arcs run wider than the shape's own
+// rounding (see PatternRadius), so the triangle is re-inset by the difference to keep them
+// tangent to the same edges. Parallel inset never turns an edge, so the exterior angles, and
+// with them the corner arc spans, are untouched.
+float TriangleDashCut(float2 q, float2 b, float2 c, float ro, float lineSize, float2 data,
+                      out float2 capA, out float2 capB) {
+    // The winding sign makes the exterior angles positive for either input orientation.
+    float orr = (b.x * (c.y - b.y) - b.y * (c.x - b.x)) >= 0.0 ? 1.0 : -1.0;
+
+    float2 g0 = normalize(b);
+    float2 g1 = normalize(c - b);
+    float2 g2 = normalize(-c);
+    // Outward edge normals, matching the vertex wedge's frame.
+    float2 n0 = orr * Perp(-g0);
+    float2 n1 = orr * Perp(-g1);
+    float2 n2 = orr * Perp(-g2);
+
+    // The inradius of the already inset triangle bounds how much further it can go.
+    float inR = abs(b.x * c.y - b.y * c.x) / max(length(b) + length(c) + length(c - b), 1e-6);
+    float rp = PatternRadius(ro, lineSize, ro + inR * 0.5);
+    float delta = rp - ro;
+    float2 vA = MiterShift(n2, n0, delta);
+    float2 vB = b + MiterShift(n0, n1, delta);
+    float2 vC = c + MiterShift(n1, n2, delta);
+
+    float3 de = DashEdges(TrianglePerimeter(q, vA, vB, vC, rp, orr), data);
+    float2 pb, nb, pa, na;
+    TriangleFrame(de.y, vA, vB, vC, rp, orr, lineSize * 0.5, pb, nb, capA);
+    TriangleFrame(de.z, vA, vB, vC, rp, orr, lineSize * 0.5, pa, na, capB);
+    return DashCutFromEdges(q, de, pb, nb, pa, na);
+}
+
 float LinearToGamma(float c) {
     return c >= 0.0031308 ? pow(abs(c), 1.0 / 2.4) * 1.055 - 0.055 : 12.92 * c;
 }
@@ -364,7 +861,7 @@ float Mod(float x, float m) {
 }
 
 // Smooths the wrap seam of a periodic gradient by pulling values within half a
-// band of the seam toward 0.5 — the box-filtered average of both sides, since
+// band of the seam toward 0.5, the box-filtered average of both sides, since
 // color is linear in the gradient value. When the band covers the whole period
 // (near a conical origin) everything collapses to 0.5 instead of biasing to 0.
 float SmoothWrapDiscontinuity(float x, float size) {
@@ -524,8 +1021,8 @@ PixelInput SpriteVertexShader(VertexInput v) {
 
 // SDF values are true distances in world units, so the AA band only needs the
 // world-space footprint of one pixel. The footprint comes from derivatives of the
-// interpolated world position — exact per-triangle constants under affine views,
-// smooth and perspective-correct otherwise — never from derivatives of the SDF
+// interpolated world position (exact per-triangle constants under affine views,
+// smooth and perspective-correct otherwise), never from derivatives of the SDF
 // alone, whose finite differences misfire in quads that straddle corner creases.
 // The screen-space SDF gradient picks the width within the footprint's singular
 // value range: direction-correct under anisotropy, and under uniform scale the
@@ -569,6 +1066,15 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // Peel the packed meta apart field by field. Every intermediate stays an exact integer.
     float meta = p.TexCoord.w;
     float shape = DecodeDigit(meta, 16.0);
+    float2 fillStyles;
+    float2 borderStyles;
+    fillStyles.x = DecodeDigit(meta, 16.0);
+    fillStyles.y = DecodeDigit(meta, 4.0);
+    borderStyles.x = DecodeDigit(meta, 16.0);
+    borderStyles.y = DecodeDigit(meta, 4.0);
+    float space = DecodeDigit(meta, 4.0);
+    // 0 solid, 1 basic dashes, 2 rounded dashes. Where the pattern rides depends on the shape.
+    float dashType = meta;
 
     float2 footprint = PixelFootprint(p.Pos.xy);
 
@@ -588,30 +1094,147 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         return tex2D(FontSampler, p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
     }
 
+    // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the
+    // contour, dashV across it, and dashData, the (period, packed fraction and phase) pair
+    // from the shape's spare channels. Closed outlines instead mask their border band with
+    // dashCut, the world distance to the nearest dash edge. The defaults keep the flattened
+    // out dash arithmetic finite when a shape isn't dashed.
+    float2 q = p.TexCoord.xy;
+    float rounded = p.TexCoord.z;
+    float dashU = 0.0;
+    float dashCut = 1.0;   // Closed outlines: world distance to the dash edge, negative inside.
+    float2 dashCapA = float2(0.0, 0.0); // Where the band's centerline crosses each of the two
+    float2 dashCapB = float2(0.0, 0.0); // bounding edges: a rounded dash's cap centers.
+    float dashV = 0.0;
+    float dashR = 0.0;
+    float2 dashData = float2(1.0, 0.0);
+    bool dashStroke = false;
+
     float d;
     if (shape < 0.5) {
-        d = CircleSDF(p.TexCoord.xy, sdfSize);
+        d = CircleSDF(q, sdfSize);
+        if (dashType >= 0.5) {
+            // The circle is one arc end to end, so every dash edge is a ray out of the center
+            // and the center pins each of them down; see DashCutFromEdges.
+            float rc = max(sdfSize, 1e-6);
+            float3 de = DashEdges(atan2(q.y, q.x) * rc, p.Meta2.xy);
+            float2 nb;
+            sincos(de.y / rc, nb.y, nb.x);
+            float2 na;
+            sincos(de.z / rc, na.y, na.x);
+            dashCut = DashCutFromEdges(q, de, float2(0.0, 0.0), Perp(nb), float2(0.0, 0.0), Perp(na));
+            dashCapA = nb * (rc - lineSize * 0.5);
+            dashCapB = na * (rc - lineSize * 0.5);
+        }
     } else if (shape < 1.5) {
-        d = RoundBoxSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w), p.Meta2);
+        float4 rr = p.Meta2;
+        if (dashType >= 0.5) {
+            // Dashed rectangles carry their corner radii as 11 bit fractions of the largest
+            // allowed radius, freeing Meta2.zw for the pattern.
+            float mr = min(sdfSize, p.Meta1.w);
+            float mx = rr.x;
+            float my = rr.y;
+            float bx = DecodeDigit(mx, 2048.0);
+            float by = DecodeDigit(my, 2048.0);
+            rr = float4(mx, bx, my, by) / 2047.0 * mr;
+            dashCut = RoundBoxDashCut(q, float2(sdfSize, p.Meta1.w), rr, lineSize, p.Meta2.zw, dashCapA, dashCapB);
+        }
+        d = RoundBoxSDF(q, float2(sdfSize, p.Meta1.w), rr);
     } else if (shape < 2.5) {
-        d = SegmentSDF(p.TexCoord.xy, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
+        d = SegmentSDF(q, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
+        if (dashType >= 0.5) {
+            dashU = q.x;
+            dashV = q.y;
+            dashR = sdfSize;
+            dashData = p.Meta2.xy;
+            dashStroke = true;
+        }
     } else if (shape < 3.5) {
-        d = HexagonSDF(p.TexCoord.xy, sdfSize);
+        d = HexagonSDF(q, sdfSize);
+        if (dashType >= 0.5) {
+            dashCut = RegularDashCut(q, sdfSize, sdfSize * 0.57735026919, 1.0471975512, 0.52359877560, rounded, lineSize, p.Meta2.xy, dashCapA, dashCapB);
+        }
     } else if (shape < 4.5) {
-        d = EquilateralTriangleSDF(p.TexCoord.xy, sdfSize);
+        d = EquilateralTriangleSDF(q, sdfSize);
+        if (dashType >= 0.5) {
+            dashCut = RegularDashCut(q, sdfSize * 0.57735026919, sdfSize, 2.0943951024, 0.52359877560, rounded, lineSize, p.Meta2.xy, dashCapA, dashCapB);
+        }
     } else if (shape < 5.5) {
-        d = TriangleSDF(p.TexCoord.xy, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);
+        if (dashType >= 0.5) {
+            // Dashed triangles put their first corner at the local origin, freeing Meta1.zw.
+            d = TriangleSDF(q, float2(0.0, 0.0), p.Meta2.xy, p.Meta2.zw);
+            dashCut = TriangleDashCut(q, p.Meta2.xy, p.Meta2.zw, rounded, lineSize, p.Meta1.zw, dashCapA, dashCapB);
+        } else {
+            d = TriangleSDF(q, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);
+        }
     } else if (shape < 6.5) {
-        d = EllipseSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
+        d = EllipseSDF(q, float2(sdfSize, p.Meta1.w));
     } else if (shape < 7.5) {
-        d = ArcSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
+        d = ArcSDF(q, p.Meta2.xy, sdfSize, p.Meta2.z);
+        if (dashType >= 0.5) {
+            dashU = (atan2(q.x, q.y) + atan2(p.Meta2.x, p.Meta2.y)) * sdfSize;
+            dashV = length(q) - sdfSize;
+            dashR = p.Meta2.z;
+            dashData = float2(p.Meta1.w, p.Meta2.w);
+            dashStroke = true;
+        }
     } else if (shape < 8.5) {
-        d = RingSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
+        d = RingSDF(q, p.Meta2.xy, sdfSize, p.Meta2.z);
+        if (dashType >= 0.5) {
+            dashU = (atan2(q.x, q.y) + atan2(p.Meta2.y, p.Meta2.x)) * sdfSize;
+            dashV = length(q) - sdfSize;
+            dashR = p.Meta2.z * 0.5;
+            dashData = float2(p.Meta1.w, p.Meta2.w);
+            dashStroke = true;
+        }
     } else {
-        d = StrokeSDF(p.TexCoord.xy, p.Meta1.w, sdfSize, p.Meta2);
+        float4 sd = p.Meta2;
+        float pathCut = -1e6;
+        if (dashType >= 0.5) {
+            // Dashed paths pack each end's signed turn angle into Meta2.y as two 11 bit codes
+            // (1024 = 0, meaning caps and collinear joints), freeing Meta2.z for the segment's
+            // start length and Meta2.w for the period. The rounding slot carries the packed
+            // fraction and phase; paths never use it for rounding. The bevel plane directions
+            // derive from the turn angles, so nothing else needs to travel. Each end's fillet
+            // radius rides above the end modes in Meta2.x as a 7 bit fraction of the stroke
+            // radius over [1, 2]; that keeps the packed value under 2^20, well inside what a
+            // ps_3_0 interpolator carries exactly, unlike the two 11 bit codes which already
+            // sit at the ceiling.
+            float ma = sd.y;
+            float thB = (DecodeDigit(ma, 2048.0) - 1024.0) / 1023.0 * 3.1415926536;
+            float thA = (ma - 1024.0) / 1023.0 * 3.1415926536;
+            float mr = sd.x;
+            float modeBits = DecodeDigit(mr, 64.0);
+            float frCodeA = DecodeDigit(mr, 128.0);
+            float frCodeB = mr;
+            float2 fr = sdfSize * (1.0 + float2(frCodeA, frCodeB) / 127.0);
+            float2 hA;
+            sincos(thA * 0.5, hA.y, hA.x);
+            float2 hB;
+            sincos(thB * 0.5, hB.y, hB.x);
+            float sA = sign(thA);
+            float sB = sign(thB);
+            sd = float4(modeBits, atan2(-sA * hA.x, -sA * hA.y), atan2(-sB * hB.x, sB * hB.y), 0.0);
+            pathCut = PathDashCut(q, p.Meta1.w, sdfSize, fr, p.Meta2.z, thA, thB, float2(p.Meta2.w, rounded), dashType);
+            rounded = 0.0;
+            dashType = 0.0;
+        }
+        d = max(StrokeSDF(q, p.Meta1.w, sdfSize, sd), pathCut);
     }
 
-    d -= p.TexCoord.z;
+    d -= rounded;
+
+    // Strokes are cut into dashes before AA so every dash gets its own edges, borders and
+    // caps. Basic dashes cut flat across the spine; rounded dashes end in half circles that
+    // exactly reproduce the round caps, so end dashes merge with them seamlessly.
+    if (dashType >= 0.5 && dashStroke) {
+        float du = DashDistance(dashU, dashData);
+        if (dashType >= 1.5) {
+            d = max(d, length(float2(max(du, 0.0), dashV)) - dashR);
+        } else {
+            d = max(d, du);
+        }
+    }
 
     float aaSize = PixelWidth(d, footprint) * aaPixels;
 
@@ -620,19 +1243,34 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         discard;
     }
 
-    float2 fillStyles;
-    float2 borderStyles;
-    fillStyles.x = DecodeDigit(meta, 16.0);
-    fillStyles.y = DecodeDigit(meta, 4.0);
-    borderStyles.x = DecodeDigit(meta, 16.0);
-    borderStyles.y = DecodeDigit(meta, 4.0);
-    float space = meta;
-
     float4 fillA = UnpackColor(p.Fill.xy);
     float4 fillB = UnpackColor(p.Fill.zw);
 
     float edgeFade = 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
     float borderMix = smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize));
+
+    // Closed outlines mask their border band along the perimeter; the gaps show the fill.
+    // The AA width comes from the pixel footprint alone, since the cut is already a world
+    // distance and its screen derivative would misfire across the wrap seam. The cut is the
+    // distance to the dash edge itself rather than a contour offset rescaled by how fast the
+    // coordinate runs here, so it stays a true distance right through the corners, where the
+    // two differ most: the band's inner side runs on a tighter arc than its outer side, and
+    // the rescale also broke where a run meets a corner. See DashCutFromEdges.
+    if (dashType >= 0.5 && !dashStroke) {
+        float aaU = footprint.y * aaPixels;
+        if (dashType >= 1.5) {
+            // Round capped dashes: the exact capsule around the band's centerline, the way
+            // PathDashCut builds one. Along the dash it is the band itself; past either end
+            // it is the distance to that end's cap center. Measuring on the centerline is what
+            // keeps the caps circular right across the band, at corners as much as anywhere.
+            float rd = lineSize * 0.5;
+            float capD = dashCut < 0.0 ? abs(d + rd) - rd
+                                       : min(length(q - dashCapA), length(q - dashCapB)) - rd;
+            borderMix = 1.0 - smoothstep(0.0, 1.0, saturate(capD / aaU));
+        } else {
+            borderMix *= 1.0 - smoothstep(0.0, 1.0, saturate(dashCut / aaU));
+        }
+    }
 
     // The fill/border crossfade is coverage, not a gradient: blend premultiplied in
     // sRGB so the inner AA fringe matches the framebuffer blend outside the edge.
@@ -657,18 +1295,20 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     } else {
         float4 fc = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
         float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
-        bc.a *= edgeFade;
 
         float4 fr = ToRgb(fc, space);
         float4 br = ToRgb(bc, space);
         fr.rgb *= fr.a;
         br.rgb *= br.a;
-        result = lerp(fr, br, borderMix);
+        // The edge fade applies after the crossfade so the fill also fades where a dash gap
+        // lets it reach the outer edge. Solid borders keep borderMix at 1 wherever the fade
+        // is below 1, so this matches the old border-only fade exactly.
+        result = lerp(fr, br, borderMix) * edgeFade;
     }
 
     result *= clipAlpha;
     // With premultiplied blending the source color adds straight into the framebuffer, so
-    // offsetting rgb here dithers the post-blend value that actually quantizes to 8 bits —
+    // offsetting rgb here dithers the post-blend value that actually quantizes to 8 bits,
     // covering banding from color and alpha gradients alike. Left unclamped on purpose:
     // the negative half must survive to dither near-black, and the target clamps on write.
     result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;

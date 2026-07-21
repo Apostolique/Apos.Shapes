@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab, int dash = 0) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -19,7 +19,7 @@ namespace Apos.Shapes {
             }
 
             Position = position;
-            TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace));
+            TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash));
 
             if (colorSpace == ColorSpace.Oklch) {
                 (FillA, FillB) = PackOklchPair(fill.AC, fill.BC);
@@ -176,10 +176,11 @@ namespace Apos.Shapes {
             [VertexElementFormat.HalfVector4] = 8,
         };
 
-        // The shape uses 4 bits, gradient shapes 4 bits each, repeat styles 2 bits each and the
-        // color space 4 bits. The total stays under 2^20 so it survives the trip through a float exactly.
-        private static float PackMeta(Shape shape, Gradient fill, Gradient border, ColorSpace colorSpace) {
-            return (int)shape + 16 * ((int)fill.S + 16 * ((int)fill.RS + 4 * ((int)border.S + 16 * ((int)border.RS + 4 * (int)colorSpace))));
+        // The shape uses 4 bits, gradient shapes 4 bits each, repeat styles 2 bits each, the color
+        // space 2 bits and the dash type 2 bits. The total stays under 2^20 so it survives the trip
+        // through a float exactly. Dash is 0 for solid, 1 for basic dashes, 2 for rounded dashes.
+        private static float PackMeta(Shape shape, Gradient fill, Gradient border, ColorSpace colorSpace, int dash) {
+            return (int)shape + 16 * ((int)fill.S + 16 * ((int)fill.RS + 4 * ((int)border.S + 16 * ((int)border.RS + 4 * ((int)colorSpace + 4 * dash)))));
         }
 
         // Colors are stored as four 16 bit normalized shorts. Only the positive half of the snorm

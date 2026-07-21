@@ -132,15 +132,17 @@ namespace Apos.Shapes {
             _depthStencilState = depthStencilState ?? DepthStencilState.None;
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
-        public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             UpdatePixelSize(center, radius);
             float aaOffset = _pixelSize * aaSize;
+
+            ResolvedDash rd = dash.Resolve(MathF.Tau * radius, closed: true);
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float holeRadius = radius - thickness - aaOffset - _pixelSize;
                 if (holeRadius > _hollowMinHolePixels * _pixelSize) {
                     GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
-                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, 0f, 0f, 0f, 0f);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, rd.Period, rd.FracPhase, 0f, 0f, rd.TypeDigit);
                     return;
                 }
             }
@@ -163,10 +165,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topRight), aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(bottomRight), aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(bottomLeft), aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: aaSize, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topRight), aaSize: aaSize, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(bottomRight), aaSize: aaSize, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(bottomLeft), aaSize: aaSize, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -175,11 +177,11 @@ namespace Apos.Shapes {
         public void FillCircle(Vector2 center, float radius, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawCircle(center, radius, g, g, 0f, rotation, aaSize);
         }
-        public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, Color.Transparent, g, thickness, rotation, aaSize);
+        public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawCircle(center, radius, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
 
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
             float maxR = MathF.Min(size.X, size.Y) / 2f;
@@ -215,6 +217,39 @@ namespace Apos.Shapes {
             float rC = rTL;
             float rD = rBL;
 
+            // Dashed rectangles ship their corner radii as 11 bit fractions of the largest allowed
+            // radius, freeing two channels for the pattern. Snapping the radii to that grid here
+            // keeps the CPU perimeter bit-exact with the one the shader walks.
+            ResolvedDash rd = default;
+            if (dash.IsEnabled) {
+                if (maxR > 0f) {
+                    rA = MathF.Round(rA / maxR * 2047f) / 2047f * maxR;
+                    rB = MathF.Round(rB / maxR * 2047f) / 2047f * maxR;
+                    rC = MathF.Round(rC / maxR * 2047f) / 2047f * maxR;
+                    rD = MathF.Round(rD / maxR * 2047f) / 2047f * maxR;
+                }
+                // Each corner is walked on its own pattern radius, so the straight runs between
+                // them shorten to match; the shader derives the same four radii.
+                float boxCap = MathF.Min(size.X, size.Y) * 0.5f * 0.5f;
+                float pA2 = PatternRadius(rA, thickness, boxCap);
+                float pB2 = PatternRadius(rB, thickness, boxCap);
+                float pC2 = PatternRadius(rC, thickness, boxCap);
+                float pD2 = PatternRadius(rD, thickness, boxCap);
+                float perimeter = 2f * (size.X + size.Y) - (2f - MathF.PI / 2f) * (pA2 + pB2 + pC2 + pD2);
+                rd = dash.Resolve(perimeter, closed: true);
+            }
+            float a = rA;
+            float b = rB;
+            float c = rC;
+            float d = rD;
+            if (rd.TypeDigit > 0) {
+                float mr = MathF.Max(maxR, 1e-9f);
+                a = DashStyle.Pack11(rA / mr, rB / mr);
+                b = DashStyle.Pack11(rC / mr, rD / mr);
+                c = rd.Period;
+                d = rd.FracPhase;
+            }
+
             if (thickness > 0f && IsTransparent(fill)) {
                 float maxCorner = MathF.Max(MathF.Max(rTL, rTR), MathF.Max(rBR, rBL));
                 float inset = thickness + aaOffset + _pixelSize + maxCorner;
@@ -223,15 +258,15 @@ namespace Apos.Shapes {
                 if (hole.X > 4f * _pixelSize && hole.Y > 4f * _pixelSize && hole.X * hole.Y > minHole * minHole) {
                     Span<Vector2> outerCorners = stackalloc Vector2[] { new(-half1.X, -half1.Y), new(half1.X, -half1.Y), new(half1.X, half1.Y), new(-half1.X, half1.Y) };
                     Span<Vector2> innerCorners = stackalloc Vector2[] { new(-hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, hole.Y), new(-hole.X, hole.Y) };
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, rA, rB, rC, rD);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d, rd.TypeDigit);
                     return;
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(bottomRight), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(bottomLeft), half.Y, aaSize: aaSize, rounded: 0f, a: rA, b: rB, c: rC, d: rD, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: aaSize, rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topRight), half.Y, aaSize: aaSize, rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(bottomRight), half.Y, aaSize: aaSize, rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(bottomLeft), half.Y, aaSize: aaSize, rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -240,11 +275,11 @@ namespace Apos.Shapes {
         public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, g, g, 0f, cornerRadii, rotation, aaSize);
         }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, Color.Transparent, g, thickness, cornerRadii, rotation, aaSize);
+        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawRectangle(xy, size, Color.Transparent, g, thickness, cornerRadii, rotation, aaSize, dash);
         }
 
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
+        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             if (a == b) {
                 DrawCircle(a, radius, fill, border, thickness, aaSize: aaSize);
                 return;
@@ -253,7 +288,11 @@ namespace Apos.Shapes {
             UpdatePixelSize(a, b, radius);
             float aaOffset = _pixelSize * aaSize;
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            // The stroke itself is cut into dashes along the spine, so each dash keeps its own
+            // fill and border. That also rules out the hollow mesh: dash faces cross the interior.
+            ResolvedDash rd = dash.Resolve(Vector2.Distance(a, b), closed: false);
+
+            if (rd.TypeDigit == 0 && thickness > 0f && IsTransparent(fill)) {
                 float holeRadius = radius - thickness - aaOffset - _pixelSize;
                 if (holeRadius > _hollowMinHolePixels * _pixelSize) {
                     float length = Vector2.Distance(a, b);
@@ -294,20 +333,20 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topRight), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomRight), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomLeft), width, aaSize: aaSize, rounded: radius, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topRight), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomRight), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomLeft), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillLine(Vector2 a, Vector2 b, float radius, Gradient g, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, g, g, 0f, aaSize);
+        public void FillLine(Vector2 a, Vector2 b, float radius, Gradient g, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawLine(a, b, radius, g, g, 0f, aaSize, dash);
         }
-        public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize);
+        public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize, dash);
         }
 
         /// <summary>
@@ -318,22 +357,26 @@ namespace Apos.Shapes {
         /// sharper than the miter limit, measured like SVG's miterlimit, fall back to bevel. A path that
         /// crosses over itself still overlaps like separate shapes would, as do joins whose segments are
         /// much shorter than the stroke radius.
+        /// Setting closed joins the last point back to the first: the wrap becomes a joint like any
+        /// other, the cap styles go unused, and a dash pattern runs around the loop without a seam.
         /// </summary>
-        public void DrawPath(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+        public void DrawPath(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             // Every segment needs a direction, so drop consecutive duplicates.
             Span<Vector2> pts = points.Length <= 256 ? stackalloc Vector2[points.Length] : new Vector2[points.Length];
             int n = 0;
             foreach (Vector2 p in points) {
                 if (n == 0 || Vector2.DistanceSquared(p, pts[n - 1]) > 1e-12f) pts[n++] = p;
             }
-            DrawPathCore(pts[..n], default, radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize);
+            // A closed path already returns to its first point, so a repeat of it is a duplicate too.
+            if (closed && n > 1 && Vector2.DistanceSquared(pts[n - 1], pts[0]) <= 1e-12f) n--;
+            DrawPathCore(pts[..n], default, radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
         }
         /// <summary>
         /// Starts building a path point by point, an alternative to DrawPath that needs no point array.
         /// Feed points with PathTo, then call EndPath to draw it. All the DrawPath rules apply: joins can
         /// change along the way through PathTo, and the whole path draws as one continuous shape.
         /// </summary>
-        public void BeginPath(float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
+        public void BeginPath(float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, DashStyle dash = default) {
             if (_pathOpen) {
                 throw new InvalidOperationException("BeginPath cannot be called again until EndPath has been called.");
             }
@@ -348,12 +391,13 @@ namespace Apos.Shapes {
             _pathCapEnd = capEnd;
             _pathMiterLimit = miterLimit;
             _pathAaSize = aaSize;
+            _pathDash = dash;
         }
-        public void BeginFillPath(float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            BeginPath(radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize);
+        public void BeginFillPath(float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, DashStyle dash = default) {
+            BeginPath(radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, dash);
         }
-        public void BeginBorderPath(float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            BeginPath(radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize);
+        public void BeginBorderPath(float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, DashStyle dash = default) {
+            BeginPath(radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, dash);
         }
         /// <summary>
         /// Adds the next point to the path started by BeginPath. Passing a join switches the style for
@@ -366,18 +410,29 @@ namespace Apos.Shapes {
             EnsureSizeOrDouble(ref _pathPoints, _pathPointCount + 1);
             _pathPoints[_pathPointCount++] = new PathPoint(point, join);
         }
-        /// <summary>Draws the path built since BeginPath.</summary>
+        /// <summary>Draws the path built since BeginPath, capped at both ends.</summary>
         public void EndPath() {
+            EndPathCore(false);
+        }
+        /// <summary>
+        /// Draws the path built since BeginPath as a closed loop, joining the last point back to the
+        /// first. The wrap gets a joint like every other point instead of two caps, so the cap styles
+        /// go unused and a dash pattern runs around the loop without a seam.
+        /// </summary>
+        public void ClosePath() {
+            EndPathCore(true);
+        }
+        private void EndPathCore(bool closed) {
             if (!_pathOpen) {
-                throw new InvalidOperationException("BeginPath must be called before EndPath.");
+                throw new InvalidOperationException("BeginPath must be called before EndPath or ClosePath.");
             }
             _pathOpen = false;
-            DrawPathPoints(new ReadOnlySpan<PathPoint>(_pathPoints, 0, _pathPointCount), _pathRadius, _pathFill, _pathBorder, _pathThickness, _pathJoin, _pathCap, _pathCapEnd, _pathMiterLimit, _pathAaSize);
+            DrawPathPoints(new ReadOnlySpan<PathPoint>(_pathPoints, 0, _pathPointCount), _pathRadius, _pathFill, _pathBorder, _pathThickness, _pathJoin, _pathCap, _pathCapEnd, _pathMiterLimit, _pathAaSize, closed, _pathDash);
         }
 
         // The styled entry point behind the ShapeBatchPathExtensions overloads. Kept internal so plain
         // Vector2 point lists keep binding the overload above without ambiguity on any C# version.
-        internal void DrawPathPoints(ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap cap, PathCap? capEnd, float miterLimit, float aaSize) {
+        internal void DrawPathPoints(ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap cap, PathCap? capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default) {
             Span<Vector2> pts = points.Length <= 256 ? stackalloc Vector2[points.Length] : new Vector2[points.Length];
             Span<PathJoin> joins = points.Length <= 256 ? stackalloc PathJoin[points.Length] : new PathJoin[points.Length];
             int n = 0;
@@ -393,12 +448,21 @@ namespace Apos.Shapes {
                     joins[n - 1] = running;
                 }
             }
-            DrawPathCore(pts[..n], joins[..n], radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize);
+            // A closed path already returns to its first point, so a repeat of it is a duplicate too.
+            if (closed && n > 1 && Vector2.DistanceSquared(pts[n - 1], pts[0]) <= 1e-12f) {
+                n--;
+                joins[0] = joins[n];
+            }
+            DrawPathCore(pts[..n], joins[..n], radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
         }
-        // joins holds the effective join per point (empty for a uniform path); joint j reads entry j + 1.
-        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize) {
+        // joins holds the effective join per point (empty for a uniform path); the joint at the end of
+        // segment j reads entry j + 1, wrapping with the segments when the path is closed.
+        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default) {
             int n = pts.Length;
             if (n == 0) return;
+            // A loop needs a triangle at least; anything shorter has no interior to go around and
+            // draws as the open stroke it already is.
+            if (closed && n < 3) closed = false;
             if (n == 1) {
                 if (capStart == PathCap.Round) {
                     DrawCircle(pts[0], radius, fill, border, thickness, aaSize: aaSize);
@@ -408,9 +472,16 @@ namespace Apos.Shapes {
                 return;
             }
             if (n == 2 && capStart == PathCap.Round && capEnd == PathCap.Round) {
-                DrawLine(pts[0], pts[1], radius, fill, border, thickness, aaSize);
+                DrawLine(pts[0], pts[1], radius, fill, border, thickness, aaSize, dash);
                 return;
             }
+
+            // A closed path has one segment per point and a joint at every point, including the wrap
+            // back to the start; an open one is a segment and a joint short, and takes caps instead.
+            int segs = closed ? n : n - 1;
+            int jointCount = closed ? n : n - 2;
+
+            bool dashed = dash.IsEnabled;
 
             if (_isPerspective) {
                 float worst = 0f;
@@ -427,12 +498,14 @@ namespace Apos.Shapes {
 
             // The capsule SDFs of two segments agree along the bisector of their joint, so cutting both
             // quads there splits the stroke into regions that each blend exactly once and meet invisibly.
-            Span<PathJoint> joints = n - 2 <= 256 ? stackalloc PathJoint[n - 2] : new PathJoint[n - 2];
+            Span<PathJoint> joints = jointCount <= 256 ? stackalloc PathJoint[jointCount] : new PathJoint[jointCount];
             Vector2 uPrev = (pts[1] - pts[0]) / Vector2.Distance(pts[0], pts[1]);
             float lenPrev = Vector2.Distance(pts[0], pts[1]);
-            for (int j = 0; j < n - 2; j++) {
-                Vector2 joint = pts[j + 1];
-                Vector2 d = pts[j + 2] - joint;
+            for (int j = 0; j < jointCount; j++) {
+                // Joint j sits at the end of segment j. On a closed path the last one lands back on
+                // the first point and turns into the first segment.
+                Vector2 joint = pts[(j + 1) % n];
+                Vector2 d = pts[(j + 2) % n] - joint;
                 float len = d.Length();
                 Vector2 u = d / len;
                 ref PathJoint jd = ref joints[j];
@@ -443,6 +516,7 @@ namespace Apos.Shapes {
                 if (cHalf < 0.05f) {
                     // Near reversal the bisector degenerates; both sides fall back to overlapping round caps.
                     jd.Mode = PathJointMode.Reversal;
+                    jd.ThetaCode = 1024f;
                 } else {
                     float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
                     float sign = s2 >= 0f ? 1f : -1f;
@@ -455,7 +529,7 @@ namespace Apos.Shapes {
                         jd.Mode = PathJointMode.Partition;
                         Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
                         jd.BIn = joint + m * (sign * h / cHalf);
-                        PathJoin requested = joins.IsEmpty ? join : joins[j + 1];
+                        PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
                         if (requested != PathJoin.Round && jd.Theta > 1e-4f) {
                             PathJoin effective = requested;
                             // SVG semantics: the miter ratio is 1 / cos of the half turn.
@@ -472,6 +546,38 @@ namespace Apos.Shapes {
                         // The inner miter outruns a short segment. Overlapping slabs stay hole-free and only
                         // double blend inside the joint, where the stroke genuinely covers itself.
                         jd.Mode = PathJointMode.Overlap;
+                    }
+                    if (dashed) {
+                        // For dashing the joint rounds the spine corner with a fillet arc tangent
+                        // to both segments, replacing the two tangent runs it rounds off. The
+                        // shader decodes the signed angle from an 11 bit code (1024 = 0); quantize
+                        // here so both length walks agree exactly. Overlap joints run the pattern
+                        // straight out instead: their segments are too short for the arc, and they
+                        // already overlap like separate shapes.
+                        if (jd.Mode == PathJointMode.Partition) {
+                            jd.ThetaCode = 1024f + MathF.Round(sign * jd.Theta / MathF.PI * 1023f);
+                            float thetaQ = MathF.Abs(jd.ThetaCode - 1024f) / 1023f * MathF.PI;
+                            float tanQ = MathF.Tan(thetaQ * 0.5f);
+                            // A fillet of exactly radius has an inward offset of zero: it collapses
+                            // to the point where the two inner offsets meet, which lies on the
+                            // stroke's inner edge, and every dash boundary in the fan runs out of
+                            // it. Widening the fillet lifts its center clear of the stroke so no two
+                            // boundaries meet anywhere that gets drawn. It may spend at most half of
+                            // each neighbouring segment, the same budget the inner miter run is
+                            // already known to fit in, so the fallback is never worse than radius.
+                            float fit = tanQ > 1e-6f ? MathF.Min(lenPrev, len) * 0.5f / tanQ : float.MaxValue;
+                            // Only basic dashes may widen it. A rounded dash is the capsule around
+                            // the spine, so the spine is its body and not just where its ends land;
+                            // move it off the real corner and the dash stops following the stroke.
+                            // They have no fan center to escape anyway: a rounded dash reaches it as
+                            // a half disc rather than tapering to a point.
+                            float want = dash.Cap == DashCap.Round ? radius : 2f * radius;
+                            // The code spans [radius, 2 * radius]; the shader mirrors this mapping.
+                            jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, want) / radius - 1f) * 127f), 0f, 127f);
+                            jd.DashArc = (thetaQ - 2f * tanQ) * radius * (1f + jd.DashRadiusCode / 127f);
+                        } else {
+                            jd.ThetaCode = 1024f;
+                        }
                     }
                     if (jd.Theta > 1e-4f) {
                         // Same sagitta rule as EmitHollowAnnulus: chords circumscribe the join arc.
@@ -491,16 +597,40 @@ namespace Apos.Shapes {
                 lenPrev = len;
             }
 
+            // The dash pattern runs along the polyline with each joint's corner rounded off for
+            // dashing (see PathDashCut in the shader); each quad carries its segment's start
+            // length so dashes flow through the joints unbroken. Closed contours snap the period
+            // to a whole number of repeats, so the pattern meets itself at the wrap with no seam.
+            ResolvedDash rd = default;
+            if (dashed) {
+                float totalLen = 0f;
+                for (int i = 0; i < segs; i++) {
+                    totalLen += Vector2.Distance(pts[i], pts[(i + 1) % n]);
+                }
+                for (int j = 0; j < jointCount; j++) {
+                    totalLen += joints[j].DashArc;
+                }
+                rd = dash.Resolve(totalLen, closed);
+            }
+
             // Cross sections at each end: two corners at a cap, up to three points at a joint.
             // Every polygon is convex, so a fan from the first vertex triangulates it.
             Span<Vector2> poly = stackalloc Vector2[6];
-            for (int i = 0; i < n - 1; i++) {
+            float startLen = 0f;
+            for (int i = 0; i < segs; i++) {
                 Vector2 a = pts[i];
-                Vector2 b = pts[i + 1];
+                Vector2 b = pts[(i + 1) % n];
                 Vector2 d = b - a;
                 float len = d.Length();
                 Vector2 u = d / len;
                 Vector2 nrm = new(-u.Y, u.X);
+
+                // A closed path joints at both ends of every segment, the first one included; an open
+                // one caps where it runs out of joints.
+                bool hasStart = closed || i > 0;
+                bool hasEnd = closed || i < segs - 1;
+                int js = closed ? (i + jointCount - 1) % jointCount : i - 1;
+                int je = i;
 
                 int count = 0;
                 float modeStart = 0f;
@@ -508,15 +638,15 @@ namespace Apos.Shapes {
                 float angStart = 0f;
                 float angEnd = 0f;
                 // Start end, walked from +nrm to -nrm so the polygon winds clockwise on screen.
-                if (i == 0 || joints[i - 1].Mode == PathJointMode.Reversal) {
+                if (!hasStart || joints[js].Mode == PathJointMode.Reversal) {
                     // Reversal fallbacks keep round caps; only true path ends take the cap style.
-                    float ext = i == 0 && capStart == PathCap.Butt ? aaOffset : h;
-                    if (i == 0) modeStart = (float)capStart;
+                    float ext = !hasStart && capStart == PathCap.Butt ? aaOffset : h;
+                    if (!hasStart) modeStart = (float)capStart;
                     Vector2 back = a - u * ext;
                     poly[count++] = back + nrm * h;
                     poly[count++] = back - nrm * h;
                 } else {
-                    ref PathJoint jd = ref joints[i - 1];
+                    ref PathJoint jd = ref joints[js];
                     if (jd.Join == PathJoin.Miter) {
                         modeStart = 3f;
                         if (jd.Sign > 0f) {
@@ -554,14 +684,14 @@ namespace Apos.Shapes {
                     }
                 }
                 // End end, walked from -nrm back to +nrm.
-                if (i == n - 2 || joints[i].Mode == PathJointMode.Reversal) {
-                    float ext = i == n - 2 && capEnd == PathCap.Butt ? aaOffset : h;
-                    if (i == n - 2) modeEnd = (float)capEnd;
+                if (!hasEnd || joints[je].Mode == PathJointMode.Reversal) {
+                    float ext = !hasEnd && capEnd == PathCap.Butt ? aaOffset : h;
+                    if (!hasEnd) modeEnd = (float)capEnd;
                     Vector2 fwd = b + u * ext;
                     poly[count++] = fwd - nrm * h;
                     poly[count++] = fwd + nrm * h;
                 } else {
-                    ref PathJoint jd = ref joints[i];
+                    ref PathJoint jd = ref joints[je];
                     if (jd.Join == PathJoin.Miter) {
                         modeEnd = 3f;
                         if (jd.Sign > 0f) {
@@ -599,14 +729,18 @@ namespace Apos.Shapes {
                 }
 
                 float modes = modeStart + 8f * modeEnd;
+                float thetaCodeStart = hasStart ? joints[js].ThetaCode : 1024f;
+                float thetaCodeEnd = hasEnd ? joints[je].ThetaCode : 1024f;
+                float radiusCodeStart = hasStart ? joints[js].DashRadiusCode : 0f;
+                float radiusCodeEnd = hasEnd ? joints[je].DashRadiusCode : 0f;
                 for (int k = 1; k + 1 < count; k += 2) {
-                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radius, aaSize, modes, angStart, angEnd);
+                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radius, aaSize, modes, angStart, angEnd, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, rd);
                 }
 
                 // Round join: a fan around the joint covers the outer wedge between the two walls. Any
                 // point there is nearest the shared joint, so this segment's SDF is exact for the arc.
-                if (i < n - 2 && joints[i].Mode != PathJointMode.Reversal && joints[i].Join == PathJoin.Round && joints[i].Chords > 0) {
-                    ref PathJoint jd = ref joints[i];
+                if (hasEnd && joints[je].Mode != PathJointMode.Reversal && joints[je].Join == PathJoin.Round && joints[je].Chords > 0) {
+                    ref PathJoint jd = ref joints[je];
                     float baseAngle = MathF.Atan2(-jd.Sign * nrm.Y, -jd.Sign * nrm.X);
                     float step = jd.Sign * jd.Theta / jd.Chords;
                     float reach = h * jd.Overshoot;
@@ -615,22 +749,24 @@ namespace Apos.Shapes {
                         Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
                         Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
                         if (jd.Sign > 0f) {
-                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radius, aaSize, 0f, 0f, 0f);
+                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radius, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, rd);
                         } else {
-                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radius, aaSize, 0f, 0f, 0f);
+                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radius, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, rd);
                         }
                     }
                 }
+
+                startLen += len + (hasEnd ? joints[je].DashArc : 0f);
             }
         }
-        public void FillPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            DrawPath(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize);
+        public void FillPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            DrawPath(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
-        public void BorderPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            DrawPath(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize);
+        public void BorderPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            DrawPath(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
 
-        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
             rounded = MathF.Min(rounded, radius);
@@ -641,6 +777,12 @@ namespace Apos.Shapes {
             float width1 = 2f * radius / MathF.Sqrt(3f) + aaOffset; // Account for AA.
 
             radius -= rounded;
+
+            // Six sides plus the six corner arcs, walked on the pattern radius rather than the
+            // rounding, with the hexagon re-inset to keep those arcs tangent to the same edges.
+            float hexOut = radius + rounded; // Apothem of the outline itself.
+            float hexPatternR = PatternRadius(rounded, thickness, hexOut * 0.5f);
+            ResolvedDash rd = dash.Resolve(4f * MathF.Sqrt(3f) * (hexOut - hexPatternR) + MathF.Tau * hexPatternR, closed: true);
 
             Vector2 size = new(width1, radius1);
 
@@ -667,15 +809,15 @@ namespace Apos.Shapes {
                     Span<Vector2> innerCorners = stackalloc Vector2[6];
                     HexagonCorners(radius + rounded + aaOffset + _pixelSize, outerCorners);
                     HexagonCorners(holeApothem, innerCorners);
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Hexagon, fill, border, thickness, radius, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Hexagon, fill, border, thickness, radius, 1f, aaSize, rounded, rd.Period, rd.FracPhase, 0f, 0f, rd.TypeDigit);
                     return;
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -684,11 +826,11 @@ namespace Apos.Shapes {
         public void FillHexagon(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawHexagon(center, radius, g, g, 0f, rounded, rotation, aaSize);
         }
-        public void BorderHexagon(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
+        public void BorderHexagon(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawHexagon(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
 
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
             rounded = MathF.Min(rounded, radius);
@@ -706,6 +848,12 @@ namespace Apos.Shapes {
             float circumcircle1 = circumcircle + aaOffset; // Account for AA.
 
             halfWidth -= rounded * MathF.Sqrt(3f);
+
+            // Three sides plus the three corner arcs, walked on the pattern radius rather than the
+            // rounding, with the triangle re-inset to keep those arcs tangent to the same edges.
+            float eqOut = halfWidth / MathF.Sqrt(3f) + rounded; // Apothem of the outline itself.
+            float eqPatternR = PatternRadius(rounded, thickness, eqOut * 0.5f);
+            ResolvedDash rd = dash.Resolve(6f * MathF.Sqrt(3f) * (eqOut - eqPatternR) + MathF.Tau * eqPatternR, closed: true);
 
             var topLeft = center - new Vector2(halfWidth1, incircle1);
             var topRight = center + new Vector2(halfWidth1, -incircle1);
@@ -735,15 +883,15 @@ namespace Apos.Shapes {
                         // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
                         innerCorners[i] = holeOffset <= 0f ? corners[i] * scaleIn : corners[i] + Vector2.Normalize(corners[i]) * holeOffset;
                     }
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, rd.Period, rd.FracPhase, 0f, 0f, rd.TypeDigit);
                     return;
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topRight), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(bottomRight), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(bottomLeft), aaSize: aaSize, rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -752,11 +900,11 @@ namespace Apos.Shapes {
         public void FillEquilateralTriangle(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEquilateralTriangle(center, radius, g, g, 0f, rounded, rotation, aaSize);
         }
-        public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
+        public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
 
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
+        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
             GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
@@ -819,6 +967,22 @@ namespace Apos.Shapes {
             B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
             C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
 
+            // Three sides of the shrunk triangle plus the corner arcs of the dilation, which sum
+            // to a full turn. Dashed triangles put A at the local origin so the pattern can ride
+            // in the two channels A normally occupies. The pattern walks corners wider than the
+            // rounding, so the walk is over the triangle inset by that much again.
+            Vector2 pA = A, pB = B, pC = C;
+            float triPatternR = rounded;
+            if (dash.IsEnabled) {
+                float triInR = 2f * TriangleArea(A, B, C) / MathF.Max(Vector2.Distance(A, B) + Vector2.Distance(B, C) + Vector2.Distance(C, A), 1e-6f);
+                triPatternR = PatternRadius(rounded, thickness, rounded + triInR * 0.5f);
+                InsetTriangle(ref pA, ref pB, ref pC, triPatternR - rounded);
+            }
+            ResolvedDash rd = dash.Resolve(Vector2.Distance(pA, pB) + Vector2.Distance(pB, pC) + Vector2.Distance(pC, pA) + MathF.Tau * triPatternR, closed: true);
+            Vector2 shift = rd.TypeDigit > 0 ? A : Vector2.Zero;
+            float sdfA = rd.TypeDigit > 0 ? rd.Period : A.X;
+            float sdfB = rd.TypeDigit > 0 ? rd.FracPhase : A.Y;
+
             if (thickness > 0f && IsTransparent(fill)) {
                 float inradius = inRadius * ratioDistance;
                 float holeOffset = rounded - thickness - aaOffset - _pixelSize;
@@ -830,20 +994,21 @@ namespace Apos.Shapes {
                     Span<Vector2> outerCorners = stackalloc Vector2[3];
                     Span<Vector2> innerCorners = stackalloc Vector2[3];
                     for (int i = 0; i < 3; i++) {
-                        outerCorners[i] = inCenter + (corners[i] - inCenter) * scaleOut;
+                        outerCorners[i] = inCenter + (corners[i] - inCenter) * scaleOut - shift;
                         // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
-                        innerCorners[i] = holeOffset <= 0f ? inCenter + (corners[i] - inCenter) * scaleIn : corners[i] + Vector2.Normalize(corners[i] - inCenter) * holeOffset;
+                        innerCorners[i] = (holeOffset <= 0f ? inCenter + (corners[i] - inCenter) * scaleIn : corners[i] + Vector2.Normalize(corners[i] - inCenter) * holeOffset) - shift;
                     }
-                    // This shape's local coordinates are the world coordinates themselves.
-                    EmitHollowFrame(Vector2.Zero, 0f, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, A.X, A.Y, aaSize, rounded, B.X, B.Y, C.X, C.Y);
+                    // This shape's local coordinates are the world coordinates themselves, minus the
+                    // dash shift; passing the shift as the frame origin keeps the world positions put.
+                    EmitHollowFrame(shift, 0f, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, sdfB, aaSize, rounded, B.X - shift.X, B.Y - shift.Y, C.X - shift.X, C.Y - shift.Y, rd.TypeDigit);
                     return;
                 }
             }
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(topLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(topRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(bottomRight), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(bottomLeft), height: A.Y, aaSize: aaSize, rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), topLeft - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(topLeft), height: sdfB, aaSize: aaSize, rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), topRight - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(topRight), height: sdfB, aaSize: aaSize, rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), bottomRight - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(bottomRight), height: sdfB, aaSize: aaSize, rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), bottomLeft - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(bottomLeft), height: sdfB, aaSize: aaSize, rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -852,8 +1017,8 @@ namespace Apos.Shapes {
         public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float rounded = 0f, float aaSize = 1.5f) {
             DrawTriangle(a, b, c, g, g, 0f, rounded, aaSize);
         }
-        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize);
+        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize, dash);
         }
 
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
@@ -908,7 +1073,7 @@ namespace Apos.Shapes {
             DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize);
         }
 
-        public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
+        public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
             radius1 -= 1f;
@@ -916,6 +1081,10 @@ namespace Apos.Shapes {
             float angleSize = MathF.Abs(Mod((angle2 - angle1) * 0.5f + MathF.PI, MathF.PI * 2f) - MathF.PI);
             float sin = MathF.Sin(angleSize);
             float cos = MathF.Cos(angleSize);
+
+            // The arc is dashed along its centerline like a curved line, caps included.
+            ResolvedDash rd = dash.Resolve(2f * angleSize * radius1, closed: false);
+            float dashHeight = rd.TypeDigit > 0 ? rd.Period : 1f;
 
             UpdatePixelSize(center, radius1 + radius2);
             float aaOffset = _pixelSize * aaSize;
@@ -928,7 +1097,7 @@ namespace Apos.Shapes {
                 float capMargin = MathF.Asin(MathF.Min((radius2 + aaOffset + _pixelSize) / holeRadius, 1f));
                 float halfSpan = angleSize + capMargin;
                 bool wrap = halfSpan >= MathF.PI;
-                EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, wrap ? MathF.PI : halfSpan, new Vector2(holeRadius), new Vector2(radius1 + radius2 + aaOffset + _pixelSize), wrap, VertexShape.Shape.Arc, fill, border, thickness, radius1, 1f, aaSize, 0f, sin, cos, radius2, 0f);
+                EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, wrap ? MathF.PI : halfSpan, new Vector2(holeRadius), new Vector2(radius1 + radius2 + aaOffset + _pixelSize), wrap, VertexShape.Shape.Arc, fill, border, thickness, radius1, dashHeight, aaSize, 0f, sin, cos, radius2, rd.FracPhase, rd.TypeDigit);
                 return;
             }
 
@@ -948,23 +1117,23 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topLeft), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topRight), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(bottomRight), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(bottomLeft), aaSize: aaSize, a: sin, b: cos, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: aaSize, a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topRight), height: dashHeight, aaSize: aaSize, a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(bottomRight), height: dashHeight, aaSize: aaSize, a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(bottomLeft), height: dashHeight, aaSize: aaSize, a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize);
+        public void FillArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawArc(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize, dash);
         }
-        public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
-            DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize);
+        public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize, dash);
         }
 
-        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
+        public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
             radius1 -= 1f;
@@ -973,6 +1142,10 @@ namespace Apos.Shapes {
 
             float cos = MathF.Cos(angleSize);
             float sin = MathF.Sin(angleSize);
+
+            // The ring band is dashed along its centerline; the dashes end flat like the ring itself.
+            ResolvedDash rd = dash.Resolve(2f * angleSize * radius1, closed: false);
+            float dashHeight = rd.TypeDigit > 0 ? rd.Period : 1f;
 
             UpdatePixelSize(center, radius1 + radius2);
             float aaOffset = _pixelSize * aaSize;
@@ -986,7 +1159,7 @@ namespace Apos.Shapes {
                 float capMargin = MathF.Asin(MathF.Min((aaOffset + _pixelSize) / holeRadius, 1f));
                 float halfSpan = angleSize + capMargin;
                 bool wrap = halfSpan >= MathF.PI;
-                EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, wrap ? MathF.PI : halfSpan, new Vector2(holeRadius), new Vector2(radius1 + radius2 * 0.5f + aaOffset + _pixelSize), wrap, VertexShape.Shape.Ring, fill, border, thickness, radius1, 1f, aaSize, 0f, cos, sin, radius2, 0f);
+                EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, wrap ? MathF.PI : halfSpan, new Vector2(holeRadius), new Vector2(radius1 + radius2 * 0.5f + aaOffset + _pixelSize), wrap, VertexShape.Shape.Ring, fill, border, thickness, radius1, dashHeight, aaSize, 0f, cos, sin, radius2, rd.FracPhase, rd.TypeDigit);
                 return;
             }
 
@@ -1006,20 +1179,20 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topLeft), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topRight), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(bottomRight), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(bottomLeft), aaSize: aaSize, a: cos, b: sin, c: radius2, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: aaSize, a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topRight), height: dashHeight, aaSize: aaSize, a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(bottomRight), height: dashHeight, aaSize: aaSize, a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(bottomLeft), height: dashHeight, aaSize: aaSize, a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize);
+        public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawRing(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize, dash);
         }
-        public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
-            DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize);
+        public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize, dash);
         }
 
         public void Draw(Texture2D texture, Matrix3x2 world, Matrix3x2? source = null, Color? mask = null) {
@@ -1189,7 +1362,7 @@ namespace Apos.Shapes {
                 throw new InvalidOperationException("Begin must be called before calling End.");
             }
             if (_pathOpen) {
-                throw new InvalidOperationException("EndPath must be called before calling End.");
+                throw new InvalidOperationException("EndPath or ClosePath must be called before calling End.");
             }
             _beginCalled = false;
 
@@ -1365,13 +1538,13 @@ namespace Apos.Shapes {
             return g.AC.A == 0 && g.BC.A == 0;
         }
 
-        private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
+        private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
             PrepareQuad();
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, GetClipSpace(w0), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(w1, 0), l1, shape, fill, border, thickness, sdfSize, GetClipSpace(w1), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(w2, 0), l2, shape, fill, border, thickness, sdfSize, GetClipSpace(w2), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(w3, 0), l3, shape, fill, border, thickness, sdfSize, GetClipSpace(w3), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, GetClipSpace(w0), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: dash);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(w1, 0), l1, shape, fill, border, thickness, sdfSize, GetClipSpace(w1), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: dash);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(w2, 0), l2, shape, fill, border, thickness, sdfSize, GetClipSpace(w2), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: dash);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(w3, 0), l3, shape, fill, border, thickness, sdfSize, GetClipSpace(w3), height, aaSize: aaSize, rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: dash);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1382,7 +1555,7 @@ namespace Apos.Shapes {
         // Angles are measured from the local +y axis to line up with the arc and ring SDFs. Outer
         // vertices circumscribe the band so the chords never clip it; inner vertices sit on the hole
         // boundary so their chords only dip into the hole. Quads are wound clockwise on screen.
-        private void EmitHollowAnnulus(Vector2 origin, float rotation, Vector2 localCenter, float angleCenter, float halfSpan, Vector2 axesInner, Vector2 axesOuter, bool wrap, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
+        private void EmitHollowAnnulus(Vector2 origin, float rotation, Vector2 localCenter, float angleCenter, float halfSpan, Vector2 axesInner, Vector2 axesOuter, bool wrap, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
             float rMax = MathF.Max(axesOuter.X, axesOuter.Y);
             float phi = MathF.Acos(MathF.Max(1f - _hollowMaxSagPixels * _pixelSize / rMax, 0f));
             int n = Math.Clamp((int)MathF.Ceiling(halfSpan / MathF.Max(phi, 1e-4f)), 3, _hollowMaxSectors);
@@ -1411,7 +1584,7 @@ namespace Apos.Shapes {
                 Vector2 outerCur = localCenter + axesOuter * dir * overshoot;
                 Vector2 innerCur = localCenter + axesInner * dir;
 
-                EmitHollowQuad(W(outerCur), W(outerPrev), W(innerPrev), W(innerCur), outerCur, outerPrev, innerPrev, innerCur, shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d);
+                EmitHollowQuad(W(outerCur), W(outerPrev), W(innerPrev), W(innerCur), outerCur, outerPrev, innerPrev, innerCur, shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d, dash);
 
                 outerPrev = outerCur;
                 innerPrev = innerCur;
@@ -1436,6 +1609,44 @@ namespace Apos.Shapes {
             public float SHalf;
             public int Chords;
             public float Overshoot; // Chord vertices circumscribe the join arc by this factor.
+            public float ThetaCode; // Signed turn angle as the shader's 11 bit code, 1024 = 0. Dashed only.
+            public float DashRadiusCode; // Fillet radius as a 7 bit code over [radius, 2 * radius]. Dashed only.
+            public float DashArc;   // Pattern length the joint's fan consumes. Dashed only.
+        }
+
+        // Mirrors the shader's PatternRadius: the radius the dash pattern walks a corner on, which
+        // runs wider than the shape's rounding so the arc center every cut in that corner converges
+        // on lands past the border band's inner edge instead of inside it.
+        private static float PatternRadius(float rounded, float thickness, float cap) {
+            return MathF.Max(rounded, MathF.Min(1.5f * thickness, cap));
+        }
+
+        private static float TriangleArea(Vector2 a, Vector2 b, Vector2 c) {
+            return 0.5f * MathF.Abs((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X));
+        }
+
+        // Pushes every edge inward by delta, sliding each vertex along its miter. Mirrors the
+        // shader's MiterShift; parallel inset leaves the edge directions, and so the corner arc
+        // spans, exactly as they were.
+        private static void InsetTriangle(ref Vector2 a, ref Vector2 b, ref Vector2 c, float delta) {
+            if (delta <= 0f) return;
+            float orr = ((b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X)) >= 0f ? 1f : -1f;
+            Vector2 g0 = Vector2.Normalize(b - a);
+            Vector2 g1 = Vector2.Normalize(c - b);
+            Vector2 g2 = Vector2.Normalize(a - c);
+            Vector2 n0 = orr * new Vector2(g0.Y, -g0.X);
+            Vector2 n1 = orr * new Vector2(g1.Y, -g1.X);
+            Vector2 n2 = orr * new Vector2(g2.Y, -g2.X);
+            Vector2 Shift(Vector2 nIn, Vector2 nOut) {
+                Vector2 s = nIn + nOut;
+                return -s * (delta / MathF.Max(1f + Vector2.Dot(nIn, nOut), 1e-3f));
+            }
+            Vector2 sa = Shift(n2, n0);
+            Vector2 sb = Shift(n0, n1);
+            Vector2 sc = Shift(n1, n2);
+            a += sa;
+            b += sb;
+            c += sc;
         }
 
         // The first and last vertices reuse the stored wall corners so the fan shares them bitwise with
@@ -1448,25 +1659,35 @@ namespace Apos.Shapes {
         }
 
         // A path quad's local coordinates live in its segment's frame: x along the segment, y across it.
-        // Meta2 carries the packed end modes and the bevel plane angles for StrokeSDF.
-        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float aaSize, float modes, float angStart, float angEnd) {
+        // Meta2 carries the packed end modes and the bevel plane angles for StrokeSDF. Dashed paths
+        // instead pack each end's signed turn angle as two 11 bit codes, from which the shader derives
+        // the bevel planes, to make room for the segment's start length and the period, and put the
+        // fraction and phase in the unused rounding slot. Each end's fillet radius code rides above
+        // the end modes, which only need six bits, keeping that value well under 2^22.
+        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float aaSize, float modes, float angStart, float angEnd, float thetaCodeStart, float thetaCodeEnd, float radiusCodeStart, float radiusCodeEnd, float startLen, in ResolvedDash rd) {
             Vector2 Local(Vector2 w) {
                 Vector2 r = w - origin;
                 return new Vector2(Vector2.Dot(r, u), Vector2.Dot(r, nrm));
             }
-            EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, 0f);
+            if (rd.TypeDigit > 0) {
+                float angs = thetaCodeStart * 2048f + thetaCodeEnd;
+                float packed = modes + 64f * (radiusCodeStart + 128f * radiusCodeEnd);
+                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, rd.FracPhase, packed, angs, startLen, rd.Period, rd.TypeDigit);
+            } else {
+                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, 0f);
+            }
         }
 
         // One quad per edge between two nested convex polygons with matching corner counts. Adjacent
         // quads share their mitre edges exactly so the frame is watertight. Corners must be listed
         // clockwise on screen.
-        private void EmitHollowFrame(Vector2 origin, float rotation, ReadOnlySpan<Vector2> outer, ReadOnlySpan<Vector2> inner, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
+        private void EmitHollowFrame(Vector2 origin, float rotation, ReadOnlySpan<Vector2> outer, ReadOnlySpan<Vector2> inner, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
             (float sinR, float cosR) = MathF.SinCos(rotation);
             Vector2 W(Vector2 l) => origin + new Vector2(l.X * cosR - l.Y * sinR, l.X * sinR + l.Y * cosR);
 
             for (int i = 0; i < outer.Length; i++) {
                 int j = i + 1 == outer.Length ? 0 : i + 1;
-                EmitHollowQuad(W(outer[i]), W(outer[j]), W(inner[j]), W(inner[i]), outer[i], outer[j], inner[j], inner[i], shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d);
+                EmitHollowQuad(W(outer[i]), W(outer[j]), W(inner[j]), W(inner[i]), outer[i], outer[j], inner[j], inner[i], shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d, dash);
             }
         }
 
@@ -1587,6 +1808,7 @@ namespace Apos.Shapes {
         private PathCap? _pathCapEnd;
         private float _pathMiterLimit;
         private float _pathAaSize;
+        private DashStyle _pathDash;
     }
 
     /// <summary>
@@ -1597,14 +1819,14 @@ namespace Apos.Shapes {
     /// the ShapeBatch overloads without ambiguity on every C# language version.
     /// </summary>
     public static class ShapeBatchPathExtensions {
-        public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            sb.DrawPathPoints(points, radius, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize);
+        public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            sb.DrawPathPoints(points, radius, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
-        public static void FillPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            sb.DrawPathPoints(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize);
+        public static void FillPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            sb.DrawPathPoints(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
-        public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f) {
-            sb.DrawPathPoints(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize);
+        public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            sb.DrawPathPoints(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
     }
 }

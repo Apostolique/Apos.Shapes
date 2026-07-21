@@ -49,7 +49,8 @@ namespace GameProject {
             if (_toggleDither.Pressed()) _ditherMode = (_ditherMode + 1) % 3;
             if (_strengthUp.Pressed()) _demoStrength = MathF.Min(_demoStrength + 1f, 16f);
             if (_strengthDown.Pressed()) _demoStrength = MathF.Max(_demoStrength - 1f, 1f);
-            if (_toggleScene.Pressed()) _bandingScene = !_bandingScene;
+            if (_toggleScene.Pressed()) _currentScene = (Scene)(((int)_currentScene + 1) % Enum.GetNames<Scene>().Length);
+            UpdateDashOffset(gameTime);
             _fps.Update(gameTime);
 
             if (_quit.Pressed())
@@ -73,7 +74,19 @@ namespace GameProject {
             _sb.DitherStrength = _ditherMode == 2 ? 0f : _demoStrength;
             _sb.DitherNoiseSource = _ditherMode == 1 ? DitherNoise.InterleavedGradient : DitherNoise.BlueNoise;
 
-            if (_bandingScene) {
+            if (_currentScene == Scene.Dash) {
+                DrawDashScene();
+                base.Draw(gameTime);
+                return;
+            }
+
+            if (_currentScene == Scene.Closed) {
+                DrawClosedScene();
+                base.Draw(gameTime);
+                return;
+            }
+
+            if (_currentScene == Scene.Banding) {
                 DrawBandingScene(font);
                 base.Draw(gameTime);
                 return;
@@ -149,6 +162,91 @@ namespace GameProject {
             base.Draw(gameTime);
         }
 
+        // Every dashed shape and both dash types. Tab cycles to it.
+        private void DrawDashScene() {
+            _sb.Begin(_camera.View);
+
+            float offset = _dashOffset;
+
+            // Closed outlines, basic dashes: the border band is masked along the perimeter.
+            _sb.BorderCircle(new Vector2(-500, -220), 100, TWColor.Sky400, 6f, dash: new DashStyle(24f, 16f, offset));
+            _sb.BorderRectangle(new Vector2(-360, -300), new Vector2(220, 160), TWColor.Amber400, 6f, new CornerRadii(30), dash: new DashStyle(24f, 16f, offset));
+            _sb.BorderHexagon(new Vector2(0, -220), 90, TWColor.Emerald400, 6f, rounded: 10f, dash: new DashStyle(24f, 16f, offset));
+            _sb.BorderEquilateralTriangle(new Vector2(190, -230), 55, TWColor.Rose400, 6f, rounded: 8f, dash: new DashStyle(24f, 16f, offset));
+            _sb.BorderTriangle(new Vector2(290, -140), new Vector2(380, -320), new Vector2(470, -140), TWColor.Violet400, 6f, rounded: 6f, dash: new DashStyle(24f, 16f, offset));
+
+            // Rounded dashes over an opaque fill: the gaps show the fill, the dash ends are round.
+            _sb.DrawCircle(new Vector2(560, -220), 70, TWColor.Gray800, TWColor.Cyan300, 10f, dash: new DashStyle(26f, 22f, offset, cap: DashCap.Round));
+            _sb.DrawRectangle(new Vector2(-620, -60), new Vector2(200, 130), TWColor.Gray800, TWColor.Lime300, 8f, new CornerRadii(20), dash: new DashStyle(24f, 20f, offset, cap: DashCap.Round));
+
+            // Strokes: the stroke itself is cut into dashes, each with its own fill, border and caps.
+            _sb.FillLine(new Vector2(-340, -40), new Vector2(120, -40), 10, TWColor.Orange400, dash: new DashStyle(30f, 22f, offset));
+            _sb.DrawLine(new Vector2(-340, 10), new Vector2(120, 10), 10, TWColor.Gray800, TWColor.Pink400, 3f, dash: new DashStyle(34f, 24f, offset));
+            _sb.FillLine(new Vector2(-340, 60), new Vector2(120, 60), 8, TWColor.Teal300, dash: new DashStyle(0f, 34f, cap: DashCap.Round, offset: offset));
+            _sb.FillArc(new Vector2(300, 30), MathF.PI * 0.75f, MathF.PI * 2.25f, 90, 12, TWColor.Red400, dash: new DashStyle(36f, 24f, cap: DashCap.Round, offset: offset));
+            // A counted pattern: always exactly 8 repeats, however long the contour is.
+            _sb.FillRing(new Vector2(540, 30), MathF.PI * 0.75f, MathF.PI * 2.25f, 90, 24, TWColor.Blue400, dash: DashStyle.FromCount(8, 0.66f, offset));
+
+            // Paths: the pattern flows through the joints and borders trace every dash.
+            _sb.FillPath([new Vector2(-600, 220), new Vector2(-480, 160), new Vector2(-360, 260), new Vector2(-240, 160), new Vector2(-120, 220)], 10, TWColor.Fuchsia400, dash: new DashStyle(30f, 20f, offset));
+            _sb.DrawPath([new Vector2(-20, 260), new Vector2(80, 160), new Vector2(180, 260), new Vector2(280, 160)], 12, TWColor.Gray800, TWColor.Yellow300, 3f, join: PathJoin.Miter, dash: new DashStyle(36f, 22f, cap: DashCap.Round, offset: offset));
+            _sb.FillPath([new Vector2(360, 260), new Vector2(440, 170), new Vector2(520, 260), new Vector2(600, 170)], 8, TWColor.Green300, join: PathJoin.Bevel, dash: new DashStyle(24f, 18f, offset: offset));
+
+            _sb.End();
+        }
+
+        // Closed paths, where the last point joins back to the first. Tab cycles to it.
+        private void DrawClosedScene() {
+            _sb.Begin(_camera.View);
+
+            float offset = _dashOffset;
+
+            // The wrap point is a joint like any other, so the pattern comes back around to meet where
+            // it started, at every corner style.
+            _sb.FillPath([new Vector2(-600, -140), new Vector2(-470, -310), new Vector2(-340, -140)], 12, TWColor.Indigo300, join: PathJoin.Miter, closed: true, dash: new DashStyle(34f, 22f, offset));
+            _sb.DrawPath(Polygon(new Vector2(-140, -220), 100f, 5), 12, TWColor.Gray800, TWColor.Amber300, 3f, closed: true, dash: new DashStyle(30f, 20f, offset));
+            _sb.FillPath(Polygon(new Vector2(160, -220), 100f, 4), 11, TWColor.Rose400, join: PathJoin.Bevel, closed: true, dash: new DashStyle(28f, 20f, offset));
+            // Sharp corners turning both ways, the tightest case for a pattern walking a corner.
+            _sb.FillPath(Star(new Vector2(470, -220), 110f, 48f, 5), 9, TWColor.Lime300, closed: true, dash: new DashStyle(26f, 18f, offset));
+
+            // An ellipse flattened to a polyline. Its perimeter is an elliptic integral, so the shader
+            // can't walk it as a shape, but as a closed path it dashes like anything else.
+            _sb.FillPath(Ellipse(new Vector2(-250, 90), 340f, 120f, 96), 12, TWColor.Cyan400, closed: true, dash: new DashStyle(40f, 26f, cap: DashCap.Round, offset: offset));
+
+            // Undashed and translucent: the wrap joint partitions the stroke like every other joint, so
+            // it blends exactly once and no seam shows where the loop closes.
+            _sb.FillPath(Polygon(new Vector2(400, 90), 120f, 6), 16, new Color(TWColor.Fuchsia400, 0.5f), closed: true);
+
+            _sb.End();
+        }
+
+        // Corner points of a regular polygon, flat side down, for closed path demos.
+        private static Vector2[] Polygon(Vector2 center, float radius, int sides) {
+            Vector2[] p = new Vector2[sides];
+            for (int i = 0; i < sides; i++) {
+                float a = MathF.Tau * i / sides - MathF.PI * 0.5f;
+                p[i] = center + new Vector2(MathF.Cos(a), MathF.Sin(a)) * radius;
+            }
+            return p;
+        }
+        // A star, alternating between the two radii, for corners that turn both ways.
+        private static Vector2[] Star(Vector2 center, float outer, float inner, int points) {
+            Vector2[] p = new Vector2[points * 2];
+            for (int i = 0; i < p.Length; i++) {
+                float a = MathF.PI * i / points - MathF.PI * 0.5f;
+                p[i] = center + new Vector2(MathF.Cos(a), MathF.Sin(a)) * (i % 2 == 0 ? outer : inner);
+            }
+            return p;
+        }
+        private static Vector2[] Ellipse(Vector2 center, float rx, float ry, int segments) {
+            Vector2[] p = new Vector2[segments];
+            for (int i = 0; i < segments; i++) {
+                float a = MathF.Tau * i / segments;
+                p[i] = center + new Vector2(MathF.Cos(a) * rx, MathF.Sin(a) * ry);
+            }
+            return p;
+        }
+
         // Night scene built from slow dark gradients, the worst case for 8-bit banding.
         // Space toggles the dither so the bands snap in and out; zoom and drag still work.
         private void DrawBandingScene(FontStashSharp.SpriteFontBase font) {
@@ -208,6 +306,27 @@ namespace GameProject {
                 _camera.FocalLength = 1f;
             }
         }
+        // Left and right scrub the dash pattern a step at a time, which is how corner and cap
+        // artifacts get caught: they only show at the phases where an edge sits on the joint.
+        // Scrubbing pauses the animation so a phase can be held still, P plays it again.
+        private void UpdateDashOffset(GameTime gameTime) {
+            if (_dashPlay.Pressed()) _dashPaused = !_dashPaused;
+
+            float step = _dashStepFast.Held() ? 0.01f : 0.001f;
+            if (_dashBack.Held()) {
+                _dashOffset -= step;
+                _dashPaused = true;
+            }
+            if (_dashForward.Held()) {
+                _dashOffset += step;
+                _dashPaused = true;
+            }
+
+            if (!_dashPaused) {
+                _dashOffset += (float)gameTime.ElapsedGameTime.TotalMilliseconds * 0.0005f;
+            }
+        }
+
         private float ScaleToExp(float scale) {
             return -MathF.Log(scale);
         }
@@ -263,6 +382,10 @@ namespace GameProject {
         ICondition _strengthUp = new KeyboardCondition(Keys.Up);
         ICondition _strengthDown = new KeyboardCondition(Keys.Down);
         ICondition _toggleScene = new KeyboardCondition(Keys.Tab);
+        ICondition _dashBack = new KeyboardCondition(Keys.Left);
+        ICondition _dashForward = new KeyboardCondition(Keys.Right);
+        ICondition _dashStepFast = new AnyCondition(new KeyboardCondition(Keys.LeftShift), new KeyboardCondition(Keys.RightShift));
+        ICondition _dashPlay = new KeyboardCondition(Keys.P);
 
         Camera _camera;
         Vector2 _mouseWorld = Vector2.Zero;
@@ -279,8 +402,17 @@ namespace GameProject {
         float _minExp = 5f;
 
         bool _showDebug = false;
-        bool _bandingScene = false;
         int _ditherMode = 0;
         float _demoStrength = 1f;
+
+        enum Scene {
+            Main,
+            Dash,
+            Closed,
+            Banding
+        }
+        Scene _currentScene = Scene.Main;
+        float _dashOffset = 0f;
+        bool _dashPaused = false;
     }
 }

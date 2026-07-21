@@ -6,20 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- Dashed outlines and strokes. Every `Draw` and `Border` method except the ellipse's (plus `Fill` on the stroke shapes) takes a `DashStyle(size, spacing, offset, cap, snap)`. Closed outlines (circle, rectangle, hexagon, equilateral triangle, triangle) dash their border along the perimeter, corners and rounded corners included, and the gaps show the fill. Strokes (line, arc, ring, path) are cut into dashes along their centerline, so every dash keeps its own fill, border, and anti-aliasing. The pattern rounds every corner it walks. Dashes bend around joints and corners at full width with their edges perpendicular to the flow, compressing on the inside of the bend and stretching on the outside, and they slide off the end caps, all without popping when the offset animates. Miter and bevel tips appear once a dash covers the whole corner and stay rounded otherwise. `DashCap.Butt` cuts dashes flat, `DashCap.Round` gives them round caps that merge seamlessly with round line caps. With size 0 they become dots. By default the pattern is fitted to the contour: closed outlines wrap without a seam and open strokes center a dash on each endpoint (`DashSnap` selects other fits or none). `DashStyle.FromCount(count, fill)` lays a whole number of repeats instead of world unit lengths, so the dashes stretch continuously as the shape changes size and the pattern never pops. Ellipses don't dash yet: their perimeter has no closed form.
+- Closed paths. `DrawPath`, `FillPath`, and `BorderPath` take `closed: true`, and the streaming API gained `ClosePath()` alongside `EndPath()`, to join the last point back to the first. The wrap becomes an ordinary joint rather than two caps, so it takes the same round, miter, and bevel styles, a translucent loop still blends exactly once all the way around, and the cap styles go unused. A dash pattern fitted to a closed path wraps without a seam, which is also how shapes the shader can't walk get dashed at all: flatten an ellipse or a curve to a closed path and it dashes like any other loop.
 
 ## [0.7.4] - 2026-07-19
 
 ### Added
 
-- Gradient banding dither. (#25) Shape colors get half an 8-bit step of screen-space noise before quantization, which dissolves the bands slow gradients produce on 8-bit render targets — from color and alpha gradients alike. The noise pattern is static and imperceptible at the default strength, whether a gradient moves across the screen or holds still. `DitherStrength` on the ShapeBatch scales it in 8-bit steps (0 disables it), and `DitherNoiseSource` selects the pattern: an embedded 64x64 blue noise tile by default, or `InterleavedGradient` computed in the shader — both cost the same on the GPU.
+- Gradient banding dither. (#25) Shape colors get half an 8-bit step of screen-space noise before quantization, which dissolves the bands slow gradients produce on 8-bit render targets, from color and alpha gradients alike. The noise pattern is static and imperceptible at the default strength, whether a gradient moves across the screen or holds still. `DitherStrength` on the ShapeBatch scales it in 8-bit steps (0 disables it), and `DitherNoiseSource` selects the pattern: an embedded 64x64 blue noise tile by default, or `InterleavedGradient` computed in the shader. Both cost the same on the GPU.
 - The example gained a banding showcase scene on the Tab key: a night sky built from slow dark gradients, with Space cycling the dither mode and Up/Down exaggerating the strength.
 
 ## [0.7.3] - 2026-07-18
 
 ### Added
 
-- Paths. `DrawPath`, `FillPath`, and `BorderPath` stroke a polyline as a single continuous shape with a fill and a border. Joints can be round, miter, or bevel — either for the whole path or per point using `PathPoint` — and the ends can be capped round, butt, or square, with an optional different cap for each end. Miters respect a miter limit and fall back to bevel past it, like SVG. There's also a streaming API, `BeginPath`/`PathTo`/`EndPath`, to feed points one at a time without building an array first.
+- Paths. `DrawPath`, `FillPath`, and `BorderPath` stroke a polyline as a single continuous shape with a fill and a border. Joints can be round, miter, or bevel, either for the whole path or per point using `PathPoint`, and the ends can be capped round, butt, or square, with an optional different cap for each end. Miters respect a miter limit and fall back to bevel past it, like SVG. There's also a streaming API, `BeginPath`/`PathTo`/`EndPath`, to feed points one at a time without building an array first.
 
 ### Changed
 
@@ -30,7 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- The shader is now precompiled with [ShadowDusk](https://github.com/kaltinril/ShadowDusk) when the library is packed and embedded in the assembly. It is no longer added to your content pipeline, which means building your game no longer requires a shader compiler — or Wine on Linux and macOS.
+- The shader is now precompiled with [ShadowDusk](https://github.com/kaltinril/ShadowDusk) when the library is packed and embedded in the assembly. It is no longer added to your content pipeline, which means building your game no longer requires a shader compiler, and no longer requires Wine on Linux and macOS.
 - New `ShapeBatch(GraphicsDevice, Effect?)` constructor. The `ContentManager` overload still works but is obsolete since the content pipeline is no longer used.
 - The minimum supported MonoGame version is now 3.8.2. On KNI, the DirectX backends load a standard MGFX effect while the GL family (desktop GL, GLES, WebGL) loads a knifx effect; both are embedded.
 - The `SkipAposShapeContent` MSBuild property is gone along with the `buildTransitive` content.

@@ -106,6 +106,14 @@ _sb.EndPath();
 
 Miter joins sharper than the `miterLimit` parameter, measured like SVG's `miterlimit` with a default of 4, fall back to bevel. A path that crosses over itself overlaps like two separate shapes would. The same happens at a joint whose segments are shorter than the stroke is wide.
 
+Pass `closed: true` to join the last point back to the first. The wrap is an ordinary joint rather than two caps, so it takes the same join styles and a translucent loop still blends exactly once all the way around. The `cap` parameters go unused. When the path is built one point at a time, finish it with `ClosePath()` instead of `EndPath()`:
+
+```csharp
+_sb.FillPath([new Vector2(120, 40), new Vector2(220, 130), new Vector2(20, 130)], 14, Color.White, join: PathJoin.Miter, closed: true);
+```
+
+![A closed triangular path with mitered joints](path-closed.png)
+
 ## Rectangle
 
 A rectangle is defined by its top left corner and a size.
@@ -185,5 +193,7 @@ _sb.FillRing(new Vector2(120, 120), 0f, MathF.PI, 75, 10, Color.White);
 ![A ring with flat end caps](ring.png)
 
 ## Follow up
+
+[Dashes](../dashes/README.md), a guide that shows how to dash any of these shapes.
 
 Anywhere a shape takes a `Color`, it can take a gradient instead. Read the [Gradients](../gradients/README.md) guide to learn how.
