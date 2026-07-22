@@ -5,7 +5,7 @@
 #define VS_SHADERMODEL vs_3_0
 #define PS_SHADERMODEL ps_3_0
 #elif SM6
-// Vulkan and DirectX 12 compile through DXC, which requires shader model 6.
+// Vulkan compiles through DXC, which requires shader model 6.
 #define VS_SHADERMODEL vs_6_0
 #define PS_SHADERMODEL ps_6_0
 #else

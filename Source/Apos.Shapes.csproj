@@ -46,22 +46,22 @@
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.ogl.mgfx" LogicalName="Apos.Shapes.apos-shapes.ogl.mgfx" Visible="false" />
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx11.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx" Visible="false" />
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.vk.mgfx" LogicalName="Apos.Shapes.apos-shapes.vk.mgfx" Visible="false" />
-    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx12.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx12.mgfx" Visible="false" />
   </ItemGroup>
 
   <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"
           Inputs="Content/apos-shapes.fx;$(MSBuildProjectFullPath)"
-          Outputs="$(AposShaderDir)apos-shapes.ogl.mgfx;$(AposShaderDir)apos-shapes.dx11.mgfx;$(AposShaderDir)apos-shapes.vk.mgfx;$(AposShaderDir)apos-shapes.dx12.mgfx">
+          Outputs="$(AposShaderDir)apos-shapes.ogl.mgfx;$(AposShaderDir)apos-shapes.dx11.mgfx;$(AposShaderDir)apos-shapes.vk.mgfx">
     <MakeDir Directories="$(AposShaderDir)" />
     <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
     <!-- Roll forward so the net8.0 tool still runs when only a newer runtime is installed, like in CI. -->
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.ogl.mgfx&quot; /Profile:OpenGL" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
-    <!-- The Vulkan and DirectX 12 variants come from MonoGame's own mgfxc (DXC based, no Wine needed):
-         ShadowDusk has no DirectX 12 target yet, and its Vulkan container renders nothing on the real
-         MonoGame 3.8.5 DesktopVK runtime (mgfxc's output pixel-verified there instead). -->
+    <!-- The Vulkan variant comes from MonoGame's own mgfxc (DXC based, no Wine needed): ShadowDusk's
+         Vulkan container renders nothing on the real MonoGame 3.8.5 DesktopVK runtime (mgfxc's output
+         pixel-verified there instead). No DirectX 12 variant: mgfxc's Linux libdxcompiler.so is an
+         assertions-enabled DXC build that dies on an internal assertion compiling this shader
+         ("cast<X>() argument of incompatible type!"), and releases build on Linux. -->
     <Exec Command="dotnet tool run mgfxc &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.vk.mgfx&quot; /Profile:Vulkan" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
-    <Exec Command="dotnet tool run mgfxc &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx12.mgfx&quot; /Profile:DirectX_12" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
   </Target>
 
   <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders

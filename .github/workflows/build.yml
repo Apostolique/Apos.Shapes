@@ -10,7 +10,7 @@ jobs:
   build:
 
     # Also validates the shader pipeline on Linux ahead of the release workflow:
-    # ShadowDusk and mgfxc's DirectX_12 profile (DXC based) both run without Wine.
+    # ShadowDusk and mgfxc's Vulkan profile (DXC based) both run without Wine.
     runs-on: ubuntu-latest
 
     steps:

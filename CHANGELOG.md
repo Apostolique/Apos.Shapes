@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Support for MonoGame 3.8.5's new preview platforms, DesktopVK (Vulkan) and WindowsDX12 (DirectX 12). The package now embeds four shader variants (OpenGL, DirectX 11, Vulkan, DirectX 12) and picks the one the runtime expects when the `ShapeBatch` is created, so the new platforms work without any setup. The Vulkan and DirectX 12 variants are compiled with MonoGame's own `mgfxc` (DXC based, no Wine needed in CI); pixel-verified on both backends. The shader carries a self-disabling workaround for a MonoGame 3.8.5 Vulkan bug that reads `NormalizedShort4` vertex attributes as raw integers instead of normalized values.
+- Support for MonoGame 3.8.5's new preview DesktopVK (Vulkan) platform. The package embeds a Vulkan shader variant alongside the OpenGL and DirectX 11 ones and picks the right one automatically, so the new platform works without any setup.
 
 ## [0.7.5] - 2026-07-21
 
