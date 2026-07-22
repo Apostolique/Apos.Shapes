@@ -1,0 +1,25 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    # Also validates the shader pipeline on Linux ahead of the release workflow:
+    # ShadowDusk and mgfxc's DirectX_12 profile (DXC based) both run without Wine.
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+    - name: Pack Apos.Shapes
+      run: dotnet pack Source/Apos.Shapes.csproj -c Release --include-source --include-symbols
+    - name: Pack Apos.Shapes.KNI
+      run: dotnet pack Source/Apos.Shapes.KNI.csproj -c Release --include-source --include-symbols

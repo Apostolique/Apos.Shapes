@@ -17,6 +17,7 @@
     <RepositoryType>git</RepositoryType>
 
     <PackageIcon>Icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
@@ -34,6 +35,7 @@
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
+    <None Include="$(BaseIntermediateOutputPath)README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -43,16 +45,34 @@
   <ItemGroup>
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.ogl.mgfx" LogicalName="Apos.Shapes.apos-shapes.ogl.mgfx" Visible="false" />
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx11.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx" Visible="false" />
+    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.vk.mgfx" LogicalName="Apos.Shapes.apos-shapes.vk.mgfx" Visible="false" />
+    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx12.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx12.mgfx" Visible="false" />
   </ItemGroup>
 
   <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"
           Inputs="Content/apos-shapes.fx;$(MSBuildProjectFullPath)"
-          Outputs="$(AposShaderDir)apos-shapes.ogl.mgfx;$(AposShaderDir)apos-shapes.dx11.mgfx">
+          Outputs="$(AposShaderDir)apos-shapes.ogl.mgfx;$(AposShaderDir)apos-shapes.dx11.mgfx;$(AposShaderDir)apos-shapes.vk.mgfx;$(AposShaderDir)apos-shapes.dx12.mgfx">
     <MakeDir Directories="$(AposShaderDir)" />
     <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
     <!-- Roll forward so the net8.0 tool still runs when only a newer runtime is installed, like in CI. -->
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.ogl.mgfx&quot; /Profile:OpenGL" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <!-- The Vulkan and DirectX 12 variants come from MonoGame's own mgfxc (DXC based, no Wine needed):
+         ShadowDusk has no DirectX 12 target yet, and its Vulkan container renders nothing on the real
+         MonoGame 3.8.5 DesktopVK runtime (mgfxc's output pixel-verified there instead). -->
+    <Exec Command="dotnet tool run mgfxc &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.vk.mgfx&quot; /Profile:Vulkan" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="dotnet tool run mgfxc &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx12.mgfx&quot; /Profile:DirectX_12" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+  </Target>
+
+  <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders
+       images from trusted hosts and can't resolve repo-relative paths. -->
+  <Target Name="PrepareNuGetReadme" BeforeTargets="GenerateNuspec">
+    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+    <PropertyGroup>
+      <!-- '%' and ';' are MSBuild-escaped so WriteLinesToFile keeps them literal. -->
+      <_NuGetReadme>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../README.md').Replace('](./Images/', '](https://raw.githubusercontent.com/Apostolique/Apos.Shapes/main/Images/').Replace('%', '%25').Replace(';', '%3B'))</_NuGetReadme>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(BaseIntermediateOutputPath)README.md" Lines="$(_NuGetReadme)" Overwrite="true" />
   </Target>
 
   <ItemGroup>

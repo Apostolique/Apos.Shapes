@@ -3,10 +3,18 @@
   "isRoot": true,
   "tools": {
     "shadowdusk.cli": {
-      "version": "0.11.0",
+      "version": "0.12.1",
       "commands": [
         "ShadowDuskCLI"
-      ]
+      ],
+      "rollForward": false
+    },
+    "dotnet-mgfxc": {
+      "version": "3.8.5",
+      "commands": [
+        "mgfxc"
+      ],
+      "rollForward": false
     }
   }
 }

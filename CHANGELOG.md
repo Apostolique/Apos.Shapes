@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.7.6] - 2026-07-22
+
+### Added
+
+- Support for MonoGame 3.8.5's new preview platforms, DesktopVK (Vulkan) and WindowsDX12 (DirectX 12). The package now embeds four shader variants (OpenGL, DirectX 11, Vulkan, DirectX 12) and picks the one the runtime expects when the `ShapeBatch` is created, so the new platforms work without any setup. The Vulkan and DirectX 12 variants are compiled with MonoGame's own `mgfxc` (DXC based, no Wine needed in CI); pixel-verified on both backends. The shader carries a self-disabling workaround for a MonoGame 3.8.5 Vulkan bug that reads `NormalizedShort4` vertex attributes as raw integers instead of normalized values.
+
 ## [0.7.5] - 2026-07-21
 
 ### Added
@@ -269,7 +275,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.2...v0.7.3

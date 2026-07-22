@@ -17,6 +17,7 @@
     <RepositoryType>git</RepositoryType>
 
     <PackageIcon>Icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
@@ -36,6 +37,7 @@
 
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
+    <None Include="$(BaseIntermediateOutputPath)README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -55,6 +57,17 @@
     <!-- Roll forward so the net8.0 tool still runs when only a newer runtime is installed, like in CI. -->
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.knifx&quot; --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+  </Target>
+
+  <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders
+       images from trusted hosts and can't resolve repo-relative paths. -->
+  <Target Name="PrepareNuGetReadme" BeforeTargets="GenerateNuspec">
+    <MakeDir Directories="$(BaseIntermediateOutputPath)" />
+    <PropertyGroup>
+      <!-- '%' and ';' are MSBuild-escaped so WriteLinesToFile keeps them literal. -->
+      <_NuGetReadme>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../README.md').Replace('](./Images/', '](https://raw.githubusercontent.com/Apostolique/Apos.Shapes/main/Images/').Replace('%', '%25').Replace(';', '%3B'))</_NuGetReadme>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(BaseIntermediateOutputPath)README.md" Lines="$(_NuGetReadme)" Overwrite="true" />
   </Target>
 
   <ItemGroup>

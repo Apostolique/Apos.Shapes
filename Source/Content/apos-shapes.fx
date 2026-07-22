@@ -4,6 +4,10 @@
 #elif OPENGL
 #define VS_SHADERMODEL vs_3_0
 #define PS_SHADERMODEL ps_3_0
+#elif SM6
+// Vulkan and DirectX 12 compile through DXC, which requires shader model 6.
+#define VS_SHADERMODEL vs_6_0
+#define PS_SHADERMODEL ps_6_0
 #else
 #define VS_SHADERMODEL vs_4_0
 #define PS_SHADERMODEL ps_4_0
@@ -13,9 +17,23 @@ float4x4 view_projection;
 float2 half_viewport;
 float dither_scale; // DitherStrength / 255, folded on the CPU so the shader adds ±half an 8-bit LSB directly.
 float dither_mode; // 0: interleaved gradient noise, 1: the blue noise tile.
+#if SM6
+// DXC drops the legacy sampler syntax: declare texture/sampler pairs on matching
+// registers so the Vulkan reflection treats them as combined image-samplers.
+Texture2D TextureTex : register(t0); SamplerState TextureSampler : register(s0);
+Texture2D FontTex : register(t1); SamplerState FontSampler : register(s1);
+Texture2D BlueNoiseTex : register(t2); SamplerState BlueNoiseSampler : register(s2); // 64x64 tile, bound with wrapped point sampling.
+float4 SampleTexture(float2 uv) { return TextureTex.Sample(TextureSampler, uv); }
+float4 SampleFont(float2 uv) { return FontTex.Sample(FontSampler, uv); }
+float4 SampleBlueNoise(float2 uv) { return BlueNoiseTex.Sample(BlueNoiseSampler, uv); }
+#else
 sampler TextureSampler : register(s0);
 sampler FontSampler;
 sampler BlueNoiseSampler : register(s2); // 64x64 tile, bound with wrapped point sampling.
+float4 SampleTexture(float2 uv) { return tex2D(TextureSampler, uv); }
+float4 SampleFont(float2 uv) { return tex2D(FontSampler, uv); }
+float4 SampleBlueNoise(float2 uv) { return tex2D(BlueNoiseSampler, uv); }
+#endif
 
 struct VertexInput {
     float4 Position : POSITION0;
@@ -1002,13 +1020,23 @@ float4 UnpackColor(float2 c) {
     return float4(Unpack11(c.x), Unpack11(c.y));
 }
 
+#if VULKAN
+// MonoGame's native Vulkan backend maps NormalizedShort4 attributes to SSCALED instead
+// of SNORM (ToVkFormat in MGG_Vulkan.cpp), so the packed colors arrive as raw 0..32767
+// integers. Unscale only when raw values show up: legitimate channels never exceed 1,
+// so this goes quiet on its own once the mapping is fixed upstream.
+float4 FixSnorm(float4 v) { return any(v > 1.5) ? v / 32767.0 : v; }
+#else
+float4 FixSnorm(float4 v) { return v; }
+#endif
+
 PixelInput SpriteVertexShader(VertexInput v) {
     PixelInput output;
 
     output.Position = mul(v.Position, view_projection);
     output.TexCoord = v.TexCoord;
-    output.Fill = PackColors(v.FillA, v.FillB);
-    output.Border = PackColors(v.BorderA, v.BorderB);
+    output.Fill = PackColors(FixSnorm(v.FillA), FixSnorm(v.FillB));
+    output.Border = PackColors(FixSnorm(v.BorderA), FixSnorm(v.BorderB));
     output.FillCoord = v.FillCoord;
     output.BorderCoord = v.BorderCoord;
     output.Meta1 = v.Meta1;
@@ -1054,7 +1082,7 @@ float DitherNoise(float2 worldPos) {
     float ign = saturate(frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715)))));
     // Both sources are always evaluated so no gradient op sits inside flow control;
     // the blue noise fetch hits a 64x64 tile that never leaves the texture cache.
-    float blue = tex2D(BlueNoiseSampler, px / 64.0).r;
+    float blue = SampleBlueNoise(px / 64.0).r;
     return dither_mode < 0.5 ? ign : blue;
 }
 
@@ -1089,9 +1117,9 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     if (shape >= 8.5 && shape < 10.5) {
         if (shape < 9.5) {
-            return tex2D(TextureSampler, p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+            return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
         }
-        return tex2D(FontSampler, p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+        return SampleFont(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
     }
 
     // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the

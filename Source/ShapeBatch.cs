@@ -50,22 +50,29 @@ namespace Apos.Shapes {
             }
             return new Effect(graphicsDevice, ReadEmbeddedBytes("Apos.Shapes.apos-shapes.knifx"));
 #else
-            string name = UsesOpenGL() ? "Apos.Shapes.apos-shapes.ogl.mgfx" : "Apos.Shapes.apos-shapes.dx11.mgfx";
+            string name = GetActiveProfile() switch {
+                0 => "Apos.Shapes.apos-shapes.ogl.mgfx",
+                2 => "Apos.Shapes.apos-shapes.dx12.mgfx",
+                80 => "Apos.Shapes.apos-shapes.vk.mgfx",
+                _ => "Apos.Shapes.apos-shapes.dx11.mgfx",
+            };
             return new Effect(graphicsDevice, ReadEmbeddedBytes(name));
 #endif
         }
 
 #if !KNI
-        private static bool UsesOpenGL() {
-            // MonoGame.Framework has the same assembly name for every platform, so ask the internal
-            // Shader.Profile (0 = OpenGL, 1 = DirectX) which bytecode the runtime expects.
+        private static int GetActiveProfile() {
+            // MonoGame.Framework has the same assembly name for every platform, so ask
+            // Shader.Profile (on an internal class) which bytecode the runtime expects.
+            // The value doubles as the mgfx header profile byte: 0 = OpenGL, 1 = DirectX 11,
+            // 2 = DirectX 12, 80 = Vulkan. Public on the Native platform, so search both.
             var shader = typeof(Effect).Assembly.GetType("Microsoft.Xna.Framework.Graphics.Shader");
-            var profile = shader?.GetProperty("Profile", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            var profile = shader?.GetProperty("Profile", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
             if (profile?.GetValue(null) is int p) {
-                return p == 0;
+                return p;
             }
             // Only the DesktopGL assembly bundles the SDL bindings.
-            return typeof(Effect).Assembly.GetType("Sdl") != null;
+            return typeof(Effect).Assembly.GetType("Sdl") != null ? 0 : 1;
         }
 #endif
 
