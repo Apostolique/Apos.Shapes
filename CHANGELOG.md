@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.5] - 2026-07-21
+
 ### Added
 
 - Dashed outlines and strokes. Every `Draw` and `Border` method except the ellipse's (plus `Fill` on the stroke shapes) takes a `DashStyle(size, spacing, offset, cap, snap)`. Closed outlines (circle, rectangle, hexagon, equilateral triangle, triangle) dash their border along the perimeter, corners and rounded corners included, and the gaps show the fill. Strokes (line, arc, ring, path) are cut into dashes along their centerline, so every dash keeps its own fill, border, and anti-aliasing. The pattern rounds every corner it walks. Dashes bend around joints and corners at full width with their edges perpendicular to the flow, compressing on the inside of the bend and stretching on the outside, and they slide off the end caps, all without popping when the offset animates. Miter and bevel tips appear once a dash covers the whole corner and stay rounded otherwise. `DashCap.Butt` cuts dashes flat, `DashCap.Round` gives them round caps that merge seamlessly with round line caps. With size 0 they become dots. By default the pattern is fitted to the contour: closed outlines wrap without a seam and open strokes center a dash on each endpoint (`DashSnap` selects other fits or none). `DashStyle.FromCount(count, fill)` lays a whole number of repeats instead of world unit lengths, so the dashes stretch continuously as the shape changes size and the pattern never pops. Ellipses don't dash yet: their perimeter has no closed form.
@@ -265,7 +269,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.4...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.1...v0.7.2
