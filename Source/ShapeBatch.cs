@@ -52,10 +52,7 @@ namespace Apos.Shapes {
 #else
             string name = GetActiveProfile() switch {
                 0 => "Apos.Shapes.apos-shapes.ogl.mgfx",
-                // No DirectX 12 shader is embedded: mgfxc's Linux DXC build can't compile it (see the csproj).
-                2 => throw new PlatformNotSupportedException(
-                    "Apos.Shapes doesn't embed a DirectX 12 shader yet. Compile Content/apos-shapes.fx with" +
-                    " mgfxc /Profile:DirectX_12 and pass the resulting Effect to the ShapeBatch constructor."),
+                2 => "Apos.Shapes.apos-shapes.dx12.mgfx",
                 80 => "Apos.Shapes.apos-shapes.vk.mgfx",
                 _ => "Apos.Shapes.apos-shapes.dx11.mgfx",
             };

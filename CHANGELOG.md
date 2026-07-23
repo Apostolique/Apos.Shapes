@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- Support for MonoGame 3.8.5's new preview WindowsDX12 (DirectX 12) platform. The package embeds a DirectX 12 shader variant alongside the OpenGL, DirectX 11, and Vulkan ones and picks the right one automatically, so the new platform works without any setup.
 
 ## [0.7.6] - 2026-07-22
 

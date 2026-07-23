@@ -6,16 +6,15 @@
     <AssemblyName>Example</AssemblyName>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <MonoGamePlatform>DesktopGl</MonoGamePlatform>
-    <PublishTrimmed>true</PublishTrimmed>
+    <MonoGamePlatform>WindowsDX12</MonoGamePlatform>
     <PublishReadyToRun>false</PublishReadyToRun>
     <TieredCompilation>false</TieredCompilation>
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.5" />
-    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.DX12" Version="3.8.5" />
     <PackageReference Include="Apos.Camera" Version="0.4.1" />
     <PackageReference Include="Apos.Input" Version="2.5.0" />
     <PackageReference Include="FontStashSharp.MonoGame" Version="1.5.2" />

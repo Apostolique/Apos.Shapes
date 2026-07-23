@@ -12,15 +12,17 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    # Windows runner: see the comment in build.yml (mgfxc's DirectX_12 profile).
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v1
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '10.0.x'
     - name: Get version from tag
+      shell: bash
       run: |
         TAGVERSION=$(git describe --tags --abbrev=0)
         echo "TAGVERSION=${TAGVERSION:1}" >> $GITHUB_ENV
