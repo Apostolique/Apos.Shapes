@@ -31,4 +31,7 @@ jobs:
         dotnet pack ${{ env.SOURCE1 }} -c Release --include-source --include-symbols -o ./artifacts -p:Version=${{ env.TAGVERSION }}
         dotnet pack ${{ env.SOURCE2 }} -c Release --include-source --include-symbols -o ./artifacts -p:Version=${{ env.TAGVERSION }}
     - name: Push with dotnet
+      # bash so the glob expands in the shell; dotnet's own wildcard handling
+      # chokes on forward slashes under Windows.
+      shell: bash
       run: dotnet nuget push ./artifacts/*.nupkg -k ${{ secrets.NUGETAPIKEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
