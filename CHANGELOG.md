@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.7] - 2026-07-23
+
 ### Added
 
 - Support for MonoGame 3.8.5's new preview WindowsDX12 (DirectX 12) platform. The package embeds a DirectX 12 shader variant alongside the OpenGL, DirectX 11, and Vulkan ones and picks the right one automatically, so the new platform works without any setup.
@@ -28,7 +32,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Gradient banding dither. (#25) Shape colors get half an 8-bit step of screen-space noise before quantization, which dissolves the bands slow gradients produce on 8-bit render targets, from color and alpha gradients alike. The noise pattern is static and imperceptible at the default strength, whether a gradient moves across the screen or holds still. `DitherStrength` on the ShapeBatch scales it in 8-bit steps (0 disables it), and `DitherNoiseSource` selects the pattern: an embedded 64x64 blue noise tile by default, or `InterleavedGradient` computed in the shader. Both cost the same on the GPU.
-- The example gained a banding showcase scene on the Tab key: a night sky built from slow dark gradients, with Space cycling the dither mode and Up/Down exaggerating the strength.
 
 ## [0.7.3] - 2026-07-18
 
@@ -277,7 +280,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.7...HEAD
+[0.7.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.3...v0.7.4
