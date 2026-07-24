@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.7.8] - 2026-07-24
+
+### Fixed
+
+- The OpenGL shader failed to load on macOS with "Shader Compilation Failed".
+- On OpenGL, the tips of thin ellipses were missing and ellipse edges anti-aliased too light.
+
 ## [0.7.7] - 2026-07-23
 
 ### Added
@@ -280,7 +287,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.7...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.8...HEAD
+[0.7.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.7...v0.7.8
 [0.7.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.4...v0.7.5

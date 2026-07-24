@@ -12,8 +12,7 @@ env:
 jobs:
   build:
 
-    # Windows runner: see the comment in build.yml (mgfxc's DirectX_12 profile).
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -22,7 +21,6 @@ jobs:
       with:
         dotnet-version: '10.0.x'
     - name: Get version from tag
-      shell: bash
       run: |
         TAGVERSION=$(git describe --tags --abbrev=0)
         echo "TAGVERSION=${TAGVERSION:1}" >> $GITHUB_ENV
@@ -31,7 +29,4 @@ jobs:
         dotnet pack ${{ env.SOURCE1 }} -c Release --include-source --include-symbols -o ./artifacts -p:Version=${{ env.TAGVERSION }}
         dotnet pack ${{ env.SOURCE2 }} -c Release --include-source --include-symbols -o ./artifacts -p:Version=${{ env.TAGVERSION }}
     - name: Push with dotnet
-      # bash so the glob expands in the shell; dotnet's own wildcard handling
-      # chokes on forward slashes under Windows.
-      shell: bash
       run: dotnet nuget push ./artifacts/*.nupkg -k ${{ secrets.NUGETAPIKEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate

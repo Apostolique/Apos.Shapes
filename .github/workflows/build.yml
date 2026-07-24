@@ -9,9 +9,7 @@ on:
 jobs:
   build:
 
-    # Windows runner: mgfxc's DirectX_12 profile asserts and dies in its Linux
-    # libdxcompiler.so build, but runs fine natively on Windows.
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4

@@ -27,12 +27,12 @@ jobs:
       with:
         node-version: '22.x'
     - name: Install apos-docs
-      run: npm install apos-docs -g
+      run: npm install apos-docs@^0.7.0 -g
     - name: Use apos-docs
       run: |
         apos-docs -t ${{ env.TITLE }} -d '${{ env.DESCRIPTION }}' -b ${{ env.BASE }} -r ${{ env.REPO }} -a ${{ env.ANALYTICS }} -u ${{ env.URL }}
         cd apos-docs
-        npm i
+        npm ci
         npm run build
         cd -
     - name: Deploy
