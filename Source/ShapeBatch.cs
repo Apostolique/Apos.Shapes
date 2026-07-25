@@ -1088,6 +1088,168 @@ namespace Apos.Shapes {
             DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
 
+        // The blurred shapes are their own family rather than a parameter on the ones above,
+        // because a blur only factors out of the convolution while the color is constant: the
+        // moment a gradient, a border or a dash varies the color along the contour, blurring the
+        // silhouette stops being the same thing as blurring the shape. Taking a flat Color is what
+        // states that, and it is what frees the gradient channels the flag reads over.
+        // They ride the same vertex buffer, technique and draw call as everything else, so the
+        // batch never breaks on a shadow.
+
+        // Three sigma is where the Gaussian tail drops under half of an 8 bit alpha step, which is
+        // also where the shader stops shading, so the quad is built to exactly that reach.
+        private const float _blurReach = 3f;
+
+        // A blur under half a pixel cannot be resolved, and the shader clamps it there. Flooring
+        // the same way on this side is what keeps the quad from being built smaller than the
+        // profile that ends up drawn, which would clip the falloff at the quad edge.
+        private float BlurSigma(float blur) {
+            return MathF.Max(blur, 0.5f * _pixelSize);
+        }
+
+        /// <summary>
+        /// Fills a circle whose edge falls off as a Gaussian of standard deviation
+        /// <paramref name="blur"/>, measured in world units. The falloff is symmetric about the
+        /// contour, so the circle softens without growing, and it scales with the view the way the
+        /// shape does rather than staying a fixed number of pixels wide.
+        /// </summary>
+        public void FillCircleBlurred(Vector2 center, float radius, Color color, float blur) {
+            DrawCircleBlurred(center, radius, color, blur, 0f);
+        }
+        /// <summary>
+        /// Draws a blurred circular outline of the given thickness, measured inward from the edge,
+        /// with nothing inside it. See <see cref="FillCircleBlurred"/>. A band thinner than the
+        /// blur dims as it smears into itself, the way a real blur of a thin ring does. It only
+        /// becomes a fill once the thickness clears the radius by a few blur widths: at exactly
+        /// the radius the band's inner edge has collapsed to a point at the center, and that
+        /// point's own blur is still taken out of it.
+        /// </summary>
+        public void BorderCircleBlurred(Vector2 center, float radius, Color color, float blur, float thickness = 1f) {
+            DrawCircleBlurred(center, radius, color, blur, MathF.Max(thickness, 0f));
+        }
+        private void DrawCircleBlurred(Vector2 center, float radius, Color color, float blur, float thickness) {
+            UpdatePixelSize(center, radius);
+            PrepareQuad();
+
+            float sigma = BlurSigma(blur);
+            float reach = radius + _blurReach * sigma;
+
+            var topLeft = center + new Vector2(-reach);
+            var topRight = center + new Vector2(reach, -reach);
+            var bottomRight = center + new Vector2(reach);
+            var bottomLeft = center + new Vector2(-reach, reach);
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-reach, -reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(topLeft), colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(reach, -reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(topRight), colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(reach, reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(bottomRight), colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-reach, reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(bottomLeft), colorSpace: ColorSpace, blur: sigma);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
+        /// <summary>
+        /// Fills an ellipse whose edge falls off as a Gaussian of standard deviation
+        /// <paramref name="blur"/>, measured in world units. See <see cref="FillCircleBlurred"/>.
+        /// </summary>
+        public void FillEllipseBlurred(Vector2 center, float width, float height, Color color, float blur, float rotation = 0f) {
+            DrawEllipseBlurred(center, width, height, color, blur, 0f, rotation);
+        }
+        /// <summary>
+        /// Draws a blurred elliptical outline of the given thickness with nothing inside it. See
+        /// <see cref="BorderCircleBlurred"/>. The band is measured by offsetting the ellipse's
+        /// distance field inward, which is the same approximation the unblurred border makes.
+        /// </summary>
+        public void BorderEllipseBlurred(Vector2 center, float width, float height, Color color, float blur, float thickness = 1f, float rotation = 0f) {
+            DrawEllipseBlurred(center, width, height, color, blur, MathF.Max(thickness, 0f), rotation);
+        }
+        private void DrawEllipseBlurred(Vector2 center, float width, float height, Color color, float blur, float thickness, float rotation) {
+            UpdatePixelSize(center, MathF.Max(width, height));
+            PrepareQuad();
+
+            float sigma = BlurSigma(blur);
+            float reachX = width + _blurReach * sigma;
+            float reachY = height + _blurReach * sigma;
+
+            var topLeft = center + new Vector2(-reachX, -reachY);
+            var topRight = center + new Vector2(reachX, -reachY);
+            var bottomRight = center + new Vector2(reachX, reachY);
+            var bottomLeft = center + new Vector2(-reachX, reachY);
+
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(topLeft), height, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(topRight), height, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(reachX, reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(bottomRight), height, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-reachX, reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(bottomLeft), height, colorSpace: ColorSpace, blur: sigma);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
+        /// <summary>
+        /// Fills a rectangle whose edge falls off as a Gaussian of standard deviation
+        /// <paramref name="blur"/>, measured in world units. See <see cref="FillCircleBlurred"/>.
+        /// A corner tighter than the blur reads slightly too solid, since the profile is the exact
+        /// blur of a straight edge and a corner loses more of itself than a straight edge does.
+        /// </summary>
+        public void FillRectangleBlurred(Vector2 xy, Vector2 size, Color color, float blur, CornerRadii cornerRadii = default, float rotation = 0f) {
+            DrawRectangleBlurred(xy, size, color, blur, 0f, cornerRadii, rotation);
+        }
+        /// <summary>
+        /// Draws a blurred rectangular outline of the given thickness with nothing inside it. See
+        /// <see cref="BorderCircleBlurred"/>.
+        /// </summary>
+        public void BorderRectangleBlurred(Vector2 xy, Vector2 size, Color color, float blur, float thickness = 1f, CornerRadii cornerRadii = default, float rotation = 0f) {
+            DrawRectangleBlurred(xy, size, color, blur, MathF.Max(thickness, 0f), cornerRadii, rotation);
+        }
+        private void DrawRectangleBlurred(Vector2 xy, Vector2 size, Color color, float blur, float thickness, CornerRadii cornerRadii, float rotation) {
+            UpdatePixelSize(xy + size / 2f, (size / 2f).Length());
+            PrepareQuad();
+
+            float maxR = MathF.Min(size.X, size.Y) / 2f;
+            float rTL = MathHelper.Clamp(cornerRadii.TopLeft,     0f, maxR);
+            float rTR = MathHelper.Clamp(cornerRadii.TopRight,    0f, maxR);
+            float rBR = MathHelper.Clamp(cornerRadii.BottomRight, 0f, maxR);
+            float rBL = MathHelper.Clamp(cornerRadii.BottomLeft,  0f, maxR);
+
+            float sigma = BlurSigma(blur);
+            float reach = _blurReach * sigma;
+            Vector2 half = size / 2f;
+            Vector2 half1 = half + new Vector2(reach);
+            Vector2 xy1 = xy - new Vector2(reach);
+            Vector2 size1 = size + new Vector2(reach * 2f);
+
+            var topLeft = xy1;
+            var topRight = xy1 + new Vector2(size1.X, 0);
+            var bottomRight = xy1 + size1;
+            var bottomLeft = xy1 + new Vector2(0, size1.Y);
+
+            Vector2 center = xy1 + half1;
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(topRight), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(bottomRight), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(bottomLeft), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, blur: sigma);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 

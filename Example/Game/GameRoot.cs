@@ -86,6 +86,12 @@ namespace GameProject {
                 return;
             }
 
+            if (_currentScene == Scene.Blur) {
+                DrawBlurScene(font);
+                base.Draw(gameTime);
+                return;
+            }
+
             if (_currentScene == Scene.Banding) {
                 DrawBandingScene(font);
                 base.Draw(gameTime);
@@ -192,6 +198,51 @@ namespace GameProject {
             _sb.FillPath([new Vector2(-600, 220), new Vector2(-480, 160), new Vector2(-360, 260), new Vector2(-240, 160), new Vector2(-120, 220)], 10, TWColor.Fuchsia400, dash: new DashStyle(30f, 20f, offset));
             _sb.DrawPath([new Vector2(-20, 260), new Vector2(80, 160), new Vector2(180, 260), new Vector2(280, 160)], 12, TWColor.Gray800, TWColor.Yellow300, 3f, join: PathJoin.Miter, dash: new DashStyle(36f, 22f, cap: DashCap.Round, offset: offset));
             _sb.FillPath([new Vector2(360, 260), new Vector2(440, 170), new Vector2(520, 260), new Vector2(600, 170)], 8, TWColor.Green300, join: PathJoin.Bevel, dash: new DashStyle(24f, 18f, offset: offset));
+
+            _sb.End();
+        }
+
+        // Blurred shapes. The falloff is a world space Gaussian rather than a screen space AA
+        // width, so zooming in on this scene grows every blur along with the shape it belongs to,
+        // where the anti-aliasing on the other scenes stays the same thickness at any zoom.
+        private void DrawBlurScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+
+            // Drop shadows, which is the case the flat color assumption is built around: an opaque
+            // card over a blurred copy of its own silhouette, offset down and to the right.
+            _sb.DrawString(font, "Drop shadows, rising blur", new Vector2(-620, -336), TWColor.Gray400);
+            for (int i = 0; i < 4; i++) {
+                float blur = 3f + i * 7f;
+                var at = new Vector2(-600 + i * 170, -300);
+                var size = new Vector2(130, 90);
+                _sb.FillRectangleBlurred(at + new Vector2(6, 8), size, TWColor.Black, blur, new CornerRadii(18));
+                _sb.FillRectangle(at, size, TWColor.Sky500, new CornerRadii(18));
+            }
+
+            // The falloff is symmetric about the contour, so a shape softens without growing. The
+            // hairline ring sits on the unblurred radius: every circle's 50% edge stays under it.
+            _sb.DrawString(font, "Symmetric falloff: the 50% edge never leaves the hairline", new Vector2(-620, -180), TWColor.Gray400);
+            for (int i = 0; i < 5; i++) {
+                float blur = 1f + i * 8f;
+                var at = new Vector2(-540 + i * 150, -80);
+                _sb.FillCircleBlurred(at, 46f, TWColor.Amber400, blur);
+                _sb.BorderCircle(at, 46f, TWColor.Gray100, 1f);
+            }
+
+            // Blurred outlines carry one color and no fill. A band thinner than the blur smears
+            // into itself and dims, the way a real blur of a thin ring does.
+            _sb.DrawString(font, "Blurred borders, thinning band at a fixed blur", new Vector2(-620, 10), TWColor.Gray400);
+            for (int i = 0; i < 5; i++) {
+                float thickness = 40f - i * 8f;
+                _sb.BorderCircleBlurred(new Vector2(-540 + i * 150, 110), 52f, TWColor.Emerald400, 6f, thickness);
+            }
+
+            // Glow: the same blurred fill stacked under a crisp shape reads as light coming off it.
+            _sb.FillEllipseBlurred(new Vector2(330, 110), 120f, 46f, TWColor.Fuchsia500, 26f);
+            _sb.FillEllipse(new Vector2(330, 110), 96f, 26f, TWColor.Fuchsia200);
+            _sb.BorderRectangleBlurred(new Vector2(450, 50), new Vector2(150, 120), TWColor.Cyan300, 5f, 10f, new CornerRadii(28));
+
+            _sb.DrawString(font, "[Tab] example scene   scroll to zoom: the blur scales, the AA does not", new Vector2(-620, 300), TWColor.Gray300);
 
             _sb.End();
         }
@@ -413,6 +464,7 @@ namespace GameProject {
             Main,
             Dash,
             Closed,
+            Blur,
             Banding
         }
         Scene _currentScene = Scene.Main;

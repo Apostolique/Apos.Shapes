@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- Blurred shapes. `FillCircleBlurred`, `FillEllipseBlurred`, `FillRectangleBlurred`, `BorderCircleBlurred`, `BorderEllipseBlurred` and `BorderRectangleBlurred` fill a flat color with a Gaussian edge, measured in world units. See the [blur guide](docs/blur/README.md).
+
+### Fixed
+
+- The OpenGL shader still failed to load on macOS with "Shader Compilation Failed", and in the browser through KNI's WebGL.
 
 ## [0.7.9] - 2026-07-25
 

@@ -177,4 +177,4 @@ These two are rendered at strength 8 and zoomed in twice, on top of the same con
 
 ## Follow up
 
-[Clipping](../clipping/README.md), a guide that shows how to clip your draws to a rectangle.
+[Blur](../blur/README.md), a guide that shows how to draw shapes with a soft edge. A blur carries a single flat color rather than a gradient, for a reason the guide explains.

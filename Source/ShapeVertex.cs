@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab, int dash = 0) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab, int dash = 0, float blur = 0f) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -19,7 +19,7 @@ namespace Apos.Shapes {
             }
 
             Position = position;
-            TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash));
+            TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash, blur > 0f ? 1 : 0));
 
             if (colorSpace == ColorSpace.Oklch) {
                 (FillA, FillB) = PackOklchPair(fill.AC, fill.BC);
@@ -40,8 +40,10 @@ namespace Apos.Shapes {
             BorderCoord = new Vector4(border.AXY.X, border.AXY.Y, border.BXY.X, border.BXY.Y);
 
             // The AA width travels in pixels; the shader scales it by the per-pixel
-            // world footprint it derives from screen-space derivatives.
-            Meta1 = new Vector4(thickness, aaSize, sdfSize, height);
+            // world footprint it derives from screen-space derivatives. A blur replaces it
+            // outright rather than adding to it: the Gaussian profile antialiases on its own,
+            // so the slot carries world units instead and the packed flag says which it is.
+            Meta1 = new Vector4(thickness, blur > 0f ? blur : aaSize, sdfSize, height);
             Meta2 = new Vector4(a, b, c, d);
             Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
             ClipDistances = clip.Distances;
@@ -177,10 +179,12 @@ namespace Apos.Shapes {
         };
 
         // The shape uses 4 bits, gradient shapes 4 bits each, repeat styles 2 bits each, the color
-        // space 2 bits and the dash type 2 bits. The total stays under 2^20 so it survives the trip
-        // through a float exactly. Dash is 0 for solid, 1 for basic dashes, 2 for rounded dashes.
-        private static float PackMeta(Shape shape, Gradient fill, Gradient border, ColorSpace colorSpace, int dash) {
-            return (int)shape + 16 * ((int)fill.S + 16 * ((int)fill.RS + 4 * ((int)border.S + 16 * ((int)border.RS + 4 * ((int)colorSpace + 4 * dash)))));
+        // space 2 bits, the dash type 2 bits and the blur flag 1 bit. The total stays under 2^21 so
+        // it survives the trip through a float exactly. Dash is 0 for solid, 1 for basic dashes,
+        // 2 for rounded dashes. Blur is a flag rather than a shape of its own so it composes with
+        // every shape at once without spending any of the four shape slots left.
+        private static float PackMeta(Shape shape, Gradient fill, Gradient border, ColorSpace colorSpace, int dash, int blur) {
+            return (int)shape + 16 * ((int)fill.S + 16 * ((int)fill.RS + 4 * ((int)border.S + 16 * ((int)border.RS + 4 * ((int)colorSpace + 4 * (dash + 4 * blur))))));
         }
 
         // Colors are stored as four 16 bit normalized shorts. Only the positive half of the snorm

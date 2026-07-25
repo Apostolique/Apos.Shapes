@@ -1372,6 +1372,22 @@ float PixelWidth(float d, float2 footprint) {
     return clamp(length(float2(ddx(d), ddy(d))), footprint.x, footprint.y);
 }
 
+// Abramowitz and Stegun 7.1.26. The error peaks at 1.5e-7, orders below an 8 bit alpha step,
+// so the profile is exact for every purpose the coverage is put to here.
+float Erf(float x) {
+    float a = abs(x);
+    float t = 1.0 / (1.0 + 0.3275911 * a);
+    float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * exp(-a * a);
+    return x < 0.0 ? -y : y;
+}
+// Coverage of a half plane at signed distance d under a Gaussian of width sigma. This is the
+// exact blur of a straight edge, so it holds wherever the contour is locally straight; a corner
+// tighter than sigma reads slightly too solid, since a convolution there depends on how much
+// shape is nearby rather than on the distance alone.
+float GaussianCoverage(float d, float sigma) {
+    return 0.5 * (1.0 - Erf(d / (sigma * 1.414213562373095)));
+}
+
 // Interleaved gradient noise (Jimenez 2014). Screen-space noise with a spectrum close
 // enough to blue noise to dither away gradient banding without a texture. The pattern
 // is static: at half-LSB amplitude a fixed pattern is invisible whether the gradient
@@ -1406,7 +1422,9 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     borderStyles.y = DecodeDigit(meta, 4.0);
     float space = DecodeDigit(meta, 4.0);
     // 0 solid, 1 basic dashes, 2 rounded dashes. Where the pattern rides depends on the shape.
-    float dashType = meta;
+    float dashType = DecodeDigit(meta, 4.0);
+    // Set when Meta1.y carries a world space blur instead of a screen space AA width.
+    float blurred = meta;
 
     float2 footprint = PixelFootprint(p.Pos.xy);
 
@@ -1581,7 +1599,45 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         }
     }
 
-    float aaSize = PixelWidth(d, footprint) * aaPixels;
+    // Hoisted above the blur branch on purpose: this is the last derivative the shader takes,
+    // and taking it inside conditional flow is what the ANGLE gradient bug punishes.
+    float pixelWidth = PixelWidth(d, footprint);
+
+    if (blurred >= 0.5) {
+        // A blur is a world space Gaussian, so unlike the AA fade it reaches equally to both
+        // sides of the edge and the shape keeps its size instead of growing outward. The floor
+        // catches a blur that falls under a pixel, whether it was authored that way or zoomed
+        // out until it did: at half a pixel the same profile is already a better antialiaser
+        // than the fade below, so no separate AA term rides along.
+        float sigma = max(p.Meta1.y, 0.5 * pixelWidth);
+        // Three sigma is where the tail drops under half of an 8 bit alpha step. The quad is
+        // built to exactly this reach, so the outer test only trims the corners it cannot cover.
+        // A border is a band rather than a fill, so it has an inner tail to leave behind too,
+        // which is what keeps a large ring from shading the whole hole it encloses.
+        float reach = 3.0 * sigma;
+        if (d >= reach || (lineSize > 0.0 && d <= -lineSize - reach)) {
+            discard;
+        }
+        // Flat color by construction, so it factors out of the convolution and the whole blur
+        // collapses to coverage. That is what makes this exact rather than an approximation of
+        // one, and it is why the gradient machinery below is skipped rather than adapted.
+        float coverage = GaussianCoverage(d, sigma);
+        if (lineSize > 0.0) {
+            // The band is the shape minus the same shape offset inward by the thickness, so its
+            // blur is the difference of the two half plane profiles that bound it. Past a
+            // thickness of a few sigma the inner term vanishes and this returns to a fill.
+            coverage -= GaussianCoverage(d + lineSize, sigma);
+        }
+        float4 bc = UnpackColor(p.Fill.xy);
+        bc.a *= coverage;
+        float4 br = ToRgb(bc, space);
+        br.rgb *= br.a;
+        br *= clipAlpha;
+        br.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
+        return br;
+    }
+
+    float aaSize = pixelWidth * aaPixels;
 
     // Beyond the outer AA edge every branch below resolves to premultiplied zero.
     if (d >= aaSize) {
