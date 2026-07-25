@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.10] - 2026-07-25
+
 ### Added
 
 - Blurred shapes. `FillCircleBlurred`, `FillEllipseBlurred`, `FillRectangleBlurred`, `BorderCircleBlurred`, `BorderEllipseBlurred` and `BorderRectangleBlurred` fill a flat color with a Gaussian edge, measured in world units. See the [blur guide](docs/blur/README.md).
@@ -303,7 +307,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.9...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.10...HEAD
+[0.7.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.9...v0.7.10
 [0.7.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.8...v0.7.9
 [0.7.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.7...v0.7.8
 [0.7.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.6...v0.7.7
