@@ -357,15 +357,13 @@ namespace Apos.Shapes {
         }
 
         /// <summary>
-        /// Draws a polyline through the given points as one continuous shape. Segments partition the
-        /// stroke along shared seams, so translucent strokes blend once instead of stacking where
-        /// segments meet, and gradients span the whole stroke. Joins can be round, miter, or bevel and
-        /// caps can be round, butt, or square; capEnd styles the end of the path separately. Miter joins
-        /// sharper than the miter limit, measured like SVG's miterlimit, fall back to bevel. A path that
-        /// crosses over itself still overlaps like separate shapes would, as do joins whose segments are
-        /// much shorter than the stroke radius.
-        /// Setting closed joins the last point back to the first: the wrap becomes a joint like any
-        /// other, the cap styles go unused, and a dash pattern runs around the loop without a seam.
+        /// Draws a polyline through the given points as one continuous shape. Translucent strokes blend
+        /// once instead of stacking where segments meet, and gradients span the whole stroke. Joins can
+        /// be round, miter, or bevel and caps can be round, butt, or square; capEnd styles the end of the
+        /// path separately. Miter joins sharper than the miter limit, measured like SVG's miterlimit,
+        /// fall back to bevel. A path that crosses over itself still overlaps like separate shapes would.
+        /// Setting closed joins the last point back to the first, which makes the wrap an ordinary joint
+        /// and leaves the cap styles unused.
         /// </summary>
         public void DrawPath(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             // Every segment needs a direction, so drop consecutive duplicates.

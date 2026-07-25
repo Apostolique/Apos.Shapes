@@ -97,7 +97,7 @@ A pattern given in world units almost never divides evenly into a shape's perime
 
   ![Two dashed lines, the lower one beginning and ending on a solid dash](snap-end-to-end.png)
 
-Snapping only ever nudges the period, never the ratio between the dash and the gap. Because it fits a whole number of repeats, animating `size` or `spacing` pops when that number changes. Animate `offset` instead, keep `size + spacing` constant while trading length between them, use `Snap.Off` on open strokes if you need the lengths themselves to move smoothly, or use a counted pattern.
+Snapping only ever nudges the period, never the ratio between the dash and the gap. Because it fits a whole number of repeats, animating `size` or `spacing` pops when that number changes. You can animate `offset` instead, keep `size + spacing` constant while trading length between them, use `Snap.Off` on open strokes, or use a counted pattern.
 
 ## Counted patterns
 

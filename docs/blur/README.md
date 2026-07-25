@@ -60,7 +60,7 @@ _sb.FillRectangle(new Vector2(70, 45), new Vector2(180, 90), new Color(37, 99, 2
 
 ![A rounded rectangle over a blurred copy of itself, offset down and right](shadow.png)
 
-Draw the shadow first and offset it. Nothing about the batch cares that the two calls are different kinds of shape.
+Draw the shadow first and offset it. The two calls are different kinds of shape, which doesn't break the batch.
 
 ## Outlines
 
@@ -80,13 +80,13 @@ A band only becomes a solid fill once its thickness clears the shape's inner rad
 
 ## One color, fill or border
 
-Blurring a shape and blurring its silhouette are the same operation only while the color is constant. That is why these methods take a `Color` rather than a `Gradient`, and why fill and border are separate calls instead of one call that does both.
+These methods take a `Color` rather than a `Gradient`, and fill and border are separate calls instead of one call that does both. Blurring a shape and blurring its silhouette are only the same operation while the color stays constant, and a gradient varies the color along the contour.
 
-A gradient varies the color along the contour and breaks that, so it isn't supported here. If you need a blurred gradient, draw the shapes into a `RenderTarget2D` and blur the target instead.
+If you need a blurred gradient, you can draw the shapes into a `RenderTarget2D` and blur the target instead.
 
 ## Limits
 
-The falloff is the exact blur of a straight edge, which is what almost every point on a contour is. A corner tighter than the blur is not: a real blur there depends on how much shape is nearby rather than on the distance to the edge alone, so tight corners come out slightly more solid than a true convolution would give. Large soft shadows on large shapes, which is what this is for, sit where the approximation is best.
+The falloff is the exact blur of a straight edge, which is what almost every point on a contour is. A corner tighter than the blur is not: a real blur there depends on how much shape is nearby rather than on the distance to the edge alone, so tight corners come out slightly more solid than a true blur would give.
 
 ## Follow up
 

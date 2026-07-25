@@ -15,10 +15,11 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 
 * 10 shapes: Circle, Ellipse, Line, Path, Rectangle, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
 * `Fill`, `Border`, and `Draw` variants for every shape
-* Paths draw a polyline as one continuous shape: translucent strokes blend once even where segments meet, with round, miter, or bevel joins and round, butt, or square caps, mixable within one path. Points come from an array or one at a time with `BeginPath`/`PathTo`/`EndPath`. `closed: true`, or `ClosePath()`, joins the last point back to the first, which is also how a curve gets dashed: flatten it to a closed path
+* Paths draw a polyline as one continuous shape, with round, miter, or bevel joins and round, butt, or square caps. Open or closed
 * Rounded corners (per-corner radii on rectangles), rotation, and adjustable anti-aliasing
-* Dashed outlines and strokes: borders dash along the perimeter, lines, arcs, rings, and paths cut into dashes (flat or round-capped, down to dotted lines), with the pattern fitted to the shape so it closes seamlessly
+* Dashed outlines and strokes, flat or round-capped, down to dotted lines
 * Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
+* Blurred shapes with a Gaussian edge, for drop shadows and glows
 * Blue noise dithering so slow gradients don't band on 8-bit displays
 * Text (FontStashSharp API)
 * Textures (SpriteBatch API)
@@ -31,7 +32,9 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 
 * [Getting started](https://apostolique.github.io/Apos.Shapes/getting-started/)
 * [Shapes](https://apostolique.github.io/Apos.Shapes/shapes/)
+* [Dashes](https://apostolique.github.io/Apos.Shapes/dashes/)
 * [Gradients](https://apostolique.github.io/Apos.Shapes/gradients/)
+* [Blur](https://apostolique.github.io/Apos.Shapes/blur/)
 * [Clipping](https://apostolique.github.io/Apos.Shapes/clipping/)
 * [Text](https://apostolique.github.io/Apos.Shapes/text/)
 * [Textures](https://apostolique.github.io/Apos.Shapes/textures/)
