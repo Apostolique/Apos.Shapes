@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.7.9] - 2026-07-25
+
+### Added
+
+- Dashed ellipses. `DrawEllipse` and `BorderEllipse` take a `DashStyle`, so every shape dashes now. The pattern runs along the perimeter and behaves the same as it does on the other closed outlines: `size` and `spacing` measure the same distance everywhere on the ellipse, both dash caps work, counted patterns and snapping wrap it seamlessly, and the offset animates without popping.
+
+### Fixed
+
+- A dashed path drew a hairline sliver of the wrong color near a joint, at the phases that put a dash edge close to the corner. The dash's own edges were in the right place, but the border tracing them and the anti-aliasing around them were measured off a rescaled contour offset, which is only correct when the pixel and the dash edge fall on the same side of where the corner's pattern arc begins. Flat dashes now measure the true distance to the dash edge itself, the way every closed outline already did.
+
 ## [0.7.8] - 2026-07-24
 
 ### Fixed
@@ -287,7 +297,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.8...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.9...HEAD
+[0.7.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.8...v0.7.9
 [0.7.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.7...v0.7.8
 [0.7.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.5...v0.7.6

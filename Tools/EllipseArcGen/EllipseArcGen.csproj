@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Generates Source/Content/ellipse-arc.lut, the table the shader walks an ellipse's contour
+       with. Run "dotnet run" from this directory by hand after changing anything in Program.cs.
+
+       It is deliberately not wired into the build. The table is a fixed mathematical object, it
+       takes ~30 ms to compute, and paying that on the first dashed ellipse of every program that
+       draws one is worse than carrying 64 KB in the package. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

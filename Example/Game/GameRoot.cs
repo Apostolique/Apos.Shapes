@@ -174,9 +174,10 @@ namespace GameProject {
             _sb.BorderHexagon(new Vector2(0, -220), 90, TWColor.Emerald400, 6f, rounded: 10f, dash: new DashStyle(24f, 16f, offset));
             _sb.BorderEquilateralTriangle(new Vector2(190, -230), 55, TWColor.Rose400, 6f, rounded: 8f, dash: new DashStyle(24f, 16f, offset));
             _sb.BorderTriangle(new Vector2(290, -140), new Vector2(380, -320), new Vector2(470, -140), TWColor.Violet400, 6f, rounded: 6f, dash: new DashStyle(24f, 16f, offset));
+            _sb.BorderEllipse(new Vector2(-150, -85), 230, 22, TWColor.Sky300, 5f, dash: new DashStyle(24f, 16f, offset));
 
             // Rounded dashes over an opaque fill: the gaps show the fill, the dash ends are round.
-            _sb.DrawCircle(new Vector2(560, -220), 70, TWColor.Gray800, TWColor.Cyan300, 10f, dash: new DashStyle(26f, 22f, offset, cap: DashCap.Round));
+            _sb.DrawEllipse(new Vector2(560, -220), 80, 62, TWColor.Gray800, TWColor.Cyan300, 10f, dash: new DashStyle(26f, 22f, offset, cap: DashCap.Round));
             _sb.DrawRectangle(new Vector2(-620, -60), new Vector2(200, 130), TWColor.Gray800, TWColor.Lime300, 8f, new CornerRadii(20), dash: new DashStyle(24f, 20f, offset, cap: DashCap.Round));
 
             // Strokes: the stroke itself is cut into dashes, each with its own fill, border and caps.
@@ -209,9 +210,9 @@ namespace GameProject {
             // Sharp corners turning both ways, the tightest case for a pattern walking a corner.
             _sb.FillPath(Star(new Vector2(470, -220), 110f, 48f, 5), 9, TWColor.Lime300, closed: true, dash: new DashStyle(26f, 18f, offset));
 
-            // An ellipse flattened to a polyline. Its perimeter is an elliptic integral, so the shader
-            // can't walk it as a shape, but as a closed path it dashes like anything else.
-            _sb.FillPath(Ellipse(new Vector2(-250, 90), 340f, 120f, 96), 12, TWColor.Cyan400, closed: true, dash: new DashStyle(40f, 26f, cap: DashCap.Round, offset: offset));
+            // A curve flattened to a polyline. The shader has no shape for it, but as a closed path
+            // it dashes like anything else, which is how any curve you can sample gets dashed.
+            _sb.FillPath(Lobed(new Vector2(-250, 90), 220f, 60f, 3, 96), 12, TWColor.Cyan400, closed: true, dash: new DashStyle(40f, 26f, cap: DashCap.Round, offset: offset));
 
             // Undashed and translucent: the wrap joint partitions the stroke like every other joint, so
             // it blends exactly once and no seam shows where the loop closes.
@@ -238,11 +239,14 @@ namespace GameProject {
             }
             return p;
         }
-        private static Vector2[] Ellipse(Vector2 center, float rx, float ry, int segments) {
+        // A closed curve with no shape of its own: a circle whose radius swings by amplitude over
+        // lobes turns, sampled into a polyline.
+        private static Vector2[] Lobed(Vector2 center, float radius, float amplitude, int lobes, int segments) {
             Vector2[] p = new Vector2[segments];
             for (int i = 0; i < segments; i++) {
                 float a = MathF.Tau * i / segments;
-                p[i] = center + new Vector2(MathF.Cos(a) * rx, MathF.Sin(a) * ry);
+                float r = radius + amplitude * MathF.Cos(a * lobes);
+                p[i] = center + new Vector2(MathF.Cos(a), MathF.Sin(a)) * r;
             }
             return p;
         }

@@ -47,6 +47,7 @@
   <ItemGroup>
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.knifx" LogicalName="Apos.Shapes.apos-shapes.knifx" Visible="false" />
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.kni.dx11.mgfx" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx" Visible="false" />
+    <EmbeddedResource Include="Content/ellipse-arc.lut" LogicalName="Apos.Shapes.ellipse-arc.lut" Visible="false" />
   </ItemGroup>
 
   <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"

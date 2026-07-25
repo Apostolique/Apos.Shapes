@@ -17,21 +17,32 @@ float4x4 view_projection;
 float2 half_viewport;
 float dither_scale; // DitherStrength / 255, folded on the CPU so the shader adds ±half an 8-bit LSB directly.
 float dither_mode; // 0: interleaved gradient noise, 1: the blue noise tile.
+// Sampler order is load bearing, and the register annotations alone do not settle it: the
+// OpenGL and Vulkan translator hands out texture units in the order the pixel shader first
+// SAMPLES from, not the order the samplers are declared or the registers they ask for, while
+// the KNI toolchain goes by the register. So the three have to agree, and that means listing
+// them in the order the pixel shader reaches them: the texture and font masks return early,
+// then the elliptical arc length table, then the dither noise at the very end. Getting this
+// wrong is silent - the shader simply reads a different texture and the picture goes to noise.
 #if SM6
 // DXC drops the legacy sampler syntax: declare texture/sampler pairs on matching
 // registers so the Vulkan reflection treats them as combined image-samplers.
 Texture2D TextureTex : register(t0); SamplerState TextureSampler : register(s0);
 Texture2D FontTex : register(t1); SamplerState FontSampler : register(s1);
-Texture2D BlueNoiseTex : register(t2); SamplerState BlueNoiseSampler : register(s2); // 64x64 tile, bound with wrapped point sampling.
+Texture2D ArcTex : register(t2); SamplerState ArcSampler : register(s2); // Elliptical arc length table, bound with clamped point sampling.
+Texture2D BlueNoiseTex : register(t3); SamplerState BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
 float4 SampleTexture(float2 uv) { return TextureTex.Sample(TextureSampler, uv); }
 float4 SampleFont(float2 uv) { return FontTex.Sample(FontSampler, uv); }
+float4 SampleArc(float2 uv) { return ArcTex.Sample(ArcSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return BlueNoiseTex.Sample(BlueNoiseSampler, uv); }
 #else
 sampler TextureSampler : register(s0);
 sampler FontSampler;
-sampler BlueNoiseSampler : register(s2); // 64x64 tile, bound with wrapped point sampling.
+sampler ArcSampler : register(s2); // Elliptical arc length table, bound with clamped point sampling.
+sampler BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
 float4 SampleTexture(float2 uv) { return tex2D(TextureSampler, uv); }
 float4 SampleFont(float2 uv) { return tex2D(FontSampler, uv); }
+float4 SampleArc(float2 uv) { return tex2D(ArcSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return tex2D(BlueNoiseSampler, uv); }
 #endif
 
@@ -64,7 +75,7 @@ struct PixelInput {
     float4 ClipMeta : TEXCOORD9; // xy: right/bottom clip distances, z: clip rounding, w: clip AA size.
 };
 
-// https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
+// https://iquilezles.org/articles/distfunctions2d/
 float CircleSDF(float2 p, float r) {
     return length(p) - r;
 }
@@ -111,10 +122,13 @@ float TriangleSDF(float2 p, float2 p0, float2 p1, float2 p2) {
                        float2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
     return -sqrt(d.x) * sign(d.y);
 }
-// Signed distance to an origin centred, axis aligned ellipse with radii ab.
+// Closest point on the ellipse with radii r to q, both already folded into the frame the solve
+// wants: q in the first quadrant, the major axis on x, and the larger radius normalised to 1.
+// Dashing needs the point itself, not just the distance to it, so this is the whole solve and
+// EllipseSDF is the length of what it returns.
 //
-// The closest point on the ellipse satisfies the Lagrange condition with multiplier t, which
-// this solves in the rational form
+// The closest point satisfies the Lagrange condition with multiplier t, which this solves in
+// the rational form
 //     F(t) = (a*x / (a*a + t))^2 + (b*y / (b*b + t))^2 - 1 = 0
 // rather than by clearing the denominators into a quartic the way the usual shadertoy
 // versions do. F is strictly decreasing across the bracket below so its root is unique, and
@@ -125,34 +139,11 @@ float TriangleSDF(float2 p, float2 p0, float2 p1, float2 p2) {
 // 1:100, where the quartic form drifts to ~1e-2 px.
 //
 // The Newton loop runs a fixed number of times and MUST NOT gain an early break. ShadowDusk
-// 0.14.0 gives a bounded HLSL loop a real GLSL loop header, which adds a fall-through exit
-// its translation never assigns the result variable on; the previous solver broke out of its
-// last iteration, so on OpenGL alone every pixel that used the whole iteration budget read an
-// uninitialised value and the tips of thin ellipses dropped out. Keeping the loop
-// unconditional keeps that variable live on every path.
-float EllipseSDF(float2 p, float2 ab) {
-    float2 q = abs(p);
-
-    // Normalise so the larger radius is 1; every intermediate below then stays near 1 no
-    // matter how many pixels across the ellipse is.
-    float s = max(ab.x, ab.y);
-    if (s <= 0.0) return length(p);
-    float2 r = ab / s;
-    q /= s;
-
-    // Put the major axis on x. The problem is symmetric under swapping both the radii and
-    // the coordinates, which halves the special cases below.
-    if (r.y > r.x) {
-        r = r.yx;
-        q = q.yx;
-    }
-
-    // A collapsed minor axis degenerates to a segment, which the solve cannot represent: its
-    // bracket needs both denominators strictly positive.
-    if (r.y <= 1e-7) {
-        return length(float2(q.x - clamp(q.x, 0.0, r.x), q.y)) * s;
-    }
-
+// 0.14.0 gives a bounded HLSL loop a real GLSL loop header, whose fall-through exit its
+// translation never assigns the result variable on, so on OpenGL alone any pixel that uses
+// the whole iteration budget reads an uninitialised value. Keeping the loop unconditional
+// keeps that variable live on every path.
+float2 EllipseNearestPoint(float2 q, float2 r) {
     float aa = r.x * r.x;
     float bb = r.y * r.y;
     float aq = r.x * q.x;
@@ -160,20 +151,19 @@ float EllipseSDF(float2 p, float2 ab) {
     float ix = q.x / r.x;
     float iy = q.y / r.y;
     float inside = ix * ix + iy * iy - 1.0;
-    float sgn = inside < 0.0 ? -1.0 : 1.0;
 
     // Both axes are 0/0 for F, so they get closed forms. On the major axis the closest point
     // is the vertex only outside the evolute cusp at (a*a - b*b)/a; inside it the point has
     // already passed the centre of curvature and the nearest point jumps off the axis.
     if (q.y <= 1e-5 * r.y) {
-        if (q.x * r.x >= aa - bb) return length(q - float2(r.x, 0.0)) * s * sgn;
+        if (q.x * r.x >= aa - bb) return float2(r.x, 0.0);
         float xc = aa * q.x / (aa - bb);
         float yc = r.y * sqrt(clamp(1.0 - xc * xc / aa, 0.0, 1.0));
-        return -length(float2(xc, yc) - q) * s;
+        return float2(xc, yc);
     }
     // On the minor axis the matching cusp sits past the centre, so the covertex always wins.
     if (q.x <= 1e-5 * r.x) {
-        return length(q - float2(0.0, r.y)) * s * sgn;
+        return float2(0.0, r.y);
     }
 
     // Bracket the root, F(tmin) >= 0 >= F(tmax).
@@ -221,7 +211,42 @@ float EllipseSDF(float2 p, float2 ab) {
     // second order in the distance instead of first.
     float2 n = float2(aq / (aa + t), bq / (bb + t));
     n /= max(length(n), 1e-30);
-    return length(n * r - q) * s * sgn;
+    return n * r;
+}
+
+// Folds p and ab into that frame: q is |p| scaled so the larger radius is 1, with the major
+// axis on x, and r the radii likewise. Every intermediate in the solve then stays near 1 no
+// matter how many pixels across the ellipse is. The problem is symmetric under swapping both
+// the radii and the coordinates, which is what puts the major axis on x and halves the solve's
+// special cases; a caller that wants points back out swaps them the same way. Returns the
+// scale, or 0 for an ellipse with no size at all.
+float EllipseFold(float2 p, float2 ab, out float2 q, out float2 r) {
+    float s = max(ab.x, ab.y);
+    q = abs(p) / max(s, 1e-30);
+    r = ab / max(s, 1e-30);
+    if (r.y > r.x) {
+        r = r.yx;
+        q = q.yx;
+    }
+    return s;
+}
+
+// Signed distance to an origin centred, axis aligned ellipse with radii ab.
+float EllipseSDF(float2 p, float2 ab) {
+    float2 q, r;
+    float s = EllipseFold(p, ab, q, r);
+    if (s <= 0.0) return length(p);
+
+    // A collapsed minor axis degenerates to a segment, which the solve cannot represent: its
+    // bracket needs both denominators strictly positive.
+    if (r.y <= 1e-7) {
+        return length(float2(q.x - clamp(q.x, 0.0, r.x), q.y)) * s;
+    }
+
+    float ix = q.x / r.x;
+    float iy = q.y / r.y;
+    float sgn = ix * ix + iy * iy - 1.0 < 0.0 ? -1.0 : 1.0;
+    return length(EllipseNearestPoint(q, r) - q) * s * sgn;
 }
 float ArcSDF(float2 p, float2 sc, float ra, float rb) {
     p.x = abs(p.x);
@@ -338,9 +363,13 @@ float DashCutFromEdges(float2 q, float3 de, float2 pb, float2 nb, float2 pa, flo
 }
 
 // Spine point crossed by the dash edge at contour position ue: on this segment in the
-// linear zone, on the corner arc through the arc spans, and on the neighbor past them.
+// linear zone, on the corner arc through the arc spans, and on the neighbor past them. Also
+// returns the unit direction the contour coordinate grows in there, which is the edge's own
+// normal, since a dash edge is exactly the set of points at one contour position: the spine's
+// own direction on a straight run, and the tangent to the fillet arc through a corner fan,
+// where the edge is a ray out of the fillet center and every point on it shares its angle.
 // fr is each end's fillet radius, which is not the stroke radius; see PathDashCut.
-float2 PathEdgePoint(float ue, float2 fr, float startLen, float thA, float thB, float uA, float uB, float2 cA, float2 cB) {
+float2 PathEdgeFrame(float ue, float2 fr, float startLen, float thA, float thB, float uA, float uB, float2 cA, float2 cB, out float2 n) {
     float aA = abs(thA);
     float aB = abs(thB);
     if (ue > uB && aB > 1e-4) {
@@ -349,9 +378,11 @@ float2 PathEdgePoint(float ue, float2 fr, float startLen, float thA, float thB, 
         if (se > 0.0) {
             float2 nb;
             sincos(thB, nb.y, nb.x);
+            n = nb;
             return cB + float2(sin(aB), -sB * cos(aB)) * fr.y + nb * se;
         }
         float psi = (ue - uB) / fr.y;
+        n = float2(cos(psi), sB * sin(psi));
         return cB + float2(sin(psi), -sB * cos(psi)) * fr.y;
     }
     if (ue < uA && aA > 1e-4) {
@@ -359,11 +390,14 @@ float2 PathEdgePoint(float ue, float2 fr, float startLen, float thA, float thB, 
         float se = uA - aA * fr.x - ue;
         if (se > 0.0) {
             float2 pv = float2(cos(thA), -sin(thA));
+            n = pv;
             return cA + float2(-sin(aA), -sA * cos(aA)) * fr.x - pv * se;
         }
         float psi = (uA - ue) / fr.x;
+        n = float2(cos(psi), -sA * sin(psi));
         return cA + float2(-sin(psi), -sA * cos(psi)) * fr.x;
     }
+    n = float2(1.0, 0.0);
     return float2(ue - startLen, 0.0);
 }
 
@@ -378,15 +412,16 @@ float2 PathEdgePoint(float ue, float2 fr, float startLen, float thA, float thB, 
 // no two dash boundaries meet anywhere that gets drawn and the degeneracy is gone rather
 // than patched. The CPU picks the radius per joint and sends it quantized, so both quads at
 // the joint derive the same field and the partition seam stays invisible.
-// Flat dashes are cut purely by the pixel's own contour coordinate, which can never ghost a
-// cut across the joint, converted to a true distance so edges, borders and AA keep their
-// true width through the corner fans. In a fan the cut is a ray out of the fillet center,
-// so a contour offset at distance lw from it spans lw / fr of world distance; taking that
-// factor from the geometry rather than from the coordinate's screen derivative is what
-// keeps it exact where the derivative is worthless. Rounded dashes are the exact capsule
-// around the rounded spine, built from the bounding edges' spine points. thA and thB are
-// the signed turn angles at the ends, zero at caps and at collinear, overlapping, and
-// reversed joints, where the pattern just runs straight out, matching the line shape.
+// Flat dashes measure the world distance to the two bounding dash edges themselves, which is
+// what keeps edges, borders and AA at their true width right through the corner fans. Every
+// dash edge is a straight line - perpendicular to a straight run, or a ray out of the fillet
+// center - so the distance to one is exact from any point on it and its unit tangent, which
+// is what PathEdgeFrame returns. See DashCutFromEdges, the same measurement every closed
+// outline makes.
+// Rounded dashes are the exact capsule around the rounded spine, built from the bounding
+// edges' spine points. thA and thB are the signed turn angles at the ends, zero at caps and
+// at collinear, overlapping, and reversed joints, where the pattern just runs straight out,
+// matching the line shape.
 // type >= 1.5 selects rounded dashes.
 float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float thA, float thB, float2 data, float type) {
     float aA = abs(thA);
@@ -400,36 +435,37 @@ float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float
     float2 cA = float2(tA, sA * fr.x);
     float2 cB = float2(len - tB, sB * fr.y);
 
+    // The pixel's own contour coordinate, which is what puts it between a pair of dash edges.
+    // Inside a fan it is the angle around the fillet center, so the coordinate never folds:
+    // the center sits clear of the stroke, so nothing that gets drawn reaches it.
     float u = startLen + q.x;
     float v = q.y;
-    float sc = 1.0; // World distance per unit of contour offset, 1 outside the fans.
     if (aB > 1e-4 && q.x > len - tB) {
         float2 w = q - cB;
-        float lw = length(w);
         u = uB + clamp(atan2(w.x, -sB * w.y), 0.0, aB) * fr.y;
-        v = lw - fr.y;
-        sc = lw / fr.y;
+        v = length(w) - fr.y;
     } else if (aA > 1e-4 && q.x < tA) {
         float2 w = q - cA;
-        float lw = length(w);
         u = uA - clamp(atan2(-w.x, -sA * w.y), 0.0, aA) * fr.x;
-        v = lw - fr.x;
-        sc = lw / fr.x;
+        v = length(w) - fr.x;
     }
 
     float3 de = DashEdges(u, data);
 
+    // The exact capsule around the rounded spine: inside the dash's span the distance to the
+    // spine, and nothing else is needed there.
+    if (type >= 1.5 && de.x < 0.0) {
+        return abs(v) - r;
+    }
+
+    float2 nb, na;
+    float2 pb = PathEdgeFrame(de.y, fr, startLen, thA, thB, uA, uB, cA, cB, nb);
+    float2 pa = PathEdgeFrame(de.z, fr, startLen, thA, thB, uA, uB, cA, cB, na);
     if (type >= 1.5) {
-        // The exact capsule around the rounded spine: inside the dash's span the distance
-        // to the spine, outside it the distance to the nearer of the two cap circles.
-        if (de.x < 0.0) {
-            return abs(v) - r;
-        }
-        float2 pb = PathEdgePoint(de.y, fr, startLen, thA, thB, uA, uB, cA, cB);
-        float2 pa = PathEdgePoint(de.z, fr, startLen, thA, thB, uA, uB, cA, cB);
+        // Past the dash's span the capsule is the distance to the nearer of the two cap circles.
         return min(length(q - pb), length(q - pa)) - r;
     }
-    float du = de.x * sc;
+    float du = DashCutFromEdges(q, de, pb, nb, pa, na);
 
     // Miter and bevel tips reach past the joint disc. A dash edge near the corner would
     // sweep them as a needle, so out there the dash is bounded by the disc instead and
@@ -453,7 +489,7 @@ float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float
 // anti-aliasing blur around it paints a speck adrift in the gap. Running the pattern on a
 // wider arc puts the center past the band's inner edge, so nothing that gets drawn sees it.
 // The cap keeps the widened corner inside the shape; at a rounding already wider than the
-// band this returns the rounding untouched, so the usual case is bit for bit as before.
+// band this returns the rounding untouched.
 float PatternRadius(float ro, float lineSize, float cap) {
     return max(ro, min(1.5 * lineSize, cap));
 }
@@ -781,6 +817,288 @@ float TriangleDashCut(float2 q, float2 b, float2 c, float ro, float lineSize, fl
     TriangleFrame(de.y, vA, vB, vC, rp, orr, lineSize * 0.5, pb, nb, capA);
     TriangleFrame(de.z, vA, vB, vC, rp, orr, lineSize * 0.5, pa, na, capB);
     return DashCutFromEdges(q, de, pb, nb, pa, na);
+}
+
+// An ellipse's arc length is an incomplete elliptic integral of the second kind, with no closed
+// form either way round, and dashing needs the map in both directions: the contour coordinate of
+// the pixel's own nearest point, and the point sitting at each bounding dash edge's coordinate.
+// So both ride in a table, 256 columns along one quadrant by 64 rows over the aspect ratio b/a,
+// which symmetry extends to the whole ellipse. Each texel packs the two maps as 16 bit fractions,
+// the inverse in RG and the forward in BA; see EllipseArc.cs for how they are built and why both
+// axes are sqrt warped.
+#define ARC_W 256.0
+#define ARC_H 64.0
+
+// One texel of the table, as the pair of fractions it packs.
+float2 ArcTexel(float2 t) {
+    float4 c = SampleArc((t + 0.5) / float2(ARC_W, ARC_H));
+    return float2(floor(c.r * 255.0 + 0.5) * 256.0 + floor(c.g * 255.0 + 0.5),
+                  floor(c.b * 255.0 + 0.5) * 256.0 + floor(c.a * 255.0 + 0.5)) / 65535.0;
+}
+// Bilinear over the table, by hand off point samples. Hardware filtering would blend the high
+// and low byte of each value independently, which lands anywhere at all across the boundaries
+// where the low byte wraps, and a texture format it can filter is not something every backend
+// here is guaranteed to have.
+float2 ArcLut(float col, float row) {
+    float2 f = float2(saturate(col) * (ARC_W - 1.0), saturate(row) * (ARC_H - 1.0));
+    float2 i0 = floor(f);
+    float2 i1 = min(i0 + 1.0, float2(ARC_W - 1.0, ARC_H - 1.0));
+    float2 w = f - i0;
+    float2 top = lerp(ArcTexel(i0), ArcTexel(float2(i1.x, i0.y)), w.x);
+    float2 bot = lerp(ArcTexel(float2(i0.x, i1.y)), ArcTexel(i1), w.x);
+    return lerp(top, bot, w.y);
+}
+
+// A tip of the major axis is the ellipse's corner, and the pattern has to walk it the way it
+// walks a rounded box's: every dash edge near a tip is very nearly a ray out of the tip's centre
+// of curvature, b*b/a inside the outline, so as soon as the border is thicker than that they all
+// meet inside the band and each one cuts across the far side of its own dash. See PatternRadius,
+// which is the same problem and the same fix - run the pattern's tip on a wider arc, one whose
+// centre clears the band, and the edges never meet anywhere that gets drawn.
+// The fan reaches as far as the outline's own normal crosses the major axis at that same depth,
+// which is where the two are tangent, so the pattern's edges stay exactly the outline's normals
+// outside the fan and become rays out of the pivot inside it with no break at the junction. Each
+// ray still meets the outline exactly at its own contour position - the pattern is placed on the
+// outline, only the direction it cuts across the band is the fan's - so lengths are untouched and
+// the pattern still tiles the perimeter.
+// psi is the junction ray's angle, uj the arc length there, xp the pivot's distance from the
+// centre. A tip no sharper than the band gives psi = 0 and no fan at all; a circle gives a
+// quarter turn and the pivot at the centre, which is exactly what DrawCircle already draws.
+void EllipseTipFan(float2 ab, float sq, float lineSize, out float psi, out float uj, out float xp) {
+    // The fan's radius: the band's, so the pivot clears what gets drawn, but capped at a few
+    // times the tip's own so the fan stays local to the tip. Past that cap the pivot sits so far
+    // back that its rays meet the outline at a glance rather than across it, and a dash gets cut
+    // along the band instead of across it - worst on a needle, whose normals stay near parallel
+    // for a long stretch. Capped, a band thicker than that leaves the pivot inside the band,
+    // which is the same compromise PatternRadius makes at its own cap.
+    float rc = ab.y * ab.y / ab.x;
+    float rho = max(rc, min(1.5 * lineSize, min(3.0 * rc, 0.95 * ab.y)));
+    float sp = rho * ab.x / max(ab.y, 1e-30);
+    float sin2 = saturate((sp * sp - ab.y * ab.y) / max(ab.x * ab.x - ab.y * ab.y, 1e-12));
+    float st = sqrt(sin2);
+    float ct = sqrt(1.0 - sin2);
+    psi = atan2(ab.x * st, ab.y * ct);
+    uj = sq * ArcLut(atan2(st, ct) * 0.63661977236758134, sqrt(ab.y / max(ab.x, 1e-30))).y;
+    xp = (ab.x - ab.y * ab.y / ab.x) * ct;
+}
+
+// Room between p and the dash edge at contour position ue, positive on the side the pattern's own
+// interval lies, so a min over the two bounding edges is the distance to the nearer of them. side
+// is +1 for the edge behind p along the contour and -1 for the one ahead. Also returns where the
+// band's centerline crosses the edge and how far along the edge that is, which are a rounded
+// dash's cap center and the radius that reaches the band's two edges from it.
+// The edge is straight - the outline's normal, or a ray out of the tip fan - but it is a SEGMENT,
+// not a line, and that is the whole point. A line does not stay put behind a tip: every normal
+// there passes close to the tip's centre of curvature, so carried far enough it comes back out
+// through the band on the far side of the major axis and bites into the far end of its own dash.
+// So the sides are read off the geometry only where the edge really spans, which is everywhere
+// the boundary can be, and past its ends all that is left to give is the distance - the pattern's
+// coordinate has already answered which side, since it put the pixel between these two edges to
+// begin with.
+// ab is the world radii with the major axis on x and sq is a quarter of the perimeter. The
+// coordinate starts at the tip of the major axis and each quadrant is the tabulated one
+// reflected, so the quadrant index picks the signs.
+float EllipseEdgeRoom(float2 p, float ue, float side, float2 ab, float sq, float psi, float uj,
+                      float xp, float lineSize, float aa, out float2 ctr, out float ctrR) {
+    float per = 4.0 * sq;
+    float s = ue - floor(ue / max(per, 1e-6)) * per;
+    float k = min(floor(s / max(sq, 1e-6)), 3.0);
+    float t = s - k * sq;
+    float sx = (k < 0.5 || k > 2.5) ? 1.0 : -1.0;
+    float sy = k < 1.5 ? 1.0 : -1.0;
+    float dir = (k < 0.5 || (k > 1.5 && k < 2.5)) ? 1.0 : -1.0;
+    // Arc from the tip of the major axis this quadrant runs off, which is what the fan spans.
+    float tt = dir > 0.0 ? t : sq - t;
+
+    float2 cs;
+    sincos(ArcLut(sqrt(saturate(tt / max(sq, 1e-6))),
+                  sqrt(ab.y / max(ab.x, 1e-30))).x * 1.5707963267948966, cs.y, cs.x);
+    float2 onCurve = float2(sx * ab.x * cs.x, sy * ab.y * cs.y);
+
+    // The speed along the parameter angle doubles as the length of the unnormalised normal.
+    float speed = max(length(float2(ab.x * cs.y, ab.y * cs.x)), 1e-30);
+    float2 inward = -float2(sx * ab.y * cs.x, sy * ab.x * cs.y) / speed;
+
+    // A normal reaches the far side of the band at a band's depth, since depth along it IS
+    // distance, plus the anti-aliasing that spills past the inner edge - miss that and the corner
+    // where a dash edge meets the inner edge rounds off. A fan ray is not a normal on either
+    // count: it leans, so distance along it runs ahead of depth, and behind a tip the band itself
+    // reaches deeper than a band's worth, since the two sides close on the medial axis instead of
+    // staying a band apart. So in the fan it runs to the pivot instead, which is where it stops
+    // being this edge and where the band has ended in any case. Anything shorter ends the edge
+    // partway across the band, and the deep part of a dash's edge loses its anti-aliasing.
+    float2 dirIn = inward;
+    float reach = lineSize + aa;
+    if (psi > 1e-6 && tt < uj) {
+        float2 v = float2(sx * xp, 0.0) - onCurve;
+        float vl = max(length(v), 1e-30);
+        dirIn = v / vl;
+        reach = vl;
+    }
+
+    // Where the band's centerline crosses the edge, which along a leaning ray is farther along
+    // than half a band by however much it leans. That same distance is how far the band's two
+    // edges are from it along the ray, so it is also the radius a round cap needs to reach them:
+    // a leaning cut crosses more band than a square one, so a disc of half a band's width would
+    // fall short of both corners and notch the cap. Off the fan the ray is the normal, the two
+    // coincide, and the cap is a plain half band disc as everywhere else.
+    ctrR = lineSize * 0.5 / max(dot(dirIn, inward), 0.25);
+    ctr = onCurve + dirIn * ctrR;
+
+    // Outward the span reaches as far, to cover the anti-aliasing outside the outline. The edge's
+    // own tangent points the way the contour coordinate grows.
+    float2 rel = p - onCurve;
+    float along = dot(rel, dirIn);
+    // What the edge takes away is the half plane behind it, and only where the edge really spans;
+    // past either end it takes away nothing. That region's complement is the intersection of two
+    // half planes - behind the edge, and inside the span - so its exact distance is the standard
+    // one for a quadrant, and taking it as one quantity is what makes this continuous. Reading
+    // the two apart puts a seam along the span's end, since past the end that gives the distance
+    // to the end while a step inside it still gives how far BEHIND the edge the pixel is, and
+    // those two only agree in front of the edge.
+    float e = max(along - reach, -(lineSize + aa) - along);
+    float lat = side * dot(rel, float2(dirIn.y, -dirIn.x));
+    return length(max(float2(e, lat), 0.0)) + min(max(e, lat), 0.0);
+}
+
+// One rounded dash's capsule around the band's centerline: the cut squared off across the band,
+// which is the band and the cut whichever binds, unioned with a disc on the centerline at each
+// end and clipped back to the band. See the rounded branch of the pixel shader, which builds the
+// same thing for every other shape; the ellipse builds its own because behind a sharp tip both
+// sides of the outline reach the same pixels and what is wanted there is the union of their two
+// capsules, which needs both sides' ends at once.
+float EllipseCapsule(float2 p, float d, float cut, float2 cA, float2 cB, float2 cR, float rd) {
+    float2 r = max(cR, rd);
+    return max(abs(d + rd) - rd,
+               min(cut, min(length(p - cA) - r.x, length(p - cB) - r.y)));
+}
+
+// Dash cut for the ellipse, the world distance to the nearest dash edge, negative inside a dash.
+// Every dash edge is a straight line - the outline's normal, or a ray out of the tip fan - so a
+// dash keeps a straight edge front and back everywhere on the ellipse, tips included, the way
+// every other closed outline does; see DashCutFromEdges, which is the same idea with the sides
+// taken from the geometry instead.
+// The side comes from the pixel's own contour coordinate, and the whole reason that works is that
+// the coordinate does not fold: inside the fan it is where the pixel's own ray out of the pivot
+// meets the outline, outside it the nearest point, and the two agree along the junction ray where
+// they hand over. Read off the nearest point everywhere it would fold: behind a tip runs the
+// medial axis, where the outline's two sides are equally near and the nearest point jumps from
+// one to the other, and the pattern kinks with it. The fan keeps that stretch out of it as long as
+// the pivot clears the band, which it does unless the tip is sharp enough that the cap on the fan's
+// radius binds first - past that the seam is drawn, and the tail of this function is what makes it
+// an edge rather than a step.
+float EllipseDashCut(float2 p, float2 ab, float sq, float lineSize, float2 data, float aa,
+                     bool roundCap, float sdf) {
+    float2 capA = float2(0.0, 0.0);
+    float2 capB = float2(0.0, 0.0);
+    float2 capR = float2(0.0, 0.0);
+
+    float2 q, r;
+    float s = EllipseFold(p, ab, q, r);
+    // Fold the signed inputs the same way, so the quadrant symmetry can be undone afterwards.
+    float swap = ab.y > ab.x ? 1.0 : 0.0;
+    float2 pw = swap > 0.5 ? p.yx : p;
+    float2 abw = swap > 0.5 ? ab.yx : ab;
+    if (s <= 0.0 || r.y <= 1e-7) return 1.0;
+
+    float psi, uj, xp;
+    EllipseTipFan(abw, sq, lineSize, psi, uj, xp);
+
+    // Which tip's fan the pixel could be in is its own side of the minor axis, and both tips fold
+    // together with the quadrant symmetry.
+    float2 qa = abs(pw);
+    float phi = atan2(qa.y, qa.x - xp);
+    bool inFan = psi > 1e-6 && phi < psi;
+    float footY = 0.0; // The nearest point's own distance off the major axis, for the fold below.
+    float u1;
+    if (inFan) {
+        // The pixel's own edge through the fan is the ray out of the pivot, so its contour
+        // position is where that ray meets the outline: a quadratic in how far along it that is.
+        float2 v = qa - float2(xp, 0.0);
+        float ea = v.x * v.x / (abw.x * abw.x) + v.y * v.y / (abw.y * abw.y);
+        float eb = 2.0 * xp * v.x / (abw.x * abw.x);
+        float ec = xp * xp / (abw.x * abw.x) - 1.0;
+        float lam = (-eb + sqrt(max(eb * eb - 4.0 * ea * ec, 0.0))) / max(2.0 * ea, 1e-30);
+        float2 hit = float2(xp + lam * v.x, lam * v.y);
+        u1 = sq * ArcLut(atan2(hit.y / abw.y, hit.x / abw.x) * 0.63661977236758134, sqrt(r.y)).y;
+    } else {
+        // The angle of the nearest point, renormalised: the solve leaves whatever is left of its
+        // error as a slip along the ellipse, and the angle is exactly what the table indexes by.
+        float2 n = normalize(EllipseNearestPoint(q, r) / r);
+        u1 = sq * ArcLut(atan2(n.y, n.x) * 0.63661977236758134, sqrt(r.y)).y;
+        footY = n.y * abw.y;
+    }
+
+    // Arc length counts up through the first and third quadrants and back down through the
+    // second and fourth, which is the same reflection EllipseEdgeRoom undoes.
+    float u = pw.x >= 0.0 ? (pw.y >= 0.0 ? u1 : 4.0 * sq - u1)
+                          : (pw.y >= 0.0 ? 2.0 * sq - u1 : 2.0 * sq + u1);
+
+    // How much room to the nearer of the two bounding edges, in the same swapped frame the
+    // coordinate was read in, which is a reflection and so leaves every distance alone - so the
+    // cap centers stay in it too, and a rounded dash's capsule is built here without unswapping
+    // anything.
+    float3 de = DashEdges(u, data);
+    float db = EllipseEdgeRoom(pw, de.y, 1.0, abw, sq, psi, uj, xp, lineSize, aa, capA, capR.x);
+    float da = EllipseEdgeRoom(pw, de.z, -1.0, abw, sq, psi, uj, xp, lineSize, aa, capB, capR.y);
+
+    float m = min(db, da);
+    float cut = de.x >= 0.0 ? m : -m;
+
+    // Behind a tip sharp enough that the fan cannot reach the whole band, the seam the fold leaves
+    // is drawn, and it is a real boundary of the dash: the pattern partitions the perimeter, so
+    // each side of the outline carries its own stretch of it and owns its own side of the medial
+    // axis, and where one side lands on a dash and the other on a gap the dash simply stops there.
+    // Everything above reads one side alone and walks past the seam without the field ever
+    // reaching zero, which leaves that boundary with no anti-aliasing. Both sides' fields, each
+    // cut off at the seam and unioned, is the boundary with its distance either side of it. It
+    // comes out symmetric under the reflection that swaps the two sides, which is why it is
+    // continuous across the seam at all.
+    // The far side is the same field at the reflected contour position, since reflecting across
+    // the major axis takes u to 4S - u, and the cost is only paid within a band of the axis. Past
+    // that the seam's own distance dwarfs both cuts and the pair collapses back to the near side,
+    // so nothing else on the ellipse moves - the medial axis is the segment inside the evolute's
+    // cusps, which on a circle is the centre alone and never within a band of anything drawn.
+    // A rounded dash is not partitioned that way: it is the capsule around the band's centerline,
+    // and a capsule reaching in from one side simply runs past the axis and overlaps the one
+    // coming the other way, so there is no boundary there to find and nothing to trim to. What it
+    // wants is the plain UNION of the two sides' capsules - which is symmetric under the same
+    // reflection, so it is continuous across the seam for the same reason, and it is a union of
+    // whole capsules rather than of cuts, so no cap center ever has to switch sides mid field.
+    float rd = lineSize * 0.5;
+    // Only where the fold is real, on two counts. Inside the fan the coordinate is single valued
+    // by construction, so there is no second side there to trim against or to union with, and
+    // reaching for one anyway paints the mirrored dash over the tip. And the far side has to
+    // actually REACH: its own foot is the near one mirrored, so it lies |d|^2 + 4|y|*Py away by
+    // the cosine rule, which is |d| on the axis and climbs steeply off it. Distance to the seam
+    // is not that test - a pixel a hair off the axis but out near the tip can sit a whole band
+    // from the far side while the seam is right beside it.
+    float ex = (abw.x * abw.x - abw.y * abw.y) / max(abw.x, 1e-30);
+    float w = length(float2(max(abs(pw.x) - ex, 0.0), pw.y));
+    float mirror = sqrt(sdf * sdf + 4.0 * abs(pw.y) * footY);
+    if (!inFan && mirror < lineSize + aa) {
+        float2 fcapA, fcapB, fcapR;
+        float3 df = DashEdges(4.0 * sq - u, data);
+        float fb = EllipseEdgeRoom(pw, df.y, 1.0, abw, sq, psi, uj, xp, lineSize, aa, fcapA, fcapR.x);
+        float fa = EllipseEdgeRoom(pw, df.z, -1.0, abw, sq, psi, uj, xp, lineSize, aa, fcapB, fcapR.y);
+        float mf = min(fb, fa);
+        float far = df.x >= 0.0 ? mf : -mf;
+        if (roundCap) {
+            // The far capsule is measured in the far side's OWN band, whose depth here is the
+            // distance to its foot, so it fades out by itself exactly as that side stops reaching
+            // - no cliff where a gate would switch it off, and nothing left to tune. Bounded as
+            // well by the evolute's cusp, past which the outline has no second normal at all and
+            // the mirrored foot is just a point on the far side that happens to be near, which on
+            // a blunt ellipse with a thick band runs the length of the tip. The cusp is exact on
+            // the axis, which is where the second normal appears, and the reach above covers the
+            // way off it.
+            float cusp = abs(pw.x) - ex;
+            return min(EllipseCapsule(pw, sdf, cut, capA, capB, capR, rd),
+                       max(EllipseCapsule(pw, -mirror, far, fcapA, fcapB, fcapR, rd), cusp));
+        }
+        cut = min(max(cut, -w), max(far, w));
+    }
+    return roundCap ? EllipseCapsule(pw, sdf, cut, capA, capB, capR, rd) : cut;
 }
 
 float LinearToGamma(float c) {
@@ -1119,6 +1437,9 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float dashCut = 1.0;   // Closed outlines: world distance to the dash edge, negative inside.
     float2 dashCapA = float2(0.0, 0.0); // Where the band's centerline crosses each of the two
     float2 dashCapB = float2(0.0, 0.0); // bounding edges: a rounded dash's cap centers.
+    float2 dashCapR = float2(0.0, 0.0); // Each cap's radius, when a shape needs one wider than
+                                        // half the band; below the band's own half wins.
+    bool dashCapDone = false; // Set when the cut already IS the rounded capsule, see below.
     float dashV = 0.0;
     float dashR = 0.0;
     float2 dashData = float2(1.0, 0.0);
@@ -1182,7 +1503,17 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             d = TriangleSDF(q, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);
         }
     } else if (shape < 6.5) {
-        d = EllipseSDF(q, float2(sdfSize, p.Meta1.w));
+        float2 ab = float2(sdfSize, p.Meta1.w);
+        d = EllipseSDF(q, ab);
+        if (dashType >= 0.5) {
+            // Meta2 is entirely spare on an ellipse, so the pattern and the quarter perimeter
+            // travel as plain floats with nothing packed. The dash anti-aliasing width goes along
+            // because a dash edge has to reach past the band's inner edge by that much.
+            // A rounded ellipse comes back with its capsule already built; see EllipseCapsule.
+            dashCut = EllipseDashCut(q, ab, p.Meta2.z, lineSize, p.Meta2.xy,
+                                     footprint.y * aaPixels, dashType >= 1.5, d);
+            dashCapDone = true;
+        }
     } else if (shape < 7.5) {
         d = ArcSDF(q, p.Meta2.xy, sdfSize, p.Meta2.z);
         if (dashType >= 0.5) {
@@ -1265,21 +1596,38 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     // Closed outlines mask their border band along the perimeter; the gaps show the fill.
     // The AA width comes from the pixel footprint alone, since the cut is already a world
-    // distance and its screen derivative would misfire across the wrap seam. The cut is the
-    // distance to the dash edge itself rather than a contour offset rescaled by how fast the
-    // coordinate runs here, so it stays a true distance right through the corners, where the
-    // two differ most: the band's inner side runs on a tighter arc than its outer side, and
-    // the rescale also broke where a run meets a corner. See DashCutFromEdges.
+    // distance and its screen derivative would misfire across the wrap seam. On every shape
+    // with corners the cut is the distance to the dash edge itself rather than a contour offset
+    // rescaled by how fast the coordinate runs here, so it stays a true distance right through
+    // the corners, where the two differ most: the band's inner side runs on a tighter arc than
+    // its outer side, and the rescale factor jumps where a run meets a corner. See
+    // DashCutFromEdges, and EllipseDashCut, which measures to the edges for a reason of its own.
     if (dashType >= 0.5 && !dashStroke) {
         float aaU = footprint.y * aaPixels;
         if (dashType >= 1.5) {
             // Round capped dashes: the exact capsule around the band's centerline, the way
-            // PathDashCut builds one. Along the dash it is the band itself; past either end
-            // it is the distance to that end's cap center. Measuring on the centerline is what
-            // keeps the caps circular right across the band, at corners as much as anywhere.
+            // PathDashCut builds one. It is the dash cut square across the band, which is the
+            // band and the cut whichever binds, unioned with a disc on the centerline at each
+            // end. Measuring the ends on the centerline is what keeps the caps circular right
+            // across the band, at corners as much as anywhere.
+            // Written as one union clipped back to the band, rather than as the band inside the
+            // dash's span and the discs outside it, because those two only agree along the span's
+            // own boundary where the dash edge crosses the centerline SQUARELY: the disc is round,
+            // so its distance grows at the band's rate only across a square cut. It does wherever
+            // an edge is a normal, which is everywhere but an ellipse's tip fan, and there the
+            // fan's ray leans and the two branches would part company mid band and notch the cap.
+            // A union cannot part company with itself, and the cap radius carries the lean, so the
+            // disc reaches the band's edges. Clipping to the band is what keeps a wider cap from
+            // spilling past the inner edge; everywhere else the cap is half a band and the clip
+            // does nothing.
+            // The ellipse has already done all of this to itself, since behind a sharp tip it
+            // needs the union of the capsules coming in from both sides of the outline.
             float rd = lineSize * 0.5;
-            float capD = dashCut < 0.0 ? abs(d + rd) - rd
-                                       : min(length(q - dashCapA), length(q - dashCapB)) - rd;
+            float2 cr = max(dashCapR, rd);
+            float capD = dashCapDone ? dashCut
+                                     : max(abs(d + rd) - rd,
+                                           min(dashCut, min(length(q - dashCapA) - cr.x,
+                                                            length(q - dashCapB) - cr.y)));
             borderMix = 1.0 - smoothstep(0.0, 1.0, saturate(capD / aaU));
         } else {
             borderMix *= 1.0 - smoothstep(0.0, 1.0, saturate(dashCut / aaU));
@@ -1316,7 +1664,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         br.rgb *= br.a;
         // The edge fade applies after the crossfade so the fill also fades where a dash gap
         // lets it reach the outer edge. Solid borders keep borderMix at 1 wherever the fade
-        // is below 1, so this matches the old border-only fade exactly.
+        // is below 1, so the fade still lands on the border alone there.
         result = lerp(fr, br, borderMix) * edgeFade;
     }
 
@@ -1327,16 +1675,6 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // the negative half must survive to dither near-black, and the target clamps on write.
     result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
     return result;
-
-    // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
-    // d = abs(d + lineSize) - lineSize;
-    // float4 c2 = p.Color2 * step(d, 0.0);
-
-    // float4 c3 = c2 + c1 * (1.0 - c2.a);
-    // // return c3;
-
-    // float4 c4 = float4(0.3, 0.0, 0.0, 0.3);
-    // return result + c4 * (1.0 - result.a);
 }
 
 technique SpriteBatch {

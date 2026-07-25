@@ -1028,9 +1028,17 @@ namespace Apos.Shapes {
             DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize, dash);
         }
 
-        public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             UpdatePixelSize(center, MathF.Max(radius1, radius2));
             float aaOffset = _pixelSize * aaSize;
+
+            // A quarter of the perimeter, which is what the shader walks each quadrant of the
+            // contour with; the whole perimeter is what the pattern is fitted to.
+            float quarter = dash.IsEnabled ? EllipseArc.Quarter(radius1, radius2) : 0f;
+            ResolvedDash rd = dash.Resolve(4f * quarter, closed: true);
+            if (rd.TypeDigit > 0) {
+                _ellipseArc ??= EllipseArc.CreateTexture(_graphicsDevice);
+            }
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float minAxis = MathF.Min(radius1, radius2);
@@ -1040,7 +1048,7 @@ namespace Apos.Shapes {
                     Vector2 axes = new(radius1, radius2);
                     // Scaling instead of a fixed offset: the ellipse offset outward by s fits inside the
                     // ellipse scaled by 1 + s / minAxis, and the mirrored bound holds for the hole.
-                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, 0f, 0f, 0f, 0f);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, rd.Period, rd.FracPhase, quarter, 0f, rd.TypeDigit);
                     return;
                 }
             }
@@ -1064,10 +1072,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topRight), radius2, aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(bottomRight), radius2, aaSize: aaSize, colorSpace: ColorSpace);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(bottomLeft), radius2, aaSize: aaSize, colorSpace: ColorSpace);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: aaSize, a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topRight), radius2, aaSize: aaSize, a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(bottomRight), radius2, aaSize: aaSize, a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(bottomLeft), radius2, aaSize: aaSize, a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1076,8 +1084,8 @@ namespace Apos.Shapes {
         public void FillEllipse(Vector2 center, float width, float height, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawEllipse(center, width, height, g, g, 0f, rotation, aaSize);
         }
-        public void BorderEllipse(Vector2 center, float width, float height, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize);
+        public void BorderEllipse(Vector2 center, float width, float height, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
 
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
@@ -1388,6 +1396,7 @@ namespace Apos.Shapes {
                 _vertexBuffer.Dispose();
                 _indexBuffer.Dispose();
                 _blueNoise.Dispose();
+                _ellipseArc?.Dispose();
             }
             _disposed = true;
         }
@@ -1428,8 +1437,14 @@ namespace Apos.Shapes {
                 pass.Apply();
                 if (_texture != null) _graphicsDevice.Textures[0] = _texture;
                 if (_fontTexture != null) _graphicsDevice.Textures[1] = _fontTexture;
-                _graphicsDevice.Textures[2] = _blueNoise;
-                _graphicsDevice.SamplerStates[2] = SamplerState.PointWrap;
+                if (_ellipseArc != null) {
+                    // The shader reads the table's 16 bit values apart by hand, so it must arrive
+                    // unfiltered; clamped because the walk runs to both ends of the quadrant.
+                    _graphicsDevice.Textures[2] = _ellipseArc;
+                    _graphicsDevice.SamplerStates[2] = SamplerState.PointClamp;
+                }
+                _graphicsDevice.Textures[3] = _blueNoise;
+                _graphicsDevice.SamplerStates[3] = SamplerState.PointWrap;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -1780,6 +1795,8 @@ namespace Apos.Shapes {
         private readonly EffectParameter? _ditherScale;
         private readonly EffectParameter? _ditherMode;
         private readonly Texture2D _blueNoise;
+        // Built the first time an ellipse is dashed, since nothing else reads it.
+        private Texture2D? _ellipseArc;
 
         private float _pixelSize = 1f;
         private Matrix _worldToClip = Matrix.Identity;

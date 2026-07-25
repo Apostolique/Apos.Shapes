@@ -9,7 +9,7 @@ namespace GameProject {
         public static readonly Color Black = new Color(0, 0, 0);
         /// <summary>White color (R:255,G:255,B:255,A:255).</summary>
         public static readonly Color White = new Color(255, 255, 255);
-        /// <summary>White color (R:0,G:0,B:0,A:0).</summary>
+        /// <summary>Transparent color (R:0,G:0,B:0,A:0).</summary>
         public static readonly Color Transparent = new Color(0, 0, 0, 0);
 
         /// <summary>Slate050 color (R:248,G:250,B:252,A:255).</summary>

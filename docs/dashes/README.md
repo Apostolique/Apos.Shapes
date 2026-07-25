@@ -1,7 +1,7 @@
 # Dashes
 This guide will show you how to draw dashed outlines and dashed strokes.
 
-Every `Draw` and `Border` method except the ellipse's takes a `dash` parameter. A `DashStyle` is defined by the length of a dash and the length of the space between dashes, both in world units:
+Every `Draw` and `Border` method takes a `dash` parameter. A `DashStyle` is defined by the length of a dash and the length of the space between dashes, both in world units:
 
 ```csharp
 _sb.BorderCircle(new Vector2(120, 120), 75, Color.White, 6f, dash: new DashStyle(24f, 16f));
@@ -11,13 +11,11 @@ _sb.BorderCircle(new Vector2(120, 120), 75, Color.White, 6f, dash: new DashStyle
 
 The default `DashStyle` draws solid, so shapes are undashed until you pass one. `DashStyle.None` is the same thing with a name.
 
-Ellipses are the one shape that can't dash. Their perimeter has no closed form, so there is no length to lay a pattern along. Flatten an ellipse to a [closed path](#curves-and-ellipses) to dash it.
-
 ## Outlines and strokes
 
 Dashes mean two different things depending on the shape.
 
-Closed outlines (circle, rectangle, hexagon, equilateral triangle, and triangle) dash their **border** along the perimeter. The fill is left alone, so the gaps show whatever is inside:
+Closed outlines (circle, ellipse, rectangle, hexagon, equilateral triangle, and triangle) dash their **border** along the perimeter. The fill is left alone, so the gaps show whatever is inside:
 
 ```csharp
 _sb.DrawCircle(new Vector2(120, 120), 75, new Color(96, 165, 250), Color.White, 8f, dash: new DashStyle(26f, 20f));
@@ -128,21 +126,22 @@ _sb.DrawPath([new Vector2(20, 130), new Vector2(120, 30), new Vector2(220, 130),
 
 This holds for rounded rectangle corners, rounded hexagon and triangle corners, path joints, and the caps at the ends of a stroke. Miter and bevel tips appear once a dash covers the whole joint, and stay rounded off otherwise.
 
-## Curves and ellipses
+## Curves
 
-A closed path dashes seamlessly all the way around, which is also how you dash a shape the library can't walk. Flatten the curve (an ellipse, a bezier, anything you can sample) into points, pass them as a closed path, and it dashes like any other loop:
+A closed path dashes seamlessly all the way around, which is also how you dash a shape the library can't walk. Flatten the curve (a bezier, a spline, anything you can sample) into points, pass them as a closed path, and it dashes like any other loop:
 
 ```csharp
 Vector2[] points = new Vector2[96];
 for (int i = 0; i < points.Length; i++) {
     float a = MathF.Tau * i / points.Length;
-    points[i] = center + new Vector2(MathF.Cos(a) * 170f, MathF.Sin(a) * 60f);
+    float r = 120f + 35f * MathF.Cos(a * 3f);
+    points[i] = center + new Vector2(MathF.Cos(a) * r, MathF.Sin(a) * r);
 }
 
 _sb.FillPath(points, 12, Color.White, closed: true, dash: new DashStyle(40f, 26f, cap: DashCap.Round));
 ```
 
-![An ellipse flattened to a closed path and dashed](closed-path.png)
+![A curve flattened to a closed path and dashed](closed-path.png)
 
 ## Follow up
 
