@@ -32,6 +32,29 @@ _sb.DrawCircle(new Vector2(120, 120), 75, new Color(96, 165, 250), new Color(191
 
 Positions and sizes are in world units.
 
+## Anti-aliasing
+
+Shapes get a soft edge so they don't come out jagged. `AAStyle` picks which side of the boundary that edge sits on.
+
+The default, `Outside`, keeps the whole fade past the boundary. Nothing fades into the shape, so colors come out as asked and two shapes sharing an edge meet with no seam between them. Leave it there for anything that moves or zooms.
+
+`Centered` splits the fade across the boundary instead, so a shape covers exactly the pixels its size asks for. Put the shape on whole coordinates, pass an `aaSize` of `1f`, and its edges land on whole pixels:
+
+```csharp
+_sb.AAStyle = AAStyle.Centered;
+_sb.BorderRectangle(new Vector2(40, 40), new Vector2(8, 8), Color.White, 1f, aaSize: 1f);
+```
+
+The same 8 by 8 square and 1 pixel border in every panel, zoomed way in. `Outside` at the default `aaSize`, then `Centered` at that same `aaSize`, then `Centered` at `1f`:
+
+![The same square and border under each anti-aliasing style](aa-size.png)
+
+`Centered` only stays exact on the grid though. Two shapes meeting halfway between pixels leave a faint line where they touch, since half coverage over half coverage only comes to three quarters. Here the same two rectangles meet off the grid under `Outside`, then off the grid under `Centered`, then on the grid at an `aaSize` of `1f`:
+
+![Two touching rectangles under each anti-aliasing style](aa-seam.png)
+
+`AAStyle` is read per shape, so you can draw a `Centered` UI on top of an `Outside` scene without splitting the batch.
+
 ## Circle
 
 A circle is defined by a center and a radius.

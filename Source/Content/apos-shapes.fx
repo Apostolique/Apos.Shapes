@@ -252,10 +252,18 @@ float ArcSDF(float2 p, float2 sc, float ra, float rb) {
     p.x = abs(p.x);
     return ((sc.y * p.x > sc.x * p.y) ? length(p - sc * ra) : abs(length(p) - ra)) - rb;
 }
-float RingSDF(float2 p, float2 n, float r, float th) {
+// hw is the band's half thickness, measured from the centerline out, exactly as an arc's
+// rb is. The two shapes only differ in how they end.
+float RingSDF(float2 p, float2 n, float r, float hw) {
     p.x = abs(p.x);
     p = mul(p, float2x2(n.x, n.y, -n.y, n.x));
-    return max(abs(length(p) - r) - th * 0.5, length(float2(p.x, max(0.0, abs(r - p.y) - th * 0.5))) * sign(p.x));
+    float band = abs(length(p) - r) - hw;
+    float cut = length(float2(p.x, max(0.0, abs(r - p.y) - hw))) * sign(p.x);
+    // A full turn arrives with its sine pinned to zero and has no caps to cut against. It
+    // folds along p.x = 0, and there the cut is exactly 0 whatever its sign, which reads as
+    // the shape's own boundary: a half covered hairline straight across the band. Nothing
+    // showed while the fade sat outside the edge, since a distance of 0 painted solid there.
+    return max(band, n.y > 0.0 ? cut : -1e6);
 }
 // Pops the lowest base-radix digit off m, defined early for StrokeSDF. floor() can be
 // off by one on some driver and translator combos, the remainder check corrects for it.
@@ -1451,8 +1459,32 @@ float2 PixelFootprint(float2 pos) {
     float pixMax = sqrt(0.5 * (a + s));
     return float2(det / max(pixMax, 1e-12), pixMax);
 }
-float PixelWidth(float d, float2 footprint) {
-    return clamp(length(float2(ddx(d), ddy(d))), footprint.x, footprint.y);
+// The derivatives are taken before anything branches on them, so no gradient sits inside
+// flow control; see the ANGLE note on DitherNoise for why that matters.
+float PixelWidth(float d, float2 footprint, float bias) {
+    float2 gd = float2(ddx(d), ddy(d));
+    // Square on, a pixel spans exactly one unit along the edge normal. Across a diagonal it
+    // spans sqrt(2), which is |nx| + |ny| for a unit normal, and that is this sum once d is a
+    // distance. A fade exactly that wide leaves every pixel the edge misses at its own color,
+    // at any angle. Only the centred fade takes it: widening the outward one would move
+    // pixels that are otherwise staying exactly as they are.
+    //
+    // The pair is two differences a pixel apart though, not a gradient, and a quad sitting on a
+    // corner reads one edge across and the other one down. The sum then claims the diagonal's
+    // widening for a corner that is square, dimming the corner pixel and painting the ones
+    // outside it, at whichever corners the quads happen to land that way. Reading the same
+    // width a second way settles it: a distance field has a unit gradient, so the larger of the
+    // two differences pins a normal down on its own - the smaller one can only be whatever is
+    // left of the unit - and that normal asks for m + sqrt(1 - m*m). On plain geometry the two
+    // readings agree, since the pair is that normal and the arithmetic is the same. They part
+    // only where the pair has overshot the footprint, which nothing but a corner or a curve
+    // tighter than a pixel does, and the narrower reading is the right one in both: at a corner
+    // the dominant difference is the real edge's and the other is the crease's, and on a tight
+    // curve the sum carries the same stepping error twice over. The outward fade needs none of
+    // this, its ceiling being one pixel to begin with.
+    float m = saturate(max(abs(gd.x), abs(gd.y)) / max(footprint.y, 1e-12));
+    float w = bias > 0.0 ? min(abs(gd.x) + abs(gd.y), footprint.y * (m + sqrt(1.0 - m * m))) : length(gd);
+    return clamp(w, footprint.x, footprint.y * (bias > 0.0 ? 1.4142135624 : 1.0));
 }
 
 // Abramowitz and Stegun 7.1.26. The error peaks at 1.5e-7, orders below an 8 bit alpha step,
@@ -1491,7 +1523,15 @@ float DitherNoise(float2 worldPos) {
 
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float lineSize = p.Meta1.x;
-    float aaPixels = p.Meta1.y;
+    // A negative width asks for the fade to straddle the true edge instead of sitting outside
+    // it, which is what makes a shape cover exactly the pixels its size claims. It rides in the
+    // sign rather than in a channel of its own because every interpolator is spoken for, and
+    // the packed meta is already at 2^21, one doubling short of where a ps_3_0 interpolator
+    // stops carrying an integer exactly. A blur puts a world radius in this slot instead, and
+    // that is always positive, so it reads as the outward fade and never reaches the branches
+    // below anyway.
+    float aaPixels = abs(p.Meta1.y);
+    float aaBias = p.Meta1.y < 0.0 ? 0.5 : 0.0;
     float sdfSize = p.Meta1.z;
 
     // Peel the packed meta apart field by field. Every intermediate stays an exact integer.
@@ -1514,11 +1554,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // Rounded box SDF from the interpolated edge distances.
     float2 clipQ = p.ClipMeta.z - min(p.Pos.zw, p.ClipMeta.xy);
     float clipD = length(max(clipQ, 0.0)) + min(max(clipQ.x, clipQ.y), 0.0) - p.ClipMeta.z;
-    float clipAa = PixelWidth(clipD, footprint) * p.ClipMeta.w;
-    if (clipD >= clipAa) {
+    float clipAa = PixelWidth(clipD, footprint, aaBias) * p.ClipMeta.w;
+    if (clipD >= clipAa * (1.0 - aaBias)) {
         discard;
     }
-    float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / clipAa));
+    float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / clipAa + aaBias));
 
     if (shape >= 8.5 && shape < 10.5) {
         if (shape < 9.5) {
@@ -1637,7 +1677,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         if (dashType >= 0.5) {
             dashU = (atan2(q.x, q.y) + atan2(p.Meta2.y, p.Meta2.x)) * sdfSize;
             dashV = length(q) - sdfSize;
-            dashR = p.Meta2.z * 0.5;
+            dashR = p.Meta2.z;
             dashData = float2(p.Meta1.w, p.Meta2.w);
             dashStroke = true;
         }
@@ -1707,7 +1747,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     // Hoisted above the blur branch on purpose: this is the last derivative the shader takes,
     // and taking it inside conditional flow is what the ANGLE gradient bug punishes.
-    float pixelWidth = PixelWidth(d, footprint);
+    float pixelWidth = PixelWidth(d, footprint, aaBias);
 
     if (blurred >= 0.5) {
         // A blur is a world space Gaussian, so unlike the AA fade it reaches equally to both
@@ -1746,15 +1786,15 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float aaSize = pixelWidth * aaPixels;
 
     // Beyond the outer AA edge every branch below resolves to premultiplied zero.
-    if (d >= aaSize) {
+    if (d >= aaSize * (1.0 - aaBias)) {
         discard;
     }
 
     float4 fillA = UnpackColor(p.Fill.xy);
     float4 fillB = UnpackColor(p.Fill.zw);
 
-    float edgeFade = 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize));
-    float borderMix = smoothstep(0.0, 1.0, saturate((d + lineSize + aaSize) / aaSize));
+    float edgeFade = 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize + aaBias));
+    float borderMix = smoothstep(0.0, 1.0, saturate((d + lineSize) / aaSize + 1.0 - aaBias));
 
     // Closed outlines mask their border band along the perimeter; the gaps show the fill.
     // The AA width comes from the pixel footprint alone, since the cut is already a world
@@ -1790,9 +1830,9 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
                                      : max(abs(d + rd) - rd,
                                            min(dashCut, min(length(q - dashCapA) - cr.x,
                                                             length(q - dashCapB) - cr.y)));
-            borderMix = 1.0 - smoothstep(0.0, 1.0, saturate(capD / aaU));
+            borderMix = 1.0 - smoothstep(0.0, 1.0, saturate(capD / aaU + aaBias));
         } else {
-            borderMix *= 1.0 - smoothstep(0.0, 1.0, saturate(dashCut / aaU));
+            borderMix *= 1.0 - smoothstep(0.0, 1.0, saturate(dashCut / aaU + aaBias));
         }
     }
 

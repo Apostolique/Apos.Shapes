@@ -10,6 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Paths that vary in width. `DrawPath`, `FillPath`, and `BorderPath` take a radius per point, points carrying join styles included, and `PathTo` takes one too, so a stroke can swell and taper the way a pen's pressure makes it. Segments run between their two end circles instead of stepping at each joint, and a dash comes out as wide as the stroke is where it lands.
 - `FillLineBlurred` and `BorderLineBlurred`, which take one radius or one per end.
+- `AAStyle`, which sets where a shape's anti-aliasing edge sits. `Centered` draws a shape at exactly its size. The default, `Outside`, draws as before.
+
+### Fixed
+
+- Arcs and rings were drawn one pixel smaller than the radius they were given.
+- A ring's second radius is the band's half thickness now, matching an arc's. Rings come out twice as thick as before.
+- A ring drawn as a full turn had a seam across it.
 
 ### Optimized
 

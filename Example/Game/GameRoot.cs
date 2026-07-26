@@ -192,7 +192,7 @@ namespace GameProject {
             _sb.FillLine(new Vector2(-340, 60), new Vector2(120, 60), 8, TWColor.Teal300, dash: new DashStyle(0f, 34f, cap: DashCap.Round, offset: offset));
             _sb.FillArc(new Vector2(300, 30), MathF.PI * 0.75f, MathF.PI * 2.25f, 90, 12, TWColor.Red400, dash: new DashStyle(36f, 24f, cap: DashCap.Round, offset: offset));
             // A counted pattern: always exactly 8 repeats, however long the contour is.
-            _sb.FillRing(new Vector2(540, 30), MathF.PI * 0.75f, MathF.PI * 2.25f, 90, 24, TWColor.Blue400, dash: DashStyle.FromCount(8, 0.66f, offset));
+            _sb.FillRing(new Vector2(540, 30), MathF.PI * 0.75f, MathF.PI * 2.25f, 90, 12, TWColor.Blue400, dash: DashStyle.FromCount(8, 0.66f, offset));
 
             // Paths: the pattern flows through the joints and borders trace every dash.
             _sb.FillPath([new Vector2(-600, 220), new Vector2(-480, 160), new Vector2(-360, 260), new Vector2(-240, 160), new Vector2(-120, 220)], 10, TWColor.Fuchsia400, dash: new DashStyle(30f, 20f, offset));
