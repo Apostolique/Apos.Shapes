@@ -21,19 +21,28 @@ namespace Apos.Shapes {
             Position = position;
             TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash, blur > 0f ? 1 : 0));
 
+            // Fill and border are the same gradient on every Fill* and Border* call, and a flat
+            // color repeats its one stop, so the conversions worth skipping are named outright
+            // rather than left to the cache: a hit still costs a lookup, and this costs a compare.
+            bool sameStops = border.AC == fill.AC && border.BC == fill.BC;
             if (colorSpace == ColorSpace.Oklch) {
                 (FillA, FillB) = PackOklchPair(fill.AC, fill.BC);
-                (BorderA, BorderB) = PackOklchPair(border.AC, border.BC);
+                (BorderA, BorderB) = sameStops ? (FillA, FillB) : PackOklchPair(border.AC, border.BC);
             } else if (colorSpace == ColorSpace.Oklab) {
                 FillA = PackOklab(fill.AC);
-                FillB = PackOklab(fill.BC);
-                BorderA = PackOklab(border.AC);
-                BorderB = PackOklab(border.BC);
+                FillB = fill.BC == fill.AC ? FillA : PackOklab(fill.BC);
+                if (sameStops) {
+                    BorderA = FillA;
+                    BorderB = FillB;
+                } else {
+                    BorderA = PackOklab(border.AC);
+                    BorderB = border.BC == border.AC ? BorderA : PackOklab(border.BC);
+                }
             } else {
                 FillA = PackRgb(fill.AC);
                 FillB = PackRgb(fill.BC);
-                BorderA = PackRgb(border.AC);
-                BorderB = PackRgb(border.BC);
+                BorderA = sameStops ? FillA : PackRgb(border.AC);
+                BorderB = sameStops ? FillB : PackRgb(border.BC);
             }
 
             FillCoord = new Vector4(fill.AXY.X, fill.AXY.Y, fill.BXY.X, fill.BXY.Y);
@@ -49,6 +58,20 @@ namespace Apos.Shapes {
             ClipDistances = clip.Distances;
             ClipRounding = clip.Rounding;
             ClipAaSize = clip.AaSize;
+        }
+
+        /// <summary>
+        /// This vertex moved to another corner of the same quad. Everything a quad's four
+        /// vertices share - the packed colors, the gradient coordinates and all the meta - is
+        /// copied as it stands, so the packing and the color space conversion run once per
+        /// quad instead of once per vertex.
+        /// </summary>
+        internal readonly void CopyTo(ref VertexShape dst, Vector3 position, Vector2 local, in ClipSpace clip) {
+            dst = this;
+            dst.Position = position;
+            dst.TextureCoordinate.X = local.X;
+            dst.TextureCoordinate.Y = local.Y;
+            dst.ClipDistances = clip.Distances;
         }
 
         public Vector3 Position;
@@ -197,16 +220,25 @@ namespace Apos.Shapes {
         }
 
         private static ulong PackRgb(Color c) {
-            return PackColor(new Vector4(c.R, c.G, c.B, c.A) / 255f);
+            // A byte only ever lands on one of 256 packed values, so the divide, the clamp and
+            // the rounding are all folded into a table. Same result as PackColor of c / 255.
+            ushort[] t = _byteToSnorm;
+            return t[c.R] | (ulong)t[c.G] << 16 | (ulong)t[c.B] << 32 | (ulong)t[c.A] << 48;
+        }
+        private static readonly ushort[] _byteToSnorm = CreateByteToSnorm();
+        private static ushort[] CreateByteToSnorm() {
+            var table = new ushort[256];
+            for (int i = 0; i < 256; i++) table[i] = (ushort)PackChannel(i / 255f);
+            return table;
         }
         private static ulong PackOklab(Color c) {
             // Every vertex of a shape packs the same colors, and a batch usually draws long
             // runs in one of them, so the conversion is worth remembering: it costs three
             // cbrt and would otherwise run sixteen times per quad.
             ulong key = c.PackedValue;
-            ulong[] cache = _oklabCache ??= new ulong[CacheSlots * 2];
-            int slot = Slot(c.PackedValue);
-            if (cache[slot * 2] == key && (_oklabValid & 1u << slot) != 0) {
+            ulong[] cache = _oklabCache ??= NewOklabCache();
+            int slot = Slot(c.PackedValue, OklabSlots);
+            if (cache[slot * 2] == key) {
                 return cache[slot * 2 + 1];
             }
 
@@ -215,15 +247,14 @@ namespace Apos.Shapes {
             ulong packed = PackColor(new Vector4(lab.X, lab.Y * 1.25f + 0.5f, lab.Z * 1.25f + 0.5f, c.A / 255f));
             cache[slot * 2] = key;
             cache[slot * 2 + 1] = packed;
-            _oklabValid |= 1u << slot;
             return packed;
         }
         private static (ulong, ulong) PackOklchPair(Color a, Color b) {
             // Same idea as PackOklab, keyed on the stop pair since the hue fixup couples them.
             ulong key = (ulong)a.PackedValue << 32 | b.PackedValue;
-            ulong[] cache = _oklchCache ??= new ulong[CacheSlots * 3];
-            int slot = Slot(a.PackedValue ^ b.PackedValue);
-            if (cache[slot * 3] == key && (_oklchValid & 1u << slot) != 0) {
+            ulong[] cache = _oklchCache ??= new ulong[OklchSlots * 3];
+            int slot = Slot(a.PackedValue ^ b.PackedValue, OklchSlots);
+            if (cache[slot * 3] == key && (_oklchValid & 1ul << slot) != 0) {
                 return (cache[slot * 3 + 1], cache[slot * 3 + 2]);
             }
 
@@ -231,21 +262,31 @@ namespace Apos.Shapes {
             cache[slot * 3] = key;
             cache[slot * 3 + 1] = packed.Item1;
             cache[slot * 3 + 2] = packed.Item2;
-            _oklchValid |= 1u << slot;
+            _oklchValid |= 1ul << slot;
             return packed;
         }
 
-        // Direct mapped and per thread, with a bit per slot saying whether it holds anything:
-        // every 64 bit key is a color pair somebody could ask for, so no value is free to mean
-        // empty. A miss only costs the work it would have saved.
-        private const int CacheSlots = 16;
+        // Direct mapped and per thread. Sized well past the palette a scene actually draws in:
+        // at sixteen slots even eight colors collided more often than not, and a collision
+        // between two colors that alternate misses every single time, for three cbrt each.
+        // A single color key is a uint, so an all ones slot cannot be one and means empty. The
+        // Oklch key is a pair and fills all 64 bits, so that table keeps a bit per slot instead,
+        // which is what holds it to the 64 a ulong of them can mark.
+        private const int OklabSlots = 256;
+        private const int OklchSlots = 64;
+        private const ulong EmptyKey = ulong.MaxValue;
         [ThreadStatic] private static ulong[]? _oklabCache;
         [ThreadStatic] private static ulong[]? _oklchCache;
-        [ThreadStatic] private static uint _oklabValid;
-        [ThreadStatic] private static uint _oklchValid;
+        [ThreadStatic] private static ulong _oklchValid;
 
-        private static int Slot(uint key) {
-            return (int)((key ^ key >> 16) * 2654435761u >> 28) & CacheSlots - 1;
+        private static ulong[] NewOklabCache() {
+            var cache = new ulong[OklabSlots * 2];
+            for (int i = 0; i < OklabSlots; i++) cache[i * 2] = EmptyKey;
+            return cache;
+        }
+
+        private static int Slot(uint key, int slots) {
+            return (int)((key ^ key >> 16) * 2654435761u >> 16) & slots - 1;
         }
 
         private static (ulong, ulong) PackOklchPairCore(Color a, Color b) {

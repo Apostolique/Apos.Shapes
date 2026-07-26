@@ -13,7 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Optimized
 
-- Colors convert to Oklab and Oklch once per color instead of once per vertex. The conversion costs three cbrt and ran sixteen times per quad, so solid shapes in the default color space now build several times faster.
+- Shapes build two to three times faster. Everything a quad's four vertices share is put together once per shape rather than once per corner, and lines, triangles and rotated shapes take one square root or one sine where they used to take six.
+- Colors convert to Oklab and Oklch once per color instead of once per vertex, and the cache that remembers them now holds a whole palette instead of a handful of colors. The conversion costs three cbrt, so solid shapes in the default color space build several times faster.
+- Paths build about 1.5 times faster, and one longer than 256 points no longer allocates.
 - A round joint whose miter tip barely clears the join arc cuts straight across the bisector instead of fanning the corner, which saves a quad per joint. Paths made of many shallow joints, like a stroke sampled from a pen, build about twice as fast.
 
 ## [0.7.10] - 2026-07-25
