@@ -200,11 +200,55 @@ namespace Apos.Shapes {
             return PackColor(new Vector4(c.R, c.G, c.B, c.A) / 255f);
         }
         private static ulong PackOklab(Color c) {
+            // Every vertex of a shape packs the same colors, and a batch usually draws long
+            // runs in one of them, so the conversion is worth remembering: it costs three
+            // cbrt and would otherwise run sixteen times per quad.
+            ulong key = c.PackedValue;
+            ulong[] cache = _oklabCache ??= new ulong[CacheSlots * 2];
+            int slot = Slot(c.PackedValue);
+            if (cache[slot * 2] == key && (_oklabValid & 1u << slot) != 0) {
+                return cache[slot * 2 + 1];
+            }
+
             Vector3 lab = ToOklab(c);
             // a and b are remapped from [-0.4, 0.4] which covers the whole sRGB gamut.
-            return PackColor(new Vector4(lab.X, lab.Y * 1.25f + 0.5f, lab.Z * 1.25f + 0.5f, c.A / 255f));
+            ulong packed = PackColor(new Vector4(lab.X, lab.Y * 1.25f + 0.5f, lab.Z * 1.25f + 0.5f, c.A / 255f));
+            cache[slot * 2] = key;
+            cache[slot * 2 + 1] = packed;
+            _oklabValid |= 1u << slot;
+            return packed;
         }
         private static (ulong, ulong) PackOklchPair(Color a, Color b) {
+            // Same idea as PackOklab, keyed on the stop pair since the hue fixup couples them.
+            ulong key = (ulong)a.PackedValue << 32 | b.PackedValue;
+            ulong[] cache = _oklchCache ??= new ulong[CacheSlots * 3];
+            int slot = Slot(a.PackedValue ^ b.PackedValue);
+            if (cache[slot * 3] == key && (_oklchValid & 1u << slot) != 0) {
+                return (cache[slot * 3 + 1], cache[slot * 3 + 2]);
+            }
+
+            var packed = PackOklchPairCore(a, b);
+            cache[slot * 3] = key;
+            cache[slot * 3 + 1] = packed.Item1;
+            cache[slot * 3 + 2] = packed.Item2;
+            _oklchValid |= 1u << slot;
+            return packed;
+        }
+
+        // Direct mapped and per thread, with a bit per slot saying whether it holds anything:
+        // every 64 bit key is a color pair somebody could ask for, so no value is free to mean
+        // empty. A miss only costs the work it would have saved.
+        private const int CacheSlots = 16;
+        [ThreadStatic] private static ulong[]? _oklabCache;
+        [ThreadStatic] private static ulong[]? _oklchCache;
+        [ThreadStatic] private static uint _oklabValid;
+        [ThreadStatic] private static uint _oklchValid;
+
+        private static int Slot(uint key) {
+            return (int)((key ^ key >> 16) * 2654435761u >> 28) & CacheSlots - 1;
+        }
+
+        private static (ulong, ulong) PackOklchPairCore(Color a, Color b) {
             Vector3 labA = ToOklab(a);
             Vector3 labB = ToOklab(b);
             float chromaA = MathF.Sqrt(labA.Y * labA.Y + labA.Z * labA.Z);

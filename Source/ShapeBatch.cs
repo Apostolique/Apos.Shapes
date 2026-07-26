@@ -311,14 +311,16 @@ namespace Apos.Shapes {
                     Vector2 dir = new(cosL, sinL);
                     Vector2 perp = new(-sinL, cosL);
 
+                    // The third spare slot is the far end's half width, matched here so the shader
+                    // reads the plain capsule; see FillLineBlurred, which is where it differs.
                     EmitHollowQuad(a - perp * outerRadius, a + dir * length - perp * outerRadius, a + dir * length - perp * holeRadius, a - perp * holeRadius,
                         new Vector2(0f, -outerRadius), new Vector2(length, -outerRadius), new Vector2(length, -holeRadius), new Vector2(0f, -holeRadius),
-                        VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
+                        VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, radius, 0f);
                     EmitHollowQuad(a + dir * length + perp * outerRadius, a + perp * outerRadius, a + perp * holeRadius, a + dir * length + perp * holeRadius,
                         new Vector2(length, outerRadius), new Vector2(0f, outerRadius), new Vector2(0f, holeRadius), new Vector2(length, holeRadius),
-                        VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
-                    EmitHollowAnnulus(a, lineRotation, Vector2.Zero, -MathF.PI * 0.5f, MathF.PI * 0.5f, new Vector2(holeRadius), new Vector2(outerRadius), false, VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
-                    EmitHollowAnnulus(a, lineRotation, new Vector2(length, 0f), MathF.PI * 0.5f, MathF.PI * 0.5f, new Vector2(holeRadius), new Vector2(outerRadius), false, VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, 0f, 0f);
+                        VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, radius, 0f);
+                    EmitHollowAnnulus(a, lineRotation, Vector2.Zero, -MathF.PI * 0.5f, MathF.PI * 0.5f, new Vector2(holeRadius), new Vector2(outerRadius), false, VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, radius, 0f);
+                    EmitHollowAnnulus(a, lineRotation, new Vector2(length, 0f), MathF.PI * 0.5f, MathF.PI * 0.5f, new Vector2(holeRadius), new Vector2(outerRadius), false, VertexShape.Shape.Line, fill, border, thickness, radius, length, aaSize, radius, 0f, 0f, radius, 0f);
                     return;
                 }
             }
@@ -340,10 +342,10 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
-            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
-            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topRight), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
-            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomRight), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
-            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomLeft), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topRight), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(width1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomRight), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(bottomLeft), width, aaSize: aaSize, rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, dash: rd.TypeDigit);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -374,7 +376,36 @@ namespace Apos.Shapes {
             }
             // A closed path already returns to its first point, so a repeat of it is a duplicate too.
             if (closed && n > 1 && Vector2.DistanceSquared(pts[n - 1], pts[0]) <= 1e-12f) n--;
-            DrawPathCore(pts[..n], default, radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
+            DrawPathCore(pts[..n], default, radius, default, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
+        }
+        /// <summary>
+        /// Draws a path whose width varies, with a radius per point: the stroke runs between the two
+        /// end circles of every segment, so it swells and tapers smoothly instead of stepping. Feed
+        /// one radius per point; the shorter of the two lists decides how far the path goes. Every
+        /// other DrawPath rule applies, dashes included: the pattern walks the spine and takes the
+        /// stroke's width wherever it stands.
+        /// </summary>
+        public void DrawPath(ReadOnlySpan<Vector2> points, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            int take = Math.Min(points.Length, radii.Length);
+            Span<Vector2> pts = take <= 256 ? stackalloc Vector2[take] : new Vector2[take];
+            Span<float> rs = take <= 256 ? stackalloc float[take] : new float[take];
+            int n = 0;
+            for (int i = 0; i < take; i++) {
+                // A dropped duplicate hands its radius to the point that absorbed it, so the widest
+                // reading at a spot is the one that survives.
+                if (n == 0 || Vector2.DistanceSquared(points[i], pts[n - 1]) > 1e-12f) {
+                    pts[n] = points[i];
+                    rs[n] = radii[i];
+                    n++;
+                } else {
+                    rs[n - 1] = MathF.Max(rs[n - 1], radii[i]);
+                }
+            }
+            if (closed && n > 1 && Vector2.DistanceSquared(pts[n - 1], pts[0]) <= 1e-12f) {
+                n--;
+                rs[0] = MathF.Max(rs[0], rs[n]);
+            }
+            DrawPathCore(pts[..n], default, 0f, rs[..n], fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
         }
         /// <summary>
         /// Starts building a path point by point, an alternative to DrawPath that needs no point array.
@@ -387,6 +418,7 @@ namespace Apos.Shapes {
             }
             _pathOpen = true;
             _pathPointCount = 0;
+            _pathTapered = false;
             _pathRadius = radius;
             _pathFill = fill;
             _pathBorder = border;
@@ -409,10 +441,23 @@ namespace Apos.Shapes {
         /// the joint at this point and every following joint until another point switches it again.
         /// </summary>
         public void PathTo(Vector2 point, PathJoin? join = null) {
+            AddPathPoint(point, _pathRadius, join);
+        }
+        /// <summary>
+        /// Adds the next point with its own radius, which makes the stroke taper. One point carrying a
+        /// radius is enough to switch the whole path over; the rest keep the one BeginPath was given.
+        /// </summary>
+        public void PathTo(Vector2 point, float radius, PathJoin? join = null) {
+            _pathTapered = true;
+            AddPathPoint(point, radius, join);
+        }
+        private void AddPathPoint(Vector2 point, float radius, PathJoin? join) {
             if (!_pathOpen) {
                 throw new InvalidOperationException("BeginPath must be called before PathTo.");
             }
             EnsureSizeOrDouble(ref _pathPoints, _pathPointCount + 1);
+            EnsureSizeOrDouble(ref _pathRadii, _pathPointCount + 1);
+            _pathRadii[_pathPointCount] = radius;
             _pathPoints[_pathPointCount++] = new PathPoint(point, join);
         }
         /// <summary>Draws the path built since BeginPath, capped at both ends.</summary>
@@ -432,52 +477,100 @@ namespace Apos.Shapes {
                 throw new InvalidOperationException("BeginPath must be called before EndPath or ClosePath.");
             }
             _pathOpen = false;
-            DrawPathPoints(new ReadOnlySpan<PathPoint>(_pathPoints, 0, _pathPointCount), _pathRadius, _pathFill, _pathBorder, _pathThickness, _pathJoin, _pathCap, _pathCapEnd, _pathMiterLimit, _pathAaSize, closed, _pathDash);
+            ReadOnlySpan<float> radii = _pathTapered
+                ? new ReadOnlySpan<float>(_pathRadii, 0, _pathPointCount)
+                : default;
+            DrawPathPoints(new ReadOnlySpan<PathPoint>(_pathPoints, 0, _pathPointCount), _pathRadius, _pathFill, _pathBorder, _pathThickness, _pathJoin, _pathCap, _pathCapEnd, _pathMiterLimit, _pathAaSize, closed, _pathDash, radii);
         }
 
         // The styled entry point behind the ShapeBatchPathExtensions overloads. Kept internal so plain
         // Vector2 point lists keep binding the overload above without ambiguity on any C# version.
-        internal void DrawPathPoints(ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap cap, PathCap? capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default) {
-            Span<Vector2> pts = points.Length <= 256 ? stackalloc Vector2[points.Length] : new Vector2[points.Length];
-            Span<PathJoin> joins = points.Length <= 256 ? stackalloc PathJoin[points.Length] : new PathJoin[points.Length];
+        internal void DrawPathPoints(ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap cap, PathCap? capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default, ReadOnlySpan<float> radii = default) {
+            bool tapered = !radii.IsEmpty;
+            // The shorter of the two lists decides how far the path goes, the same rule the plain
+            // Vector2 overload states.
+            int take = tapered ? Math.Min(points.Length, radii.Length) : points.Length;
+            Span<Vector2> pts = take <= 256 ? stackalloc Vector2[take] : new Vector2[take];
+            Span<PathJoin> joins = take <= 256 ? stackalloc PathJoin[take] : new PathJoin[take];
+            Span<float> rs = !tapered ? default
+                : take <= 256 ? stackalloc float[take] : new float[take];
             int n = 0;
             PathJoin running = join;
-            foreach (PathPoint p in points) {
+            for (int i = 0; i < take; i++) {
+                PathPoint p = points[i];
                 if (p.Join.HasValue) running = p.Join.Value;
                 if (n == 0 || Vector2.DistanceSquared(p.Position, pts[n - 1]) > 1e-12f) {
                     pts[n] = p.Position;
                     joins[n] = running;
+                    if (tapered) rs[n] = radii[i];
                     n++;
                 } else {
-                    // A dropped duplicate still carries its style forward.
+                    // A dropped duplicate still carries its style forward, and the widest reading at
+                    // a spot is the one that survives.
                     joins[n - 1] = running;
+                    if (tapered) rs[n - 1] = MathF.Max(rs[n - 1], radii[i]);
                 }
             }
             // A closed path already returns to its first point, so a repeat of it is a duplicate too.
             if (closed && n > 1 && Vector2.DistanceSquared(pts[n - 1], pts[0]) <= 1e-12f) {
                 n--;
                 joins[0] = joins[n];
+                if (tapered) rs[0] = MathF.Max(rs[0], rs[n]);
             }
-            DrawPathCore(pts[..n], joins[..n], radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
+            DrawPathCore(pts[..n], joins[..n], radius, tapered ? rs[..n] : default, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
         }
         // joins holds the effective join per point (empty for a uniform path); the joint at the end of
         // segment j reads entry j + 1, wrapping with the segments when the path is closed.
-        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default) {
+        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default) {
             int n = pts.Length;
             if (n == 0) return;
+            bool dashed = dash.IsEnabled;
+            // A caller feeding radii per point may well be feeding the same one every time, as a
+            // pen does when it is not pressure sensitive. Spotting that is worth an O(n) scan: it
+            // puts the path back on the uniform geometry, which is cheaper and tiles at a joint
+            // without having to square anything off.
+            if (!radii.IsEmpty) {
+                bool same = true;
+                for (int i = 1; i < radii.Length; i++) {
+                    if (radii[i] != radii[0]) { same = false; break; }
+                }
+                if (same) {
+                    radius = radii.IsEmpty ? radius : radii[0];
+                    radii = default;
+                }
+            }
+            // Half the stroke's width at a point. A uniform path answers with the one radius it was
+            // given. Static because a span can't be captured, so the span rides along instead.
+            static float R(ReadOnlySpan<float> radii, float radius, int i) => radii.IsEmpty ? radius : radii[i];
+            // How far a tapered segment's quad has to reach from the spine. Its wall is the two end
+            // circles' common tangent, which leans, so it stands 1 / Cos further out than the
+            // perpendicular offset; and once the radii differ by more than the segment is long, one
+            // circle swallows the other and the hull is that circle alone. Both cross sections take
+            // the widest of it, since a quad that only reached its own end would cut the other
+            // end's circle short wherever the steps are shorter than the stroke is wide. The SDF
+            // clips the surplus back, so this only ever costs fill. Uniform segments are unchanged.
+            static float SegH(float rA, float rB, float len, float aaOffset) {
+                float b = (rA - rB) / len;
+                float h = MathF.Max(rA, rB) + aaOffset;
+                if (b == 0f) return h;
+                float cos = MathF.Sqrt(MathF.Max(1f - b * b, 0f));
+                return cos <= 0f ? h : h / cos;
+            }
+
             // A loop needs a triangle at least; anything shorter has no interior to go around and
             // draws as the open stroke it already is.
             if (closed && n < 3) closed = false;
             if (n == 1) {
+                float r0 = R(radii, radius, 0);
                 if (capStart == PathCap.Round) {
-                    DrawCircle(pts[0], radius, fill, border, thickness, aaSize: aaSize);
+                    DrawCircle(pts[0], r0, fill, border, thickness, aaSize: aaSize);
                 } else if (capStart == PathCap.Square) {
-                    DrawRectangle(pts[0] - new Vector2(radius), new Vector2(radius * 2f), fill, border, thickness, default, aaSize: aaSize);
+                    DrawRectangle(pts[0] - new Vector2(r0), new Vector2(r0 * 2f), fill, border, thickness, default, aaSize: aaSize);
                 }
                 return;
             }
-            if (n == 2 && capStart == PathCap.Round && capEnd == PathCap.Round) {
-                DrawLine(pts[0], pts[1], radius, fill, border, thickness, aaSize, dash);
+            if (n == 2 && capStart == PathCap.Round && capEnd == PathCap.Round && (radii.IsEmpty || radii[0] == radii[1])) {
+                DrawLine(pts[0], pts[1], R(radii, radius, 0), fill, border, thickness, aaSize, dash);
                 return;
             }
 
@@ -486,17 +579,14 @@ namespace Apos.Shapes {
             int segs = closed ? n : n - 1;
             int jointCount = closed ? n : n - 2;
 
-            bool dashed = dash.IsEnabled;
-
             if (_isPerspective) {
                 float worst = 0f;
                 for (int i = 0; i < n; i++) {
-                    worst = MathF.Max(worst, SamplePixelSize(pts[i], radius));
+                    worst = MathF.Max(worst, SamplePixelSize(pts[i], R(radii, radius, i)));
                 }
                 _pixelSize = worst;
             }
-            float aaOffset = _pixelSize * aaSize;
-            float h = radius + aaOffset; // Quads reach the outer AA edge.
+            float aaOffset = _pixelSize * aaSize; // Quads reach the outer AA edge.
 
             // One anchor for the whole path so gradients run seamlessly across segments.
             GradientToWorld(ref fill, ref border, pts[0], Vector2.Zero, MathF.Atan2(pts[1].Y - pts[0].Y, pts[1].X - pts[0].X));
@@ -514,6 +604,13 @@ namespace Apos.Shapes {
                 float len = d.Length();
                 Vector2 u = d / len;
                 ref PathJoint jd = ref joints[j];
+                // Both segments meeting here are the joint point's width, so the corner is built
+                // from that one half width even when the rest of the stroke tapers away from it.
+                // Both segments meeting here are built from the joint point's half width, taken wide
+                // enough for whichever of them reaches further so the shared corner covers both.
+                float h = radii.IsEmpty ? radius + aaOffset : MathF.Max(
+                    SegH(R(radii, radius, j), R(radii, radius, (j + 1) % n), lenPrev, aaOffset),
+                    SegH(R(radii, radius, (j + 1) % n), R(radii, radius, (j + 2) % n), len, aaOffset));
 
                 float c2 = Vector2.Dot(uPrev, u);
                 float s2 = uPrev.X * u.Y - uPrev.Y * u.X;
@@ -530,9 +627,11 @@ namespace Apos.Shapes {
                     jd.CHalf = cHalf;
                     jd.SHalf = sHalf;
                     jd.Theta = 2f * MathF.Atan2(sHalf, cHalf);
+                    // The bisector, pointing at the inner miter. Also names the outer miter tip,
+                    // which a round joint may borrow instead of fanning; see below.
+                    Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
                     if (run <= MathF.Min(lenPrev, len) * 0.5f) {
                         jd.Mode = PathJointMode.Partition;
-                        Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
                         jd.BIn = joint + m * (sign * h / cHalf);
                         PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
                         if (requested != PathJoin.Round && jd.Theta > 1e-4f) {
@@ -542,10 +641,11 @@ namespace Apos.Shapes {
                             // A nearly straight bevel is a miter; its cut plane would run parallel to the stroke.
                             if (effective == PathJoin.Bevel && sHalf < 0.01f) effective = PathJoin.Miter;
                             jd.Join = effective;
-                            // Miter: the h-offset lines' outer intersection. Bevel: just past the cut plane's AA.
+                            // Miter: the h-offset lines' outer intersection. Bevel: just past the cut
+                            // plane's AA, which stands off by the joint point's own half width.
                             jd.MOut = effective == PathJoin.Miter
                                 ? joint - m * (sign * h / cHalf)
-                                : joint - m * (sign * (radius * cHalf + aaOffset + _pixelSize));
+                                : joint - m * (sign * (R(radii, radius, (j + 1) % n) * cHalf + aaOffset + _pixelSize));
                         }
                     } else {
                         // The inner miter outruns a short segment. Overlapping slabs stay hole-free and only
@@ -576,15 +676,36 @@ namespace Apos.Shapes {
                             // move it off the real corner and the dash stops following the stroke.
                             // They have no fan center to escape anyway: a rounded dash reaches it as
                             // a half disc rather than tapering to a point.
-                            float want = dash.Cap == DashCap.Round ? radius : 2f * radius;
-                            // The code spans [radius, 2 * radius]; the shader mirrors this mapping.
-                            jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, want) / radius - 1f) * 127f), 0f, 127f);
-                            jd.DashArc = (thetaQ - 2f * tanQ) * radius * (1f + jd.DashRadiusCode / 127f);
+                            // The corner is the joint point's own half width on a tapered path, and
+                            // both segments read that same one from their shared end, so the two of
+                            // them still decode the fillet to the same arc.
+                            float rJoint = MathF.Max(R(radii, radius, (j + 1) % n), 1e-6f);
+                            float want = dash.Cap == DashCap.Round ? rJoint : 2f * rJoint;
+                            // The code spans [rJoint, 2 * rJoint]; the shader mirrors this mapping.
+                            jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, want) / rJoint - 1f) * 127f), 0f, 127f);
+                            jd.DashArc = (thetaQ - 2f * tanQ) * rJoint * (1f + jd.DashRadiusCode / 127f);
                         } else {
                             jd.ThetaCode = 1024f;
                         }
                     }
-                    if (jd.Theta > 1e-4f) {
+                    // A miter tip already contains the whole join arc: both of its faces lie on the
+                    // segments' own offset lines, which never come nearer the joint than h. In
+                    // Partition mode the inner point, the joint and that tip are all on the
+                    // bisector, so meeting there cuts the corner the same way the fan does — the
+                    // quads still tile, they just reach the tip instead of arcing to it, and the
+                    // round end mode carves the same pixels back out. Freehand strokes are mostly
+                    // shallow joints, so this is the difference between one quad per segment and
+                    // two. Overlap mode keeps the fan: its cross sections leave the bisector, so a
+                    // shared tip would put the corner in both quads and blend it twice. So do
+                    // dashed paths, where the pattern walks a fillet the fan geometry carries.
+                    // (See also PathDashCut in the shader.)
+                    if (jd.Theta > 1e-4f && !dashed && jd.Join == PathJoin.Round
+                        && jd.Mode == PathJointMode.Partition
+                        && h * (1f / cHalf - 1f) <= _pathMiterForFanPixels * _pixelSize) {
+                        jd.FlatCut = true;
+                        jd.Chords = 0;
+                        jd.MOut = joint - m * (sign * h / cHalf);
+                    } else if (jd.Theta > 1e-4f) {
                         // Same sagitta rule as EmitHollowAnnulus: chords circumscribe the join arc.
                         float phi = MathF.Acos(MathF.Max(1f - _hollowMaxSagPixels * _pixelSize / h, 0f));
                         jd.Chords = Math.Clamp((int)MathF.Ceiling(jd.Theta / MathF.Max(phi, 1e-4f)), 1, _hollowMaxSectors);
@@ -603,9 +724,11 @@ namespace Apos.Shapes {
             }
 
             // The dash pattern runs along the polyline with each joint's corner rounded off for
-            // dashing (see PathDashCut in the shader); each quad carries its segment's start
-            // length so dashes flow through the joints unbroken. Closed contours snap the period
-            // to a whole number of repeats, so the pattern meets itself at the wrap with no seam.
+            // dashing (see PathDashCut in the shader); each quad carries the pattern already slid
+            // back by how far along the contour its segment starts, so dashes flow through the
+            // joints unbroken while the shader's contour coordinate stays local to one segment.
+            // Closed contours snap the period to a whole number of repeats, so the pattern meets
+            // itself at the wrap with no seam.
             ResolvedDash rd = default;
             if (dashed) {
                 float totalLen = 0f;
@@ -620,8 +743,15 @@ namespace Apos.Shapes {
 
             // Cross sections at each end: two corners at a cap, up to three points at a joint.
             // Every polygon is convex, so a fan from the first vertex triangulates it.
+            bool tapered = !radii.IsEmpty;
             Span<Vector2> poly = stackalloc Vector2[6];
+            // How far along the contour each segment starts. A uniform path sends it as it stands
+            // and the shader adds it to the pixel's own coordinate; a tapered one has no slot left
+            // for it and slides the pattern's phase back by it instead, which is why that walk is
+            // kept inside one period: the phase is all it ends up being, and a long path's running
+            // total would spend most of a float on whole periods the shader's frac throws away.
             float startLen = 0f;
+            float dashWalk = 0f;
             for (int i = 0; i < segs; i++) {
                 Vector2 a = pts[i];
                 Vector2 b = pts[(i + 1) % n];
@@ -629,6 +759,13 @@ namespace Apos.Shapes {
                 float len = d.Length();
                 Vector2 u = d / len;
                 Vector2 nrm = new(-u.Y, u.X);
+                // The quad is a trapezoid when the two ends differ: each cross section is built at
+                // its own end's half width, which is also the half width the joint there used, so
+                // neighbouring segments still meet on the same points.
+                float radiusA = R(radii, radius, i);
+                float radiusB = R(radii, radius, (i + 1) % n);
+                float hA = radii.IsEmpty ? radiusA + aaOffset : SegH(radiusA, radiusB, len, aaOffset);
+                float hB = radii.IsEmpty ? radiusB + aaOffset : hA;
 
                 // A closed path joints at both ends of every segment, the first one included; an open
                 // one caps where it runs out of joints.
@@ -642,17 +779,40 @@ namespace Apos.Shapes {
                 float modeEnd = 0f;
                 float angStart = 0f;
                 float angEnd = 0f;
+                // An overlap joint's cross section pinches in to the joint itself and leans on the
+                // neighbour to cover the rest of the corner. Two segments the same width do cover
+                // for each other; two that taper differently do not, and the shortfall shows up as
+                // a bitten edge. So those ends get squared off over the segment's own cone instead.
+                // They are the joints that already overlap, so nothing is lost by it — but only the
+                // joints that actually change width pay for it, since squaring costs the fill rate
+                // the partition was there to save.
+                bool squareStart = tapered && hasStart && joints[js].Mode == PathJointMode.Overlap
+                    && !(radiusA == radiusB && radiusA == R(radii, radius, (i - 1 + n) % n));
+                bool squareEnd = tapered && hasEnd && joints[je].Mode == PathJointMode.Overlap
+                    && !(radiusA == radiusB && radiusB == R(radii, radius, (i + 2) % n));
+
                 // Start end, walked from +nrm to -nrm so the polygon winds clockwise on screen.
-                if (!hasStart || joints[js].Mode == PathJointMode.Reversal) {
+                if (!hasStart || squareStart || joints[js].Mode == PathJointMode.Reversal) {
                     // Reversal fallbacks keep round caps; only true path ends take the cap style.
-                    float ext = !hasStart && capStart == PathCap.Butt ? aaOffset : h;
+                    float ext = !hasStart && capStart == PathCap.Butt ? aaOffset : hA;
                     if (!hasStart) modeStart = (float)capStart;
                     Vector2 back = a - u * ext;
-                    poly[count++] = back + nrm * h;
-                    poly[count++] = back - nrm * h;
+                    poly[count++] = back + nrm * hA;
+                    poly[count++] = back - nrm * hA;
                 } else {
                     ref PathJoint jd = ref joints[js];
-                    if (jd.Join == PathJoin.Miter) {
+                    if (jd.FlatCut) {
+                        // Two points, not three: a middle vertex on a straight cut makes a
+                        // degenerate triangle, which can drop a pixel at the seam. The end mode
+                        // stays round so the SDF still carves the arc out of the miter tip.
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                        } else {
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        }
+                    } else if (jd.Join == PathJoin.Miter) {
                         modeStart = 3f;
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.BIn;
@@ -665,7 +825,7 @@ namespace Apos.Shapes {
                         modeStart = 4f;
                         angStart = MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf);
                         // Where the cut plane's AA edge leaves the outer offset line.
-                        Vector2 x0 = a - u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * h);
+                        Vector2 x0 = a - u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * hA);
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.BIn;
                             poly[count++] = jd.MOut;
@@ -676,7 +836,7 @@ namespace Apos.Shapes {
                             poly[count++] = jd.BIn;
                         }
                     } else {
-                        Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : a + nrm * (jd.Sign * h);
+                        Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : a + nrm * (jd.Sign * hA);
                         if (jd.Sign > 0f) {
                             poly[count++] = inner;
                             poly[count++] = a;
@@ -689,15 +849,23 @@ namespace Apos.Shapes {
                     }
                 }
                 // End end, walked from -nrm back to +nrm.
-                if (!hasEnd || joints[je].Mode == PathJointMode.Reversal) {
-                    float ext = !hasEnd && capEnd == PathCap.Butt ? aaOffset : h;
+                if (!hasEnd || squareEnd || joints[je].Mode == PathJointMode.Reversal) {
+                    float ext = !hasEnd && capEnd == PathCap.Butt ? aaOffset : hB;
                     if (!hasEnd) modeEnd = (float)capEnd;
                     Vector2 fwd = b + u * ext;
-                    poly[count++] = fwd - nrm * h;
-                    poly[count++] = fwd + nrm * h;
+                    poly[count++] = fwd - nrm * hB;
+                    poly[count++] = fwd + nrm * hB;
                 } else {
                     ref PathJoint jd = ref joints[je];
-                    if (jd.Join == PathJoin.Miter) {
+                    if (jd.FlatCut) {
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        } else {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                        }
+                    } else if (jd.Join == PathJoin.Miter) {
                         modeEnd = 3f;
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.MOut;
@@ -709,7 +877,7 @@ namespace Apos.Shapes {
                     } else if (jd.Join == PathJoin.Bevel) {
                         modeEnd = 4f;
                         angEnd = MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf);
-                        Vector2 x1 = b + u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * h);
+                        Vector2 x1 = b + u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * hB);
                         if (jd.Sign > 0f) {
                             poly[count++] = x1;
                             poly[count++] = jd.MOut;
@@ -720,7 +888,7 @@ namespace Apos.Shapes {
                             poly[count++] = x1;
                         }
                     } else {
-                        Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : b + nrm * (jd.Sign * h);
+                        Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : b + nrm * (jd.Sign * hB);
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.E1Prev;
                             poly[count++] = b;
@@ -738,8 +906,9 @@ namespace Apos.Shapes {
                 float thetaCodeEnd = hasEnd ? joints[je].ThetaCode : 1024f;
                 float radiusCodeStart = hasStart ? joints[js].DashRadiusCode : 0f;
                 float radiusCodeEnd = hasEnd ? joints[je].DashRadiusCode : 0f;
+                ResolvedDash rs = tapered ? rd.AtOffset(dashWalk) : rd;
                 for (int k = 1; k + 1 < count; k += 2) {
-                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radius, aaSize, modes, angStart, angEnd, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, rd);
+                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, tapered, rs);
                 }
 
                 // Round join: a fan around the joint covers the outer wedge between the two walls. Any
@@ -748,20 +917,25 @@ namespace Apos.Shapes {
                     ref PathJoint jd = ref joints[je];
                     float baseAngle = MathF.Atan2(-jd.Sign * nrm.Y, -jd.Sign * nrm.X);
                     float step = jd.Sign * jd.Theta / jd.Chords;
-                    float reach = h * jd.Overshoot;
+                    float reach = hB * jd.Overshoot;
                     for (int t = 0; t < jd.Chords; t += 2) {
                         Vector2 v0 = PathFanVertex(jd, b, baseAngle, step, reach, t);
                         Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
                         Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
                         if (jd.Sign > 0f) {
-                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radius, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, rd);
+                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, tapered, rs);
                         } else {
-                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radius, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, rd);
+                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, tapered, rs);
                         }
                     }
                 }
 
-                startLen += len + (hasEnd ? joints[je].DashArc : 0f);
+                float walked = len + (hasEnd ? joints[je].DashArc : 0f);
+                startLen += walked;
+                if (rd.TypeDigit > 0) {
+                    dashWalk += walked;
+                    dashWalk -= MathF.Floor(dashWalk / rd.Period) * rd.Period;
+                }
             }
         }
         public void FillPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
@@ -769,6 +943,14 @@ namespace Apos.Shapes {
         }
         public void BorderPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             DrawPath(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
+        }
+        /// <summary>Fills a path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        public void FillPath(ReadOnlySpan<Vector2> points, ReadOnlySpan<float> radii, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            DrawPath(points, radii, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash);
+        }
+        /// <summary>Outlines a path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        public void BorderPath(ReadOnlySpan<Vector2> points, ReadOnlySpan<float> radii, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            DrawPath(points, radii, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
 
         public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
@@ -1248,6 +1430,78 @@ namespace Apos.Shapes {
             _indexCount += 6;
         }
 
+        /// <summary>
+        /// Fills a line whose edge falls off as a Gaussian of standard deviation
+        /// <paramref name="blur"/>, measured in world units. See <see cref="FillCircleBlurred"/>.
+        /// The ends are round, so this is the blur of a capsule.
+        /// </summary>
+        public void FillLineBlurred(Vector2 a, Vector2 b, float radius, Color color, float blur) {
+            DrawLineBlurred(a, b, radius, radius, color, blur, 0f);
+        }
+        /// <summary>
+        /// Fills a line whose half width runs from <paramref name="radiusA"/> at one end to
+        /// <paramref name="radiusB"/> at the other, so a soft stroke can swell and taper. The
+        /// shape is the hull of the two end circles, the same one a path segment draws between
+        /// two points of different radius. See <see cref="FillCircleBlurred"/>.
+        /// </summary>
+        public void FillLineBlurred(Vector2 a, Vector2 b, float radiusA, float radiusB, Color color, float blur) {
+            DrawLineBlurred(a, b, radiusA, radiusB, color, blur, 0f);
+        }
+        /// <summary>
+        /// Draws a blurred line's outline, of the given thickness measured inward from the edge,
+        /// with nothing inside it. See <see cref="BorderCircleBlurred"/>.
+        /// </summary>
+        public void BorderLineBlurred(Vector2 a, Vector2 b, float radius, Color color, float blur, float thickness = 1f) {
+            DrawLineBlurred(a, b, radius, radius, color, blur, MathF.Max(thickness, 0f));
+        }
+        /// <summary>
+        /// Draws a tapering blurred line's outline, of the given thickness measured inward from the
+        /// edge, with nothing inside it. See <see cref="BorderCircleBlurred"/>.
+        /// </summary>
+        public void BorderLineBlurred(Vector2 a, Vector2 b, float radiusA, float radiusB, Color color, float blur, float thickness = 1f) {
+            DrawLineBlurred(a, b, radiusA, radiusB, color, blur, MathF.Max(thickness, 0f));
+        }
+        private void DrawLineBlurred(Vector2 a, Vector2 b, float radiusA, float radiusB, Color color, float blur, float thickness) {
+            float wide = MathF.Max(radiusA, radiusB);
+            if (a == b) {
+                DrawCircleBlurred(a, wide, color, blur, thickness);
+                return;
+            }
+
+            UpdatePixelSize(a, b, wide);
+            PrepareQuad();
+
+            float sigma = BlurSigma(blur);
+            float reach = _blurReach * sigma;
+            float length = Vector2.Distance(a, b);
+            (float sinL, float cosL) = MathF.SinCos(MathF.Atan2(b.Y - a.Y, b.X - a.X));
+            Vector2 dir = new(cosL, sinL);
+            Vector2 perp = new(-sinL, cosL);
+
+            // Both end circles, however far one reaches past the other: with a taper steeper than
+            // the line is long the hull is the bigger circle alone, and it can swallow the far end.
+            float back = MathF.Min(-radiusA, length - radiusB) - reach;
+            float front = MathF.Max(radiusA, length + radiusB) + reach;
+            float half = wide + reach;
+
+            Vector2 topLeft = a + dir * back - perp * half;
+            Vector2 topRight = a + dir * front - perp * half;
+            Vector2 bottomRight = a + dir * front + perp * half;
+            Vector2 bottomLeft = a + dir * back + perp * half;
+
+            // Same channels a plain line uses, with the far end's half width in the third spare
+            // slot. Matching radii there is what asks for the capsule, and the shader answers a
+            // taper with the two circles' hull instead, dropping the rounding it has folded in.
+            _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(back, -half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(topLeft), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(front, -half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(topRight), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 2] = new VertexShape(new Vector3(bottomRight, 0), new Vector2(front, half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(bottomRight), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 3] = new VertexShape(new Vector3(bottomLeft, 0), new Vector2(back, half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(bottomLeft), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, blur: sigma);
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad();
 
@@ -1715,6 +1969,9 @@ namespace Apos.Shapes {
         // Chords may overshoot the band by up to this sagitta; sector counts scale with radius to hold it.
         private const float _hollowMaxSagPixels = 2f;
         private const int _hollowMaxSectors = 128;
+        // How far past the join arc a round joint's miter tip may reach before it stops being
+        // worth standing in for the fan. Pure overdraw, not error, so the budget buys vertices.
+        private const float _pathMiterForFanPixels = 1f;
 
         private static bool IsTransparent(in Gradient g) {
             return g.AC.A == 0 && g.BC.A == 0;
@@ -1784,6 +2041,7 @@ namespace Apos.Shapes {
             public float Sign;      // Which side of the incoming segment the inner miter is on.
             public Vector2 BIn;     // Inner miter point, on both offset lines (Partition mode only).
             public Vector2 MOut;    // Outer miter tip, or the bevel cut's far corner on the bisector.
+            public bool FlatCut;    // Round joint cut straight across the bisector, from BIn to MOut.
             public Vector2 E1Prev;  // Outer wall corner of the incoming segment; first fan vertex.
             public Vector2 E1Next;  // Outer wall corner of the outgoing segment; last fan vertex.
             public float Theta;     // Turn angle of the joint.
@@ -1843,20 +2101,26 @@ namespace Apos.Shapes {
         // A path quad's local coordinates live in its segment's frame: x along the segment, y across it.
         // Meta2 carries the packed end modes and the bevel plane angles for StrokeSDF. Dashed paths
         // instead pack each end's signed turn angle as two 11 bit codes, from which the shader derives
-        // the bevel planes, to make room for the segment's start length and the period, and put the
-        // fraction and phase in the unused rounding slot. Each end's fillet radius code rides above
-        // the end modes, which only need six bits, keeping that value well under 2^22.
-        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float aaSize, float modes, float angStart, float angEnd, float thetaCodeStart, float thetaCodeEnd, float radiusCodeStart, float radiusCodeEnd, float startLen, in ResolvedDash rd) {
+        // the bevel planes, to make room for the period, and put the fraction and phase in the unused
+        // rounding slot. Each end's fillet radius code rides above the end modes, which only need six
+        // bits, and a flag saying what the third slot holds rides above those, keeping that value well
+        // under 2^22. That slot is the segment's start length while the width is uniform, exactly as
+        // it always was, and the far half width once the stroke tapers and needs somewhere to put it;
+        // a tapered one hands the segment's start to the pattern's phase instead, which is the only
+        // thing that rounds, and only for the strokes that ask to taper.
+        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float radiusEnd, float aaSize, float modes, float angStart, float angEnd, float thetaCodeStart, float thetaCodeEnd, float radiusCodeStart, float radiusCodeEnd, float startLen, bool tapered, in ResolvedDash rd) {
             Vector2 Local(Vector2 w) {
                 Vector2 r = w - origin;
                 return new Vector2(Vector2.Dot(r, u), Vector2.Dot(r, nrm));
             }
             if (rd.TypeDigit > 0) {
                 float angs = thetaCodeStart * 2048f + thetaCodeEnd;
-                float packed = modes + 64f * (radiusCodeStart + 128f * radiusCodeEnd);
-                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, rd.FracPhase, packed, angs, startLen, rd.Period, rd.TypeDigit);
+                float packed = modes + 64f * (radiusCodeStart + 128f * (radiusCodeEnd + 128f * (tapered ? 1f : 0f)));
+                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, rd.FracPhase, packed, angs, tapered ? radiusEnd : startLen, rd.Period, rd.TypeDigit);
             } else {
-                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, 0f);
+                // The last slot carries the far end's half width; equal to radius on a uniform
+                // path, which is how the shader knows to take the plain capsule.
+                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, radiusEnd);
             }
         }
 
@@ -1981,7 +2245,9 @@ namespace Apos.Shapes {
 
         // Streaming path state for BeginPath/PathTo/EndPath. The point buffer is reused across paths.
         private PathPoint[] _pathPoints = new PathPoint[64];
+        private float[] _pathRadii = new float[64];
         private int _pathPointCount;
+        private bool _pathTapered;
         private bool _pathOpen;
         private float _pathRadius;
         private Gradient _pathFill;
@@ -1999,8 +2265,9 @@ namespace Apos.Shapes {
     /// Path overloads whose points carry join styles. A point's style applies to the joint at that
     /// point and to every following joint until another point sets a different one; the join parameter
     /// seeds the style before the first styled point. Points convert implicitly from Vector2 and from
-    /// (position, join) tuples. These are extension methods so plain Vector2 point lists keep binding
-    /// the ShapeBatch overloads without ambiguity on every C# language version.
+    /// (position, join) tuples. Each one comes in a varying width flavor too, taking a radius per
+    /// point in place of the single one. These are extension methods so plain Vector2 point lists keep
+    /// binding the ShapeBatch overloads without ambiguity on every C# language version.
     /// </summary>
     public static class ShapeBatchPathExtensions {
         public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
@@ -2011,6 +2278,24 @@ namespace Apos.Shapes {
         }
         public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
+        }
+
+        /// <summary>
+        /// Draws a styled path whose width varies, with a radius per point: the stroke runs between
+        /// the two end circles of every segment, so it swells and tapers smoothly instead of stepping.
+        /// Feed one radius per point; the shorter of the two lists decides how far the path goes.
+        /// See the <see cref="ShapeBatch.DrawPath(ReadOnlySpan{Vector2}, ReadOnlySpan{float}, Gradient, Gradient, float, PathJoin, PathCap, PathCap?, float, float, bool, DashStyle)"/> overload.
+        /// </summary>
+        public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            sb.DrawPathPoints(points, 0f, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash, radii);
+        }
+        /// <summary>Fills a styled path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        public static void FillPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, ReadOnlySpan<float> radii, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            sb.DrawPathPoints(points, 0f, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash, radii);
+        }
+        /// <summary>Outlines a styled path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, ReadOnlySpan<float> radii, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            sb.DrawPathPoints(points, 0f, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash, radii);
         }
     }
 }

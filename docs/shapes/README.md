@@ -104,6 +104,22 @@ for (int i = 0; i <= 24; i++) {
 _sb.EndPath();
 ```
 
+A path can also vary in width. Pass a radius per point instead of a single one and the stroke runs between each segment's two end circles, so it swells and tapers smoothly rather than stepping at every joint. This is what a pen's pressure gives you:
+
+```csharp
+Vector2[] points = new Vector2[25];
+float[] radii = new float[25];
+for (int i = 0; i < points.Length; i++) {
+    points[i] = new Vector2(20 + i * 15, 80 + MathF.Sin(i * 0.7f) * 50);
+    radii[i] = 2 + i * 0.7f;
+}
+_sb.FillPath(points, radii, Color.White);
+```
+
+`PathTo` takes a radius the same way, and one point carrying one switches the whole path over; the rest keep the radius `BeginPath` was given. Points that carry join styles take a radius list too, so a stroke can vary its width and its joins at once.
+
+A varying width dashes like any other path. The pattern still walks the spine, and each dash comes out as wide as the stroke is where it lands, caps included.
+
 Miter joins sharper than the `miterLimit` parameter, measured like SVG's `miterlimit` with a default of 4, fall back to bevel. A path that crosses over itself overlaps like two separate shapes would. The same happens at a joint whose segments are shorter than the stroke is wide.
 
 Pass `closed: true` to join the last point back to the first. The wrap is an ordinary joint rather than two caps, so it takes the same join styles and a translucent loop still blends exactly once all the way around. The `cap` parameters go unused. When the path is built one point at a time, finish it with `ClosePath()` instead of `EndPath()`:

@@ -152,7 +152,7 @@ namespace Apos.Shapes {
             phase += Offset;
             phase -= MathF.Floor(phase);
 
-            return new ResolvedDash(period, Pack11(frac, phase), Cap == DashCap.Round ? 2 : 1);
+            return new ResolvedDash(period, frac, phase, Cap == DashCap.Round ? 2 : 1);
         }
 
         // Mirrors the shader's Pack11: two [0, 1] values as 11 bit integers in one exact float.
@@ -164,14 +164,32 @@ namespace Apos.Shapes {
     // A dash pattern fitted to one shape's contour. TypeDigit 0 means not dashed; Period and
     // FracPhase travel in shape-specific spare vertex channels.
     internal readonly struct ResolvedDash {
-        public ResolvedDash(float period, float fracPhase, int typeDigit) {
+        public ResolvedDash(float period, float frac, float phase, int typeDigit) {
             Period = period;
-            FracPhase = fracPhase;
+            Frac = frac;
+            Phase = phase;
+            FracPhase = DashStyle.Pack11(frac, phase);
             TypeDigit = typeDigit;
         }
 
         public readonly float Period;
+        public readonly float Frac;
+        public readonly float Phase;
         public readonly float FracPhase;
         public readonly int TypeDigit;
+
+        // The same pattern seen from a point further along the contour. Sliding the phase back by
+        // how far in the shape starts reading is the same as measuring from the shape's origin,
+        // which is what lets a path hand each segment a contour coordinate that starts at zero,
+        // for when it has no channel left to carry a running total. Both quads at a joint round
+        // the phase separately, so a dash edge can land up to a period over 2047 apart on the two
+        // sides of the seam - subpixel until the view is zoomed far in, and only paid by strokes
+        // that taper, since a uniform one still sends the total and rounds nothing.
+        public ResolvedDash AtOffset(float distance) {
+            if (TypeDigit == 0) return this;
+            float phase = Phase - distance / Period;
+            phase -= MathF.Floor(phase);
+            return new ResolvedDash(Period, Frac, phase, TypeDigit);
+        }
     }
 }

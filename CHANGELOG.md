@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- Paths that vary in width. `DrawPath`, `FillPath`, and `BorderPath` take a radius per point, points carrying join styles included, and `PathTo` takes one too, so a stroke can swell and taper the way a pen's pressure makes it. Segments run between their two end circles instead of stepping at each joint, and a dash comes out as wide as the stroke is where it lands.
+- `FillLineBlurred` and `BorderLineBlurred`, which take one radius or one per end.
+
+### Optimized
+
+- Colors convert to Oklab and Oklch once per color instead of once per vertex. The conversion costs three cbrt and ran sixteen times per quad, so solid shapes in the default color space now build several times faster.
+- A round joint whose miter tip barely clears the join arc cuts straight across the bisector instead of fanning the corner, which saves a quad per joint. Paths made of many shallow joints, like a stroke sampled from a pen, build about twice as fast.
 
 ## [0.7.10] - 2026-07-25
 

@@ -126,6 +126,24 @@ _sb.DrawPath([new Vector2(20, 130), new Vector2(120, 30), new Vector2(220, 130),
 
 This holds for rounded rectangle corners, rounded hexagon and triangle corners, path joints, and the caps at the ends of a stroke. Miter and bevel tips appear once a dash covers the whole joint, and stay rounded off otherwise.
 
+## Varying width
+
+A [path with a radius per point](../shapes/README.md#path) dashes the same way. The pattern walks the spine and knows nothing about the width, so each dash simply comes out as wide as the stroke is where it lands, and a rounded dash's caps take the width at each of its two ends:
+
+```csharp
+Vector2[] points = new Vector2[40];
+float[] radii = new float[40];
+for (int i = 0; i < points.Length; i++) {
+    float t = i / (float)(points.Length - 1);
+    points[i] = new Vector2(20 + t * 380, 90 + MathF.Sin(t * 7f) * 45);
+    radii[i] = 2 + 11 * MathF.Sin(t * MathF.PI);
+}
+
+_sb.FillPath(points, radii, Color.White, dash: new DashStyle(22f, 14f));
+```
+
+![A stroke that swells and tapers, cut into dashes that follow its width](taper.png)
+
 ## Curves
 
 A closed path dashes seamlessly all the way around, which is also how you dash a shape the library can't walk. Flatten the curve (a bezier, a spline, anything you can sample) into points, pass them as a closed path, and it dashes like any other loop:

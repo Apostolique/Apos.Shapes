@@ -10,7 +10,20 @@ _sb.BorderCircleBlurred(new Vector2(270, 95), 50, Color.White, 8f, 14f);
 
 ![A blurred circle next to a blurred ring](blur.png)
 
-There are six: `FillCircleBlurred`, `FillEllipseBlurred` and `FillRectangleBlurred`, and a `Border` version of each. They share the vertex buffer and the draw call with every other shape, so mixing shadows into a scene never splits the batch.
+There are eight: `FillCircleBlurred`, `FillEllipseBlurred`, `FillRectangleBlurred` and `FillLineBlurred`, and a `Border` version of each. They share the vertex buffer and the draw call with every other shape, so mixing shadows into a scene never splits the batch.
+
+## Lines
+
+A blurred line is a capsule with round ends. It also takes a radius per end, which gives the soft stroke a drawing tool wants: one call, swelling or tapering between the two circles it runs across.
+
+```csharp
+_sb.FillLineBlurred(new Vector2(30, 40), new Vector2(390, 40), 18f, Color.White, 5f);
+_sb.FillLineBlurred(new Vector2(30, 120), new Vector2(390, 120), 22f, 3f, Color.White, 5f);
+```
+
+![A blurred capsule above a blurred stroke that tapers to a point](line.png)
+
+Paths are not in this family. A path is many quads that tile along the joints, and each one only knows its own segment, which is exactly what a blur cannot work with: it reaches far enough past an edge to need the whole shape at once. A stroke drawn as overlapping blurred lines doubles up wherever two of them cover the same pixel, and at a soft edge that shows. For a whole soft stroke, draw it into a `RenderTarget2D` and blur that instead.
 
 ## World units, not pixels
 

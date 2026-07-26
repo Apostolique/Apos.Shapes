@@ -311,6 +311,65 @@ float StrokeSDF(float2 p, float len, float r, float4 data) {
     return d;
 }
 
+// Stroked path segment whose half width runs from rA at (0, 0) to rB at (len, 0). The sides
+// are the two end circles' outer tangents, which is what keeps the edge continuous through a
+// joint: neighbouring segments meet at the same width there, so their walls meet at the same
+// point. End modes work the same as in StrokeSDF. With rA == rB this reduces to that capsule,
+// which is why the caller only reaches for it when the two differ.
+float StrokeConeSDF(float2 p, float len, float rA, float rB, float4 data) {
+    float m = data.x;
+    float modeA = DecodeDigit(m, 8.0);
+    float modeB = m;
+    float ay = abs(p.y);
+    float xa = -p.x;
+    float xb = p.x - len;
+    float ea = modeA >= 2.5 ? -1e6 : (modeA >= 1.5 ? xa - rA : xa);
+    float eb = modeB >= 2.5 ? -1e6 : (modeB >= 1.5 ? xb - rB : xb);
+    float e = max(ea, eb);
+    float mode = ea > eb ? modeA : modeB;
+
+    float d;
+    float b = (rA - rB) / len;
+    if (abs(b) >= 1.0) {
+        // One end's circle swallows the other, so the hull is that circle on its own and the
+        // tangents don't exist. Rare, but the sqrt below would go imaginary.
+        float2 c = rA >= rB ? float2(0.0, 0.0) : float2(len, 0.0);
+        d = length(p - c) - max(rA, rB);
+    } else {
+        float a = sqrt(1.0 - b * b);
+        // The wall is the tangent line with unit normal (b, a): it sits rA from the near circle
+        // and rB from the far one, so it leans in as the stroke narrows. side is the distance to
+        // it, k is how far along it the point projects. The wall spans k in [0, a * len]; past
+        // either end the nearest thing is that end's circle.
+        float side = b * p.x + a * ay - rA;
+        float k = a * p.x - b * ay;
+        if (mode < 0.5) {
+            // Where the wall runs out, the nearest thing is that end's circle - unless the end is
+            // open or bevelled, which both say there is nothing there to be near: the wall carries
+            // on and the quad shapes the miter tip out of it, exactly as the capsule's own open end
+            // does by clamping its excess to zero.
+            if (k < 0.0 && modeA < 2.5) d = length(p) - rA;
+            else if (k > a * len && modeB < 2.5) d = length(p - float2(len, 0.0)) - rB;
+            else d = side;
+        } else {
+            // Sharp: the wall meets a flat end face. Interior still resolves to the wall.
+            float2 q = float2(e, side);
+            d = min(max(q.x, q.y), 0.0) + length(max(q, 0.0));
+        }
+    }
+    if (modeA >= 3.5) {
+        float2 dir;
+        sincos(data.y, dir.y, dir.x);
+        d = max(d, dot(p, dir) - rA * abs(dir.y));
+    }
+    if (modeB >= 3.5) {
+        float2 dir;
+        sincos(data.z, dir.y, dir.x);
+        d = max(d, dot(p - float2(len, 0.0), dir) - rB * abs(dir.y));
+    }
+    return d;
+}
+
 // Signed distance along the contour to the nearest dash edge, negative inside a dash.
 // data.x is the period in world units; data.y packs the dash fraction and the phase as two
 // 11 bit values, both period-relative so the quantization stays subpixel. A dash's center
@@ -401,6 +460,19 @@ float2 PathEdgeFrame(float ue, float2 fr, float startLen, float thA, float thB, 
     return float2(ue - startLen, 0.0);
 }
 
+// Half the stroke's width at a contour position. A joint's fan is one width all the way round -
+// the joint point's own - so both quads sharing it agree everywhere in it, and the taper runs
+// between the fans over the straight middle. Uniform strokes answer rA everywhere.
+// lean is the cosine of the taper over that middle, where the stroke's wall is the two end
+// circles' common tangent and so stands 1 / lean further out than the radius. A rounded dash is
+// built as a capsule around the spine, and a capsule of the plain radius would cut the stroke
+// narrow by exactly that factor, so the radius it reaches with is the one that lands on the
+// wall. The fans keep the plain radius: their own boundary is the joint's disc, not a tangent.
+float PathRadiusAt(float ue, float uA, float uB, float rA, float rB, float lean) {
+    float r = lerp(rA, rB, saturate((ue - uA) / max(uB - uA, 1e-6)));
+    return ue > uA && ue < uB ? r / lean : r;
+}
+
 // Dash cut for a path segment, negative inside a dash. For dashing, each joint rounds the
 // spine corner with a fillet arc tangent to both segments, and the pattern runs at unit
 // speed along that rounded spine. The fillet radius, fr per end, is deliberately NOT the
@@ -422,8 +494,12 @@ float2 PathEdgeFrame(float ue, float2 fr, float startLen, float thA, float thB, 
 // edges' spine points. thA and thB are the signed turn angles at the ends, zero at caps and
 // at collinear, overlapping, and reversed joints, where the pattern just runs straight out,
 // matching the line shape.
+// The stroke's half width runs from rA at this end to rB at the far one, and every place the
+// pattern needs a width - the fillets it rounds corners with, the discs that bound a tip, a
+// rounded dash's body and caps - takes the width where it stands rather than one for the whole
+// segment. A uniform stroke passes the same radius twice and every one of them collapses.
 // type >= 1.5 selects rounded dashes.
-float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float thA, float thB, float2 data, float type) {
+float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float startLen, float thA, float thB, float2 data, float type) {
     float aA = abs(thA);
     float aB = abs(thB);
     float sA = sign(thA);
@@ -434,6 +510,11 @@ float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float
     float uB = startLen + len - tB;
     float2 cA = float2(tA, sA * fr.x);
     float2 cB = float2(len - tB, sB * fr.y);
+    // The taper the dash sees over the straight middle, and the cosine that goes with it. Past a
+    // slope of one the tangent stops existing - one end's circle has swallowed the other - and
+    // there is nothing sensible to lean, so it stays upright.
+    float slope = (rB - rA) / max(uB - uA, 1e-6);
+    float lean = abs(slope) < 1.0 ? sqrt(1.0 - slope * slope) : 1.0;
 
     // The pixel's own contour coordinate, which is what puts it between a pair of dash edges.
     // Inside a fan it is the angle around the fillet center, so the coordinate never folds:
@@ -455,15 +536,17 @@ float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float
     // The exact capsule around the rounded spine: inside the dash's span the distance to the
     // spine, and nothing else is needed there.
     if (type >= 1.5 && de.x < 0.0) {
-        return abs(v) - r;
+        return abs(v) - PathRadiusAt(u, uA, uB, rA, rB, lean);
     }
 
     float2 nb, na;
     float2 pb = PathEdgeFrame(de.y, fr, startLen, thA, thB, uA, uB, cA, cB, nb);
     float2 pa = PathEdgeFrame(de.z, fr, startLen, thA, thB, uA, uB, cA, cB, na);
     if (type >= 1.5) {
-        // Past the dash's span the capsule is the distance to the nearer of the two cap circles.
-        return min(length(q - pb), length(q - pa)) - r;
+        // Past the dash's span the capsule is the distance to the nearer of the two cap circles,
+        // each one as wide as the stroke is where it sits.
+        return min(length(q - pb) - PathRadiusAt(de.y, uA, uB, rA, rB, lean),
+                   length(q - pa) - PathRadiusAt(de.z, uA, uB, rA, rB, lean));
     }
     float du = DashCutFromEdges(q, de, pb, nb, pa, na);
 
@@ -475,10 +558,10 @@ float PathDashCut(float2 q, float len, float r, float2 fr, float startLen, float
     float corner = -1e6;
     if (aB > 1e-4 && q.x > len) {
         float wB = aB * fr.y * 0.5;
-        corner = length(q - float2(len, 0.0)) - r + min(DashDistance(uB + wB, data) + wB, 0.0) * 2.0;
+        corner = length(q - float2(len, 0.0)) - rB + min(DashDistance(uB + wB, data) + wB, 0.0) * 2.0;
     } else if (aA > 1e-4 && q.x < 0.0) {
         float wA = aA * fr.x * 0.5;
-        corner = length(q) - r + min(DashDistance(uA - wA, data) + wA, 0.0) * 2.0;
+        corner = length(q) - rA + min(DashDistance(uA - wA, data) + wA, 0.0) * 2.0;
     }
     return max(du, corner);
 }
@@ -1494,7 +1577,15 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         }
         d = RoundBoxSDF(q, float2(sdfSize, p.Meta1.w), rr);
     } else if (shape < 2.5) {
-        d = SegmentSDF(q, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
+        // Meta2.z is the far end's half width. Equal to sdfSize the line is a capsule, which is
+        // the rounding slot's own job, so that stays exactly the shape it always was; different
+        // and the two end circles' hull takes over, and the radius is already inside the field.
+        if (p.Meta2.z == sdfSize) {
+            d = SegmentSDF(q, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
+        } else {
+            d = StrokeConeSDF(q, p.Meta1.w, sdfSize, p.Meta2.z, float4(0.0, 0.0, 0.0, 0.0));
+            rounded = 0.0;
+        }
         if (dashType >= 0.5) {
             dashU = q.x;
             dashV = q.y;
@@ -1555,34 +1646,49 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         float pathCut = -1e6;
         if (dashType >= 0.5) {
             // Dashed paths pack each end's signed turn angle into Meta2.y as two 11 bit codes
-            // (1024 = 0, meaning caps and collinear joints), freeing Meta2.z for the segment's
-            // start length and Meta2.w for the period. The rounding slot carries the packed
-            // fraction and phase; paths never use it for rounding. The bevel plane directions
-            // derive from the turn angles, so nothing else needs to travel. Each end's fillet
-            // radius rides above the end modes in Meta2.x as a 7 bit fraction of the stroke
-            // radius over [1, 2]; that keeps the packed value under 2^20, well inside what a
-            // ps_3_0 interpolator carries exactly, unlike the two 11 bit codes which already
-            // sit at the ceiling.
+            // (1024 = 0, meaning caps and collinear joints), freeing Meta2.z and Meta2.w. The
+            // rounding slot carries the packed fraction and phase; paths never use it for
+            // rounding. The bevel plane directions derive from the turn angles, so nothing else
+            // needs to travel. Each end's fillet radius rides above the end modes in Meta2.x as
+            // a 7 bit fraction of that end's own stroke radius over [1, 2], and a flag bit above
+            // those says what Meta2.z holds; that keeps the packed value under 2^21, well inside
+            // what a ps_3_0 interpolator carries exactly, unlike the two 11 bit codes which
+            // already sit at the ceiling.
+            // A uniform path puts the segment's start length there and takes its far radius off
+            // sdfSize. A tapering one needs the slot for that radius, so the pattern's phase
+            // arrives already slid back by the start instead and the contour coordinate is the
+            // segment's own. Only the taper pays for that, which is a phase rounded to one part
+            // in 2047 of a period rather than a length carried exactly.
             float ma = sd.y;
             float thB = (DecodeDigit(ma, 2048.0) - 1024.0) / 1023.0 * 3.1415926536;
             float thA = (ma - 1024.0) / 1023.0 * 3.1415926536;
             float mr = sd.x;
             float modeBits = DecodeDigit(mr, 64.0);
             float frCodeA = DecodeDigit(mr, 128.0);
-            float frCodeB = mr;
-            float2 fr = sdfSize * (1.0 + float2(frCodeA, frCodeB) / 127.0);
+            float frCodeB = DecodeDigit(mr, 128.0);
+            float tapered = mr;
+            float rEnd = tapered >= 0.5 ? sd.z : sdfSize;
+            float startLen = tapered >= 0.5 ? 0.0 : sd.z;
+            // Each end's fillet is a multiple of the width there, so the two quads at a joint
+            // read it off the same radius and walk the corner to the same arc length.
+            float2 fr = float2(sdfSize, rEnd) * (1.0 + float2(frCodeA, frCodeB) / 127.0);
             float2 hA;
             sincos(thA * 0.5, hA.y, hA.x);
             float2 hB;
             sincos(thB * 0.5, hB.y, hB.x);
             float sA = sign(thA);
             float sB = sign(thB);
-            sd = float4(modeBits, atan2(-sA * hA.x, -sA * hA.y), atan2(-sB * hB.x, sB * hB.y), 0.0);
-            pathCut = PathDashCut(q, p.Meta1.w, sdfSize, fr, p.Meta2.z, thA, thB, float2(p.Meta2.w, rounded), dashType);
+            sd = float4(modeBits, atan2(-sA * hA.x, -sA * hA.y), atan2(-sB * hB.x, sB * hB.y), rEnd);
+            pathCut = PathDashCut(q, p.Meta1.w, sdfSize, rEnd, fr, startLen, thA, thB, float2(p.Meta2.w, rounded), dashType);
             rounded = 0.0;
             dashType = 0.0;
         }
-        d = max(StrokeSDF(q, p.Meta1.w, sdfSize, sd), pathCut);
+        // Solid paths carry the far end's half width in Meta2.w so a stroke can taper. It
+        // equals sdfSize on a uniform path, which takes the plain capsule and keeps those
+        // pixels exactly as they were.
+        d = max(sd.w == sdfSize
+                ? StrokeSDF(q, p.Meta1.w, sdfSize, sd)
+                : StrokeConeSDF(q, p.Meta1.w, sdfSize, sd.w, sd), pathCut);
     }
 
     d -= rounded;
