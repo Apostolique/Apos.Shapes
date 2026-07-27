@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Paths that vary in width. `DrawPath`, `FillPath`, and `BorderPath` take a radius per point, points carrying join styles included, and `PathTo` takes one too, so a stroke can swell and taper the way a pen's pressure makes it. Segments run between their two end circles instead of stepping at each joint, and a dash comes out as wide as the stroke is where it lands.
+- Paths that vary in width. `DrawPath`, `FillPath`, `BorderPath`, and `PathTo` take a radius per point. Dashes come out as wide as the stroke is where they land.
 - `FillLineBlurred` and `BorderLineBlurred`, which take one radius or one per end.
 - `AAStyle`, which sets where a shape's anti-aliasing edge sits. `Centered` draws a shape at exactly its size. The default, `Outside`, draws as before.
 
@@ -20,10 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Optimized
 
-- Shapes build two to three times faster. Everything a quad's four vertices share is put together once per shape rather than once per corner, and lines, triangles and rotated shapes take one square root or one sine where they used to take six.
-- Colors convert to Oklab and Oklch once per color instead of once per vertex, and the cache that remembers them now holds a whole palette instead of a handful of colors. The conversion costs three cbrt, so solid shapes in the default color space build several times faster.
-- Paths build about 1.5 times faster, and one longer than 256 points no longer allocates.
-- A round joint whose miter tip barely clears the join arc cuts straight across the bisector instead of fanning the corner, which saves a quad per joint. Paths made of many shallow joints, like a stroke sampled from a pen, build about twice as fast.
+- The shader is a third smaller and compiles about 40% faster.
+- Gradients cost less per pixel, linear and bilinear ones most of all.
+- Dashed ellipses cost less per pixel.
+- Shapes build two to three times faster, and solid shapes in the default color space several times faster.
+- Paths build about 1.5 times faster, about twice as fast when their joints are shallow, and one longer than 256 points no longer allocates.
 
 ## [0.7.10] - 2026-07-25
 

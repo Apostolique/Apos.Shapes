@@ -231,10 +231,16 @@ float EllipseFold(float2 p, float2 ab, out float2 q, out float2 r) {
     return s;
 }
 
-// Signed distance to an origin centred, axis aligned ellipse with radii ab.
-float EllipseSDF(float2 p, float2 ab) {
-    float2 q, r;
-    float s = EllipseFold(p, ab, q, r);
+// Signed distance to an origin centred, axis aligned ellipse with radii ab. Hands back the
+// folded frame and the nearest point in it as well, because dashing needs exactly those and
+// the solve that produces them is the most expensive thing on this shape: eight Newton steps,
+// each with two divides and a root. Solving once and spending the answer twice is what keeps
+// a dashed ellipse from paying for it all over again; see EllipseDashCut, which takes them.
+// nearest is assigned before any early exit so it is live on every path, degenerate ones
+// included, and never leaves a caller reading an uninitialised value.
+float EllipseSDF(float2 p, float2 ab, out float2 q, out float2 r, out float2 nearest, out float s) {
+    s = EllipseFold(p, ab, q, r);
+    nearest = q;
     if (s <= 0.0) return length(p);
 
     // A collapsed minor axis degenerates to a segment, which the solve cannot represent: its
@@ -243,10 +249,11 @@ float EllipseSDF(float2 p, float2 ab) {
         return length(float2(q.x - clamp(q.x, 0.0, r.x), q.y)) * s;
     }
 
+    nearest = EllipseNearestPoint(q, r);
     float ix = q.x / r.x;
     float iy = q.y / r.y;
     float sgn = ix * ix + iy * iy - 1.0 < 0.0 ? -1.0 : 1.0;
-    return length(EllipseNearestPoint(q, r) - q) * s * sgn;
+    return length(nearest - q) * s * sgn;
 }
 float ArcSDF(float2 p, float2 sc, float ra, float rb) {
     p.x = abs(p.x);
@@ -1078,14 +1085,15 @@ float EllipseCapsule(float2 p, float d, float cut, float2 cA, float2 cB, float2 
 // the pivot clears the band, which it does unless the tip is sharp enough that the cap on the fan's
 // radius binds first - past that the seam is drawn, and the tail of this function is what makes it
 // an edge rather than a step.
+// q, r, nearest and s are the folded frame, the nearest point in it and the fold's scale, all
+// of them already worked out by EllipseSDF for the distance it returned. They describe the
+// pixel, not the dash, so they are the same here and taking them saves repeating the solve.
 float EllipseDashCut(float2 p, float2 ab, float sq, float lineSize, float2 data, float aa,
-                     bool roundCap, float sdf) {
+                     bool roundCap, float sdf, float2 q, float2 r, float2 nearest, float s) {
     float2 capA = float2(0.0, 0.0);
     float2 capB = float2(0.0, 0.0);
     float2 capR = float2(0.0, 0.0);
 
-    float2 q, r;
-    float s = EllipseFold(p, ab, q, r);
     // Fold the signed inputs the same way, so the quadrant symmetry can be undone afterwards.
     float swap = ab.y > ab.x ? 1.0 : 0.0;
     float2 pw = swap > 0.5 ? p.yx : p;
@@ -1115,7 +1123,7 @@ float EllipseDashCut(float2 p, float2 ab, float sq, float lineSize, float2 data,
     } else {
         // The angle of the nearest point, renormalised: the solve leaves whatever is left of its
         // error as a slip along the ellipse, and the angle is exactly what the table indexes by.
-        float2 n = normalize(EllipseNearestPoint(q, r) / r);
+        float2 n = normalize(nearest / r);
         u1 = sq * ArcLut(atan2(n.y, n.x) * 0.63661977236758134, sqrt(r.y)).y;
         footY = n.y * abw.y;
     }
@@ -1251,13 +1259,15 @@ float4 ToRgb(float4 c, float space) {
     return result;
 }
 
-float2 Rotate(float2 a, float2 b, float2 c) {
+// Puts c into the frame a → b, which every gradient that reads an angle works in. mag is
+// that frame's own length, |b - a|, which the caller already needs for the gradient scale,
+// so it is passed in rather than rooted a second time here.
+float2 Rotate(float2 a, float2 b, float2 c, float mag) {
     float ux = b.x - a.x;
     float uy = b.y - a.y;
     float vx = -c.x + a.x;
     float vy = c.y - a.y;
 
-    float mag = sqrt(ux * ux + uy * uy);
     if (mag == 0) return c;
 
     ux /= mag;
@@ -1299,52 +1309,47 @@ float SineWave(float w) {
     return sin(w * 3.14159265 - 1.5) * 0.5 + 0.5;
 }
 
-float RadialGradient(float2 a, float2 b, float2 c) {
-    return length(c - a) / length(b - a);
+// Every gradient below is a fraction of the frame a → b, so each takes that frame's length
+// as gl rather than measuring it again: the caller needs it in any case and it is the only
+// square root most of them would otherwise pay for. The six that read an angle take the
+// rotated point rc in place of c, for the same reason.
+float RadialGradient(float2 a, float2 c, float gl) {
+    return length(c - a) / gl;
 }
-float LinearGradient(float2 a, float2 b, float2 c) {
-    float l = length(b - a);
-    float2 d = normalize(b - a);
-    b = float2(-d.y, d.x) + a;
-    return ((b.x - a.x) * (a.y - c.y) - (a.x - c.x) * (b.y - a.y)) / sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2)) / l;
+// Signed offset along the frame, as a fraction of its length. This was built as the distance
+// to the perpendicular through a, but that perpendicular was raised on a NORMALIZED direction,
+// so its own length was exactly 1 and the root that divided it back out, along with the
+// normalize and the two pows feeding it, were all undoing each other. A plain projection is
+// what was left, and it is exact rather than an approximation of the old form.
+float LinearGradient(float2 a, float2 b, float2 c, float gl) {
+    return dot(b - a, c - a) / (gl * gl);
 }
-float BilinearGradient(float2 a, float2 b, float2 c) {
-    float l = length(b - a);
-    float2 d = normalize(b - a);
-    b = float2(-d.y, d.x) + a;
-    return abs((b.x - a.x) * (a.y - c.y) - (a.x - c.x) * (b.y - a.y)) / sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2)) / l;
+float BilinearGradient(float2 a, float2 b, float2 c, float gl) {
+    return abs(dot(b - a, c - a)) / (gl * gl);
 }
-float ConicalGradient(float2 a, float2 b, float2 c) {
-    c = Rotate(a, b, c);
-    return abs(atan2(-c.y, -c.x) / 3.14159265);
+float ConicalGradient(float2 rc) {
+    return abs(atan2(-rc.y, -rc.x) / 3.14159265);
 }
-float ConicalAsymGradient(float2 a, float2 b, float2 c) {
-    c = Rotate(a, b, c);
-    return atan2(c.y, c.x) / 6.283185307179586 + 0.5;
+float ConicalAsymGradient(float2 rc) {
+    return atan2(rc.y, rc.x) / 6.283185307179586 + 0.5;
 }
-float SquareGradient(float2 a, float2 b, float2 c) {
-    c = Rotate(a, b, c);
-    return max(abs(c.x), abs(c.y)) / length(b - a);
+float SquareGradient(float2 rc, float gl) {
+    return max(abs(rc.x), abs(rc.y)) / gl;
 }
-float CrossGradient(float2 a, float2 b, float2 c) {
-    c = Rotate(a, b, c);
-    return min(abs(c.x), abs(c.y)) / length(b - a);
+float CrossGradient(float2 rc, float gl) {
+    return min(abs(rc.x), abs(rc.y)) / gl;
 }
 // Magnitude of the spiral gradient per world unit. The radial term winds once
 // per gradient length, the angular term once per turn, and they are orthogonal
 // so the root sum keeps the smoothed seam aaSize wide at any radius.
-float SpiralGradientSize(float4 posAB, float2 c) {
-    float l = length(posAB.zw - posAB.xy);
-    float r = 6.283185307179586 * length(c - posAB.xy);
-    return sqrt(1.0 / (l * l) + 1.0 / max(r * r, 1e-12));
+float SpiralGradientSize(float2 a, float2 c, float gl) {
+    float r = 6.283185307179586 * length(c - a);
+    return sqrt(1.0 / (gl * gl) + 1.0 / max(r * r, 1e-12));
 }
-float SpiralCWGradient(float2 a, float2 b, float2 c) {
-    c = Rotate(a, b, c);
-    return SawtoothWave(1.0 * atan2(-c.y, -c.x) / 6.283185307179586 + length(c) / length(b - a));
-}
-float SpiralCCWGradient(float2 a, float2 b, float2 c) {
-    c = Rotate(a, b, c);
-    return SawtoothWave(-1.0 * atan2(-c.y, -c.x) / 6.283185307179586 + length(c) / length(b - a));
+// The two spirals are one gradient wound either way, so dir carries the sign rather than
+// the pair being written out twice.
+float SpiralGradient(float2 rc, float gl, float dir) {
+    return SawtoothWave(dir * atan2(-rc.y, -rc.x) / 6.283185307179586 + length(rc) / gl);
 }
 float ShapeGradient(float a, float b, float c) {
     return (c - a) / (b - a);
@@ -1355,28 +1360,32 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
     if (type.x < 0.5) {
         result = 1.0;
     } else {
+        // The frame's length is what every gradient here scales by and what the sawtooth wrap
+        // measures against, so it is rooted once for all of them. The rotation is only the six
+        // angular gradients' business, so only they pay for it, and it reuses that same length
+        // instead of rooting the same vector a second time.
+        float gl = length(posAB.zw - posAB.xy);
+        float2 rc = type.x >= 3.5 && type.x < 9.5 ? Rotate(posAB.xy, posAB.zw, c, gl) : c;
+
         float grad;
         if (type.x < 1.5) {
-            grad = RadialGradient(posAB.xy, posAB.zw, c);
+            grad = RadialGradient(posAB.xy, c, gl);
         } else if (type.x < 2.5) {
-            grad = LinearGradient(posAB.xy, posAB.zw, c);
+            grad = LinearGradient(posAB.xy, posAB.zw, c, gl);
         } else if (type.x < 3.5) {
-            grad = BilinearGradient(posAB.xy, posAB.zw, c);
+            grad = BilinearGradient(posAB.xy, posAB.zw, c, gl);
         } else if (type.x < 4.5) {
-            grad = ConicalGradient(posAB.xy, posAB.zw, c);
+            grad = ConicalGradient(rc);
         } else if (type.x < 5.5) {
-            grad = ConicalAsymGradient(posAB.xy, posAB.zw, c);
+            grad = ConicalAsymGradient(rc);
             grad = SmoothWrapDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
         } else if (type.x < 6.5) {
-            grad = SquareGradient(posAB.xy, posAB.zw, c);
+            grad = SquareGradient(rc, gl);
         } else if (type.x < 7.5) {
-            grad = CrossGradient(posAB.xy, posAB.zw, c);
-        } else if (type.x < 8.5) {
-            grad = SpiralCWGradient(posAB.xy, posAB.zw, c);
-            grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB, c));
+            grad = CrossGradient(rc, gl);
         } else if (type.x < 9.5) {
-            grad = SpiralCCWGradient(posAB.xy, posAB.zw, c);
-            grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB, c));
+            grad = SpiralGradient(rc, gl, type.x < 8.5 ? 1.0 : -1.0);
+            grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB.xy, c, gl));
         } else if (type.x < 10.5) {
             grad = ShapeGradient(posAB.x, posAB.y, d);
         }
@@ -1384,7 +1393,7 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
         if (type.y < 0.5) {
         } else if (type.y < 1.5) {
             grad = SawtoothWave(grad);
-            grad = SmoothWrapDiscontinuity(grad, aaSize / length(posAB.xy - posAB.zw));
+            grad = SmoothWrapDiscontinuity(grad, aaSize / gl);
         } else if (type.y < 2.5) {
             grad = TriangularWave(grad);
         } else if (type.y < 3.5) {
@@ -1633,15 +1642,23 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             dashData = p.Meta2.xy;
             dashStroke = true;
         }
-    } else if (shape < 3.5) {
-        d = HexagonSDF(q, sdfSize);
-        if (dashType >= 0.5) {
-            dashCut = RegularDashCut(q, sdfSize, sdfSize * 0.57735026919, 1.0471975512, 0.52359877560, rounded, lineSize, p.Meta2.xy, dashCapA, dashCapB);
-        }
     } else if (shape < 4.5) {
-        d = EquilateralTriangleSDF(q, sdfSize);
+        // The hexagon and the equilateral triangle walk the same regular polygon, differing
+        // only in apothem, half side and sector step, so they share one copy of that walk.
+        // The two SDFs stay apart because they are small; the dash machinery behind them is
+        // not, and a second copy of it costs more than both shapes put together.
+        bool hex = shape < 3.5;
+        if (hex) {
+            d = HexagonSDF(q, sdfSize);
+        } else {
+            d = EquilateralTriangleSDF(q, sdfSize);
+        }
         if (dashType >= 0.5) {
-            dashCut = RegularDashCut(q, sdfSize * 0.57735026919, sdfSize, 2.0943951024, 0.52359877560, rounded, lineSize, p.Meta2.xy, dashCapA, dashCapB);
+            const float invSqrt3 = 0.57735026919;
+            float apothem = hex ? sdfSize : sdfSize * invSqrt3;
+            float halfSide = hex ? sdfSize * invSqrt3 : sdfSize;
+            float sectorStep = hex ? 1.0471975512 : 2.0943951024;
+            dashCut = RegularDashCut(q, apothem, halfSide, sectorStep, 0.52359877560, rounded, lineSize, p.Meta2.xy, dashCapA, dashCapB);
         }
     } else if (shape < 5.5) {
         if (dashType >= 0.5) {
@@ -1653,14 +1670,18 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         }
     } else if (shape < 6.5) {
         float2 ab = float2(sdfSize, p.Meta1.w);
-        d = EllipseSDF(q, ab);
+        float2 eq, er, eNear;
+        float eScale;
+        d = EllipseSDF(q, ab, eq, er, eNear, eScale);
         if (dashType >= 0.5) {
             // Meta2 is entirely spare on an ellipse, so the pattern and the quarter perimeter
             // travel as plain floats with nothing packed. The dash anti-aliasing width goes along
             // because a dash edge has to reach past the band's inner edge by that much.
             // A rounded ellipse comes back with its capsule already built; see EllipseCapsule.
+            // The folded frame and the nearest point come straight from the distance above, so
+            // the Newton solve behind them runs once for the pixel rather than once per use.
             dashCut = EllipseDashCut(q, ab, p.Meta2.z, lineSize, p.Meta2.xy,
-                                     footprint.y * aaPixels, dashType >= 1.5, d);
+                                     footprint.y * aaPixels, dashType >= 1.5, d, eq, er, eNear, eScale);
             dashCapDone = true;
         }
     } else if (shape < 7.5) {
@@ -1838,37 +1859,48 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
 
     // The fill/border crossfade is coverage, not a gradient: blend premultiplied in
     // sRGB so the inner AA fringe matches the framebuffer blend outside the edge.
-    // The vertex data is uniform per quad, so these branches are coherent.
-    float4 result;
-    if (all(p.Fill == p.Border) && all(p.FillCoord == p.BorderCoord) && all(fillStyles == borderStyles) && all(p.Meta3.xy == p.Meta3.zw)) {
-        // Fill and border are the same gradient, so the crossfade collapses to edge coverage.
-        float4 fc = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
-        fc.a *= edgeFade;
-        result = ToRgb(fc, space);
-        result.rgb *= result.a;
-    } else if (fillA.a == 0.0 && fillB.a == 0.0) {
+    //
+    // Each side is evaluated at most once, and the two shortcuts are which of them gets to
+    // stand down rather than formulas of their own. Fill and border on the same gradient
+    // collapses the crossfade to edge coverage, so the border simply reads what the fill
+    // produced; a fill transparent at both stops contributes nothing anywhere, so it stays
+    // zero and only the border runs. Both fall out of the same crossfade below, which is why
+    // it is written once. The vertex data is uniform per quad, so both tests are coherent
+    // across it.
+    // Evaluating each side once is also what holds the gradient machinery to two copies in
+    // the compiled shader rather than four. That machinery is the largest thing in this file
+    // and the driver compiles every line of it at load, so the three cases written out long
+    // hand cost around a fifth of the shader on their own.
+    bool sameGradient = all(p.Fill == p.Border) && all(p.FillCoord == p.BorderCoord) && all(fillStyles == borderStyles) && all(p.Meta3.xy == p.Meta3.zw);
+    bool borderOnly = fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
+    if (borderOnly && borderMix <= 0.0) {
         // Transparent fill: everything inside the border band contributes nothing.
-        if (borderMix <= 0.0) {
-            discard;
-        }
-        float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
-        bc.a *= edgeFade;
-        result = ToRgb(bc, space);
-        result.rgb *= result.a;
-        result *= borderMix;
-    } else {
-        float4 fc = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
-        float4 bc = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
-
-        float4 fr = ToRgb(fc, space);
-        float4 br = ToRgb(bc, space);
-        fr.rgb *= fr.a;
-        br.rgb *= br.a;
-        // The edge fade applies after the crossfade so the fill also fades where a dash gap
-        // lets it reach the outer edge. Solid borders keep borderMix at 1 wherever the fade
-        // is below 1, so the fade still lands on the border alone there.
-        result = lerp(fr, br, borderMix) * edgeFade;
+        discard;
     }
+
+    // A loop over the two sides would leave one copy rather than two, but ShadowDusk lowers a
+    // loop that carries values across iterations into a comma expression in the update clause,
+    // and Appendix A of GLSL ES 1.00 admits nothing there but the index's own step. WebGL and
+    // Android hold this shader to that grammar, so the sides stay written out.
+    float4 fr = float4(0.0, 0.0, 0.0, 0.0);
+    float4 br = float4(0.0, 0.0, 0.0, 0.0);
+    if (!borderOnly) {
+        float4 c = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
+        fr = ToRgb(c, space);
+        fr.rgb *= fr.a;
+        // A shared gradient leaves the border reading exactly this, so it never runs its own.
+        br = fr;
+    }
+    if (!sameGradient) {
+        float4 c = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
+        br = ToRgb(c, space);
+        br.rgb *= br.a;
+    }
+
+    // The edge fade applies after the crossfade so the fill also fades where a dash gap
+    // lets it reach the outer edge. Solid borders keep borderMix at 1 wherever the fade
+    // is below 1, so the fade still lands on the border alone there.
+    float4 result = lerp(fr, br, borderMix) * edgeFade;
 
     result *= clipAlpha;
     // With premultiplied blending the source color adds straight into the framebuffer, so
