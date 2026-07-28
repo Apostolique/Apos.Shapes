@@ -231,6 +231,35 @@ _sb.FillRing(new Vector2(120, 120), 0f, MathF.PI, 75, 10, Color.White);
 
 ![A ring with flat end caps](ring.png)
 
+## Measuring a shape
+
+The `Measure` class gives the rectangle a shape covers, in world units. Every method takes the same geometry its draw call takes, so `Measure.Circle` lines up with `DrawCircle`, `Measure.Path` with `DrawPath`, and so on.
+
+```csharp
+RectangleF bounds = Measure.Circle(new Vector2(120, 120), 75);
+```
+
+The main use is culling. A shape that doesn't touch the camera is a draw call you can skip:
+
+```csharp
+_sb.Begin(view);
+foreach (Rock rock in rocks) {
+    if (!Measure.Circle(rock.Position, rock.Radius).Intersects(cameraBounds)) continue;
+    _sb.FillCircle(rock.Position, rock.Radius, rock.Color);
+}
+_sb.End();
+```
+
+There's no `ShapeBatch` and no view involved. These are the shape's own bounds, so they hold wherever it's drawn and at whatever zoom, and you can work them out once at load and put them in a quadtree.
+
+A measure asks for geometry only. There's no `thickness`, because a border grows inward and a shape outlined is the same size as a shape filled. There's no `DashStyle` either: dashes only take pixels away, so the solid shape's rectangle still holds. Paths do take the join style and the miter limit, because a sharp miter runs a long way past the stroke.
+
+What the rectangle leaves out is the anti-aliasing edge. That's `aaSize` pixels wide, 1.5 by default, so how far it reaches in world units depends on the zoom, which is exactly what a bound that travels with the shape can't depend on. It's under a pixel and a half either way, and smaller than any margin a camera wants. At a sharp corner it stretches: an offset of `aa` on both faces of a wedge moves the tip out by `aa` over the cosine of the half turn, so a spiky miter can carry several pixels of it.
+
+The rectangle is tight for most shapes. Three cases leave more room. A bevel join, or a miter past its limit, reserves the corner the bevel cuts off. A butt cap reserves the round cap's radius past the end of a path. And a dashed shape is measured as the solid one, so every gap in the pattern is room the box keeps.
+
+Blurred shapes measure with their own family: `Measure.CircleBlurred`, `Measure.EllipseBlurred`, `Measure.RectangleBlurred`, and `Measure.LineBlurred`. A blur is authored in world units and it reaches far, so unlike the anti-aliasing edge it does go in the box. See the [Blur](../blur/README.md) guide.
+
 ## Follow up
 
 [Dashes](../dashes/README.md), a guide that shows how to dash any of these shapes.

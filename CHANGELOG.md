@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- `Measure`, the bounds a shape covers: `Measure.Circle`, `Rectangle`, `Line`, `Path`, `StyledPath`, `Hexagon`, `EquilateralTriangle`, `Triangle`, `Ellipse`, `Arc`, and `Ring`.
+- `Measure.CircleBlurred`, `EllipseBlurred`, `RectangleBlurred`, and `LineBlurred`, which cover the whole falloff.
 
 ## [0.7.11] - 2026-07-26
 

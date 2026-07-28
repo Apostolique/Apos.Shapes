@@ -97,6 +97,16 @@ These methods take a `Color` rather than a `Gradient`, and fill and border are s
 
 If you need a blurred gradient, you can draw the shapes into a `RenderTarget2D` and blur the target instead.
 
+## Measuring
+
+A blurred shape reaches past its edge, so it needs its own measure. `Measure.CircleBlurred`, `Measure.EllipseBlurred`, `Measure.RectangleBlurred`, and `Measure.LineBlurred` take the same geometry and the same blur their draw calls take:
+
+```csharp
+RectangleF bounds = Measure.CircleBlurred(center, 45, 6f);
+```
+
+The rectangle grows by three times the blur on every side, which is where the falloff is drawn out to. The blur is in world units, so unlike the anti-aliasing edge it stays the same size relative to the shape at any zoom, which is what lets it go in the box at all. A blur under half a pixel is floored at half a pixel when it's drawn; the box leaves that floor out, being a sub-pixel distance. See [Measuring a shape](../shapes/README.md#measuring-a-shape) for what a measure is for.
+
 ## Limits
 
 The falloff is the exact blur of a straight edge, which is what almost every point on a contour is. A corner tighter than the blur is not: a real blur there depends on how much shape is nearby rather than on the distance to the edge alone, so tight corners come out slightly more solid than a true blur would give.

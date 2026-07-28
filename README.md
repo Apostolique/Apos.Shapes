@@ -20,6 +20,7 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * Dashed outlines and strokes, flat or round-capped, down to dotted lines
 * Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
 * Blurred shapes with a Gaussian edge, for drop shadows and glows
+* `Measure` for every shape, giving the bounds it covers so a camera can cull it. No batch and no view needed
 * Blue noise dithering so slow gradients don't band on 8-bit displays
 * Text (FontStashSharp API)
 * Textures (SpriteBatch API)
