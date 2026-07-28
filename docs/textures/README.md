@@ -1,7 +1,7 @@
 # Textures
-This guide will show you how to draw textures with the ShapeBatch.
+This guide will show you how to draw textures with the `ShapeBatch`.
 
-The ShapeBatch implements the SpriteBatch texture API. This makes it possible to draw textures along with shapes without breaking the batch.
+The `ShapeBatch` implements the `SpriteBatch` texture API. This makes it possible to draw textures along with shapes without breaking the batch.
 
 ```csharp
 protected override void LoadContent() {
@@ -26,7 +26,7 @@ Texture2D _texture;
 
 ![A texture drawn next to a circle](textures.png)
 
-The overloads mirror the SpriteBatch ones. You can pass a destination rectangle, a source rectangle, a mask color, a rotation, an origin, a scale, and sprite effects. `RectangleF` comes from MonoGame.Extended:
+The overloads mirror the `SpriteBatch` ones. You can pass a destination rectangle, a source rectangle, a mask color, a rotation, an origin, a scale, and sprite effects. `RectangleF` comes from MonoGame.Extended:
 
 ```csharp
 using MonoGame.Extended;
@@ -41,7 +41,7 @@ _sb.Draw(_texture, new Vector2(400, 175), Color.White, MathF.PI / 4f, new Vector
 
 ## World matrix
 
-The draw calls are backed by a `Matrix3x2`. The matrix transforms a 1x1 quad which supports more drawing options than what the SpriteBatch provides. You can pass it directly:
+The draw calls are backed by a `Matrix3x2`. The matrix transforms a 1x1 quad which supports more drawing options than what the `SpriteBatch` provides. You can pass it directly:
 
 ```csharp
 _sb.Draw(_texture, Matrix3x2.CreateScale(_texture.Width, _texture.Height) * Matrix3x2.CreateRotationZ(MathF.PI / 4f) * Matrix3x2.CreateTranslation(100, 100));
@@ -51,6 +51,6 @@ _sb.Draw(_texture, Matrix3x2.CreateScale(_texture.Width, _texture.Height) * Matr
 
 ## One texture at a time
 
-The ShapeBatch draws with a single texture slot. Switching to a different texture flushes the batch. Group your draw calls by texture when possible, or pack your images into a texture atlas and use the source rectangle overloads.
+The `ShapeBatch` draws with a single texture slot. Switching to a different texture flushes the batch. Group your draw calls by texture when possible, or pack your images into a texture atlas and use the source rectangle overloads.
 
 Text is not affected since the font texture uses its own separate slot.

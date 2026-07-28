@@ -25,7 +25,7 @@ Import the library with:
 using Apos.Shapes;
 ```
 
-In your game's constructor, set the GraphicsProfile to `HiDef`. (If you're using this library with [KNI](https://github.com/kniengine/kni), set it to `FL10_0` instead.) This enables the features that the shader will use. By default, MonoGame uses the `Reach` profile.
+In your game's constructor, set the `GraphicsProfile` to `HiDef`. (If you're using this library with [KNI](https://github.com/kniengine/kni), set it to `FL10_0` instead.) This enables the features that the shader will use. By default, MonoGame uses the `Reach` profile.
 
 ```csharp
 public Game1() {
@@ -35,7 +35,7 @@ public Game1() {
 }
 ```
 
-In your game's `LoadContent()`, create a ShapeBatch instance:
+In your game's `LoadContent()`, create a `ShapeBatch` instance:
 
 ```csharp
 protected override void LoadContent() {
@@ -67,5 +67,5 @@ Everything that is drawn within the `Begin` and `End` calls will be batched toge
 
 ## Follow up
 
-[Shapes](../shapes/README.md), a page that lists every shape that the ShapeBatch can draw.
+[Shapes](../shapes/README.md), a page that lists every shape that the `ShapeBatch` can draw.
 

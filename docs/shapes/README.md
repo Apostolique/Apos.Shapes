@@ -1,5 +1,5 @@
 # Shapes
-This page lists every shape that the ShapeBatch can draw. If you don't have a ShapeBatch set up yet, read the [Getting started](../getting-started/README.md) guide first.
+This page lists every shape that the `ShapeBatch` can draw. If you don't have a `ShapeBatch` set up yet, read the [Getting started](../getting-started/README.md) guide first.
 
 ## Naming convention
 
@@ -139,7 +139,7 @@ for (int i = 0; i < points.Length; i++) {
 _sb.FillPath(points, radii, Color.White);
 ```
 
-`PathTo` takes a radius the same way, and one point carrying one switches the whole path over; the rest keep the radius `BeginPath` was given. Points that carry join styles take a radius list too, so a stroke can vary its width and its joins at once.
+`PathTo` takes a radius the same way, and one point carrying one switches the whole path over. The rest keep the radius `BeginPath` was given. Points that carry join styles take a radius list too, so a stroke can vary its width and its joins at once.
 
 A stroke with a varying width dashes like any other path. The pattern still walks the spine, and each dash comes out as wide as the stroke is where it lands, caps included.
 

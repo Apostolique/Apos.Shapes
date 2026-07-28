@@ -27,7 +27,7 @@ Paths are not in this family. A path is many quads that tile along the joints, a
 
 ## The blur is in world units
 
-`aaSize` on the regular shapes is an anti-aliasing width, measured in screen pixels. It stays the same thickness however far you zoom, which is exactly what anti-aliasing should do.
+`aaSize` on the regular shapes is an anti-aliasing width, measured in screen pixels. It stays the same thickness no matter how far you zoom, which is exactly what anti-aliasing should do.
 
 A blur is not that. It belongs to the shape, so it is measured in world units and scales with the view. Both of these circles are the same call, drawn through a view scaled by 1 and by 2:
 
@@ -45,7 +45,7 @@ _sb.End();
 
 Zooming in on a blurred shape magnifies its blur along with it, the way zooming into a photograph magnifies everything in it. If you want a soft edge that stays a fixed number of pixels wide instead, that's what `aaSize` is for.
 
-A blur under half a pixel can't be resolved, so it's raised to half a pixel and drawn as anti-aliasing. Blurred shapes never alias, however far out you zoom.
+A blur under half a pixel can't be resolved, so it's raised to half a pixel and drawn as anti-aliasing. Blurred shapes never alias, no matter how far out you zoom.
 
 ## The falloff is symmetric
 
@@ -105,7 +105,7 @@ A blurred shape reaches past its edge, so it needs its own measure. `Measure.Cir
 RectangleF bounds = Measure.CircleBlurred(center, 45, 6f);
 ```
 
-The rectangle grows by three times the blur on every side, which is where the falloff is drawn out to. The blur is in world units, so unlike the anti-aliasing edge it stays the same size relative to the shape at any zoom, which is what lets it go in the box at all. A blur under half a pixel is floored at half a pixel when it's drawn; the box leaves that floor out since it's a sub-pixel distance. See [Measuring a shape](../shapes/README.md#measuring-a-shape) for what a measure is for.
+The rectangle grows by three times the blur on every side, which is where the falloff is drawn out to. The blur is in world units, so unlike the anti-aliasing edge it stays the same size relative to the shape at any zoom, which is what lets it go in the box at all. A blur under half a pixel is floored at half a pixel when it's drawn. The box leaves that floor out since it's a sub-pixel distance. See [Measuring a shape](../shapes/README.md#measuring-a-shape) for what a measure is for.
 
 ## Limits
 

@@ -5,7 +5,7 @@ Shape rendering library for MonoGame and KNI.
 
 ## Description
 
-This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text with the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API and textures with the SpriteBatch API. Shapes, text, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
+This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text with the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API and textures with the `SpriteBatch` API. Shapes, text, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
 
 Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions.
 
@@ -23,10 +23,10 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * `Measure` for every shape, giving the bounds it covers so a camera can cull it. No batch and no view needed
 * Blue noise dithering so slow gradients don't band on 8-bit displays
 * Text (FontStashSharp API)
-* Textures (SpriteBatch API)
+* Textures (`SpriteBatch` API)
 * Clipping to a rectangle
 * One batch for everything. Mixing shapes, text, and textures never breaks the batch
-* Precompiled shader embedded in the assembly using [ShadowDusk](https://github.com/kaltinril/ShadowDusk). No need for Wine to build on Linux or OSX.
+* Precompiled shader embedded in the assembly using [ShadowDusk](https://github.com/kaltinril/ShadowDusk). No need for Wine to build on Linux or macOS.
 * Works with MonoGame 3.8.2+ and [KNI](https://github.com/kniengine/kni)
 
 ## Documentation

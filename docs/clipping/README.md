@@ -58,4 +58,4 @@ Both images are zoomed in. The first one uses the default anti-aliasing, the sec
 
 ## Follow up
 
-[Text](../text/README.md), a guide that shows how to draw text with the ShapeBatch.
+[Text](../text/README.md), a guide that shows how to draw text with the `ShapeBatch`.

@@ -111,7 +111,7 @@ _sb.BorderCircle(new Vector2(355, 95), 85, Color.White, 6f, dash: DashStyle.From
 
 ![Three circles of different sizes, each carrying exactly twelve dashes](count.png)
 
-`count` is the number of dash + space repeats and `fill` is the fraction of each period the dash covers. The period is always the contour length divided by `count`, so there is no rounding to snap: closed outlines wrap seamlessly, a dash is centered on each end of an open stroke, and the dashes stretch continuously as the shape grows or shrinks. This is the style to use when the shape itself animates — a world unit pattern pops whenever the repeat count it snaps to changes, a counted one never does. `fill` animates smoothly too: at 1 it draws solid, and at 0 with `DashCap.Round` it collapses to dots.
+`count` is the number of dash + space repeats and `fill` is the fraction of each period the dash covers. The period is always the contour length divided by `count`, so there is no rounding to snap: closed outlines wrap seamlessly, a dash is centered on each end of an open stroke, and the dashes stretch continuously as the shape grows or shrinks. This is the style to use when the shape itself animates. A world unit pattern pops whenever the repeat count it snaps to changes, a counted one never does. `fill` animates smoothly too: at 1 it draws solid, and at 0 with `DashCap.Round` it collapses to dots.
 
 ## Corners and joints
 

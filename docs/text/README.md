@@ -1,7 +1,7 @@
 # Text
-This guide will show you how to draw text with the ShapeBatch.
+This guide will show you how to draw text with the `ShapeBatch`.
 
-The ShapeBatch implements the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API. FontStashSharp comes with the library, there is nothing extra to install. The font texture uses a separate texture slot which makes it possible to draw text along with shapes without breaking the batch.
+The `ShapeBatch` implements the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API. FontStashSharp comes with the library. There is nothing extra to install. The font texture uses a separate texture slot which makes it possible to draw text along with shapes without breaking the batch.
 
 ## Load a font
 
@@ -50,4 +50,4 @@ Shapes and text are drawn in the order that you call them. `DrawString` also tak
 
 ## Follow up
 
-[Textures](../textures/README.md), a guide that shows how to draw textures with the ShapeBatch.
+[Textures](../textures/README.md), a guide that shows how to draw textures with the `ShapeBatch`.
