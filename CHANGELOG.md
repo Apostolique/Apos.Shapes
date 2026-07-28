@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.12] - 2026-07-27
+
 ### Added
 
 - `Measure`, the bounds a shape covers: `Measure.Circle`, `Rectangle`, `Line`, `Path`, `StyledPath`, `Hexagon`, `EquilateralTriangle`, `Triangle`, `Ellipse`, `Arc`, and `Ring`.
@@ -335,7 +339,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...HEAD
+[0.7.11]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...v0.7.12
 [0.7.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.10...v0.7.11
 [0.7.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.9...v0.7.10
 [0.7.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.8...v0.7.9
