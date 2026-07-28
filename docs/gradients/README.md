@@ -29,7 +29,7 @@ _sb.ColorSpace = ColorSpace.Oklch;
 
   ![A gradient from blue to red in Oklab](oklab.png)
 
-* `Oklch` holds chroma while the hue takes the shortest path around the hue wheel. Vivid transitions.
+* `Oklch` holds chroma while the hue takes the shortest path around the hue wheel. The transitions come out vivid.
 
   ![A gradient from blue to red in Oklch](oklch.png)
 
@@ -165,7 +165,7 @@ Both images are contrast-stretched five times to make the comparison easy to see
 
 The `DitherNoiseSource` property selects the noise pattern. Both cost the same on the GPU:
 
-* `BlueNoise` samples a 64x64 [blue noise](https://en.wikipedia.org/wiki/Colors_of_noise#Blue_noise) tile embedded in the library. Structureless grain with no pattern for the eye to lock onto. This is the default.
+* `BlueNoise` samples a 64x64 [blue noise](https://en.wikipedia.org/wiki/Colors_of_noise#Blue_noise) tile embedded in the library. The grain is structureless, with no pattern for the eye to lock onto. This is the default.
 
   ![Blue noise](noise-blue.png)
 

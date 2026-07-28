@@ -14,7 +14,7 @@ There are eight: `FillCircleBlurred`, `FillEllipseBlurred`, `FillRectangleBlurre
 
 ## Lines
 
-A blurred line is a capsule with round ends. It also takes a radius per end, which gives the soft stroke a drawing tool wants: one call, swelling or tapering between the two circles it runs across.
+A blurred line is a capsule with round ends. It also takes a radius per end, which gives the soft stroke a drawing tool wants: one call that swells or tapers between the two circles it runs across.
 
 ```csharp
 _sb.FillLineBlurred(new Vector2(30, 40), new Vector2(390, 40), 18f, Color.White, 5f);
@@ -25,7 +25,7 @@ _sb.FillLineBlurred(new Vector2(30, 120), new Vector2(390, 120), 22f, 3f, Color.
 
 Paths are not in this family. A path is many quads that tile along the joints, and each one only knows its own segment, which is exactly what a blur cannot work with: it reaches far enough past an edge to need the whole shape at once. A stroke drawn as overlapping blurred lines doubles up wherever two of them cover the same pixel, and at a soft edge that shows. For a whole soft stroke, draw it into a `RenderTarget2D` and blur that instead.
 
-## World units, not pixels
+## The blur is in world units
 
 `aaSize` on the regular shapes is an anti-aliasing width, measured in screen pixels. It stays the same thickness however far you zoom, which is exactly what anti-aliasing should do.
 
@@ -43,7 +43,7 @@ _sb.End();
 
 ![The same blurred circle at two zoom levels, the blur scaling with the shape](world-space.png)
 
-Zooming in on a blurred shape magnifies its blur along with it, the way zooming into a photograph magnifies everything in it. If you want a soft edge that stays a fixed number of pixels wide instead, that is `aaSize`, not this.
+Zooming in on a blurred shape magnifies its blur along with it, the way zooming into a photograph magnifies everything in it. If you want a soft edge that stays a fixed number of pixels wide instead, that's what `aaSize` is for.
 
 A blur under half a pixel can't be resolved, so it's raised to half a pixel and drawn as anti-aliasing. Blurred shapes never alias, however far out you zoom.
 
@@ -91,7 +91,7 @@ If you want a blurred outline to stay at full strength, keep its thickness at or
 
 A band only becomes a solid fill once its thickness clears the shape's inner radius by a few blur widths. At exactly the radius it does not: the band's inner edge has collapsed to a point at the center, and that point's own blur is still taken out of the middle.
 
-## One color, fill or border
+## One flat color
 
 These methods take a `Color` rather than a `Gradient`, and fill and border are separate calls instead of one call that does both. Blurring a shape and blurring its silhouette are only the same operation while the color stays constant, and a gradient varies the color along the contour.
 
@@ -105,7 +105,7 @@ A blurred shape reaches past its edge, so it needs its own measure. `Measure.Cir
 RectangleF bounds = Measure.CircleBlurred(center, 45, 6f);
 ```
 
-The rectangle grows by three times the blur on every side, which is where the falloff is drawn out to. The blur is in world units, so unlike the anti-aliasing edge it stays the same size relative to the shape at any zoom, which is what lets it go in the box at all. A blur under half a pixel is floored at half a pixel when it's drawn; the box leaves that floor out, being a sub-pixel distance. See [Measuring a shape](../shapes/README.md#measuring-a-shape) for what a measure is for.
+The rectangle grows by three times the blur on every side, which is where the falloff is drawn out to. The blur is in world units, so unlike the anti-aliasing edge it stays the same size relative to the shape at any zoom, which is what lets it go in the box at all. A blur under half a pixel is floored at half a pixel when it's drawn; the box leaves that floor out since it's a sub-pixel distance. See [Measuring a shape](../shapes/README.md#measuring-a-shape) for what a measure is for.
 
 ## Limits
 

@@ -141,7 +141,7 @@ _sb.FillPath(points, radii, Color.White);
 
 `PathTo` takes a radius the same way, and one point carrying one switches the whole path over; the rest keep the radius `BeginPath` was given. Points that carry join styles take a radius list too, so a stroke can vary its width and its joins at once.
 
-A varying width dashes like any other path. The pattern still walks the spine, and each dash comes out as wide as the stroke is where it lands, caps included.
+A stroke with a varying width dashes like any other path. The pattern still walks the spine, and each dash comes out as wide as the stroke is where it lands, caps included.
 
 Miter joins sharper than the `miterLimit` parameter, measured like SVG's `miterlimit` with a default of 4, fall back to bevel. A path that crosses over itself overlaps like two separate shapes would. The same happens at a joint whose segments are shorter than the stroke is wide.
 
