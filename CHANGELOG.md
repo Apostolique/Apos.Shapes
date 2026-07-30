@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- Chamfers. `DrawChamfer`, `FillChamfer`, and `BorderChamfer` draw a rectangle whose corners are cut straight across. A `CornerChamfers` sets how far back each corner is cut. They take gradients, dashes, clipping, and rotation like every other shape.
+- `FillChamferBlurred` and `BorderChamferBlurred`.
+- `Measure.Chamfer` and `Measure.ChamferBlurred`.
+
+### Fixed
+
+- A round capped dash on a rectangle, hexagon, triangle, or chamfer had its cap notched on one side and whiskered on the other when the dash ended on a corner. Dots came out the same way.
+- A butt capped dash long enough to turn more than a right angle (one triangle corner, two rectangle or hexagon corners, three chamfer vertices, half a circle, or a sharp path joint) had a wedge bitten out of it, and a gap turning that far kept a spur of border.
 
 ## [0.7.12] - 2026-07-27
 

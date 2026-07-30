@@ -49,7 +49,11 @@ namespace GameProject {
             if (_toggleDither.Pressed()) _ditherMode = (_ditherMode + 1) % 3;
             if (_strengthUp.Pressed()) _demoStrength = MathF.Min(_demoStrength + 1f, 16f);
             if (_strengthDown.Pressed()) _demoStrength = MathF.Max(_demoStrength - 1f, 1f);
-            if (_toggleScene.Pressed()) _currentScene = (Scene)(((int)_currentScene + 1) % Enum.GetNames<Scene>().Length);
+            if (_toggleScene.Pressed()) {
+                int n = Enum.GetNames<Scene>().Length;
+                int step = _sceneBack.Held() ? n - 1 : 1;
+                _currentScene = (Scene)(((int)_currentScene + step) % n);
+            }
             UpdateDashOffset(gameTime);
             _fps.Update(gameTime);
 
@@ -74,30 +78,67 @@ namespace GameProject {
             _sb.DitherStrength = _ditherMode == 2 ? 0f : _demoStrength;
             _sb.DitherNoiseSource = _ditherMode == 1 ? DitherNoise.InterleavedGradient : DitherNoise.BlueNoise;
 
-            if (_currentScene == Scene.Dash) {
-                DrawDashScene();
-                base.Draw(gameTime);
-                return;
+            switch (_currentScene) {
+                case Scene.Circle: DrawCircleScene(font); break;
+                case Scene.Rectangle: DrawRectangleScene(font); break;
+                case Scene.Chamfer: DrawChamferScene(font); break;
+                case Scene.Polygon: DrawPolygonScene(font); break;
+                case Scene.Line: DrawLineScene(font); break;
+                case Scene.Path: DrawPathScene(font); break;
+                case Scene.Arc: DrawArcScene(font); break;
+                case Scene.Gradient: DrawGradientScene(font); break;
+                case Scene.ColorSpace: DrawColorSpaceScene(font); break;
+                case Scene.Clip: DrawClipScene(font); break;
+                case Scene.Text: DrawTextScene(font, titleFont); break;
+                case Scene.Dash: DrawDashScene(); break;
+                case Scene.Closed: DrawClosedScene(); break;
+                case Scene.Blur: DrawBlurScene(font); break;
+                case Scene.Banding: DrawBandingScene(font); break;
+                default: DrawMainScene(font, titleFont); break;
             }
 
-            if (_currentScene == Scene.Closed) {
-                DrawClosedScene();
-                base.Draw(gameTime);
-                return;
+            DrawSceneHeader(font);
+
+            if (_showDebug) {
+                _sb.Begin();
+                _sb.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 40), Color.White);
+                _sb.End();
             }
 
-            if (_currentScene == Scene.Blur) {
-                DrawBlurScene(font);
-                base.Draw(gameTime);
-                return;
-            }
+            base.Draw(gameTime);
+        }
 
-            if (_currentScene == Scene.Banding) {
-                DrawBandingScene(font);
-                base.Draw(gameTime);
-                return;
-            }
+        // The scene's name and where it sits in the cycle, in screen space so panning and zooming
+        // the scene underneath leaves it where it is.
+        private void DrawSceneHeader(FontStashSharp.SpriteFontBase font) {
+            int count = Enum.GetNames<Scene>().Length;
+            _sb.Begin();
+            _sb.DrawString(font, $"{(int)_currentScene + 1}/{count}  {SceneTitle(_currentScene)}    [Tab] next  [Shift+Tab] back", new Vector2(10, 10), TWColor.Gray500);
+            _sb.End();
+        }
 
+        private static string SceneTitle(Scene s) => s switch {
+            Scene.Main => "Everything at once",
+            Scene.Circle => "Circle and ellipse",
+            Scene.Rectangle => "Rectangle",
+            Scene.Chamfer => "Chamfer",
+            Scene.Polygon => "Hexagon and triangles",
+            Scene.Line => "Line",
+            Scene.Path => "Path",
+            Scene.Arc => "Arc and ring",
+            Scene.Gradient => "Gradients",
+            Scene.ColorSpace => "Color spaces",
+            Scene.Clip => "Clipping",
+            Scene.Text => "Text",
+            Scene.Dash => "Dashes",
+            Scene.Closed => "Closed paths",
+            Scene.Blur => "Blur",
+            _ => "Dithering",
+        };
+
+        // Everything the library draws, in one frame. It is also what the README banner is
+        // rendered from, so it stays a catalog; the scenes after it take one feature each.
+        private void DrawMainScene(FontStashSharp.SpriteFontBase font, FontStashSharp.SpriteFontBase titleFont) {
             _sb.Begin(_camera.View);
 
             // The same two colors interpolated in each supported color space.
@@ -158,14 +199,6 @@ namespace GameProject {
             _sb.FillPath([new Vector2(280, 335), new Vector2(355, 305), new Vector2(430, 335), new Vector2(505, 305), new Vector2(620, 335)], 9, new Gradient(new Vector2(280, 320), new Color(TWColor.Sky400, 0.6f), new Vector2(620, 320), new Color(TWColor.Fuchsia500, 0.6f)));
 
             _sb.End();
-
-            if (_showDebug) {
-                _sb.Begin();
-                _sb.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 10), Color.White);
-                _sb.End();
-            }
-
-            base.Draw(gameTime);
         }
 
         // Every dashed shape and both dash types. Tab cycles to it.
@@ -200,6 +233,532 @@ namespace GameProject {
             _sb.FillPath([new Vector2(360, 260), new Vector2(440, 170), new Vector2(520, 260), new Vector2(600, 170)], 8, TWColor.Green300, join: PathJoin.Bevel, dash: new DashStyle(24f, 18f, offset: offset));
 
             _sb.End();
+        }
+
+        // Chamfers, which are rectangles with their corners cut straight across. The cut runs from
+        // a square corner all the way to a diamond, one per corner if you want, and it takes
+        // gradients, dashes, blur, rotation and clipping like every other shape. Tab cycles to it.
+        private void DrawChamferScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+
+            float offset = _dashOffset;
+            Vector2 card = new(150, 104);
+
+            _sb.DrawString(font, "Fill, Border, Draw, per corner, the largest cut, and rotated", new Vector2(-620, -348), TWColor.Gray400);
+            _sb.FillChamfer(new Vector2(-620, -320), card, 24f,
+                new Gradient(new Vector2(0, 0), TWColor.Sky400, new Vector2(150, 104), TWColor.Indigo700, isLocal: true));
+            _sb.BorderChamfer(new Vector2(-452, -320), card, 24f, TWColor.Emerald300, 5f);
+            _sb.DrawChamfer(new Vector2(-284, -320), card, 24f, TWColor.Gray800, TWColor.Amber300, 5f);
+            // One cut per corner, down to a square one on the top left.
+            _sb.DrawChamfer(new Vector2(-116, -320), card, new CornerChamfers(0f, 46f, 16f, 30f),
+                new Gradient(new Vector2(75, 52), TWColor.Rose400, new Vector2(75, 104), TWColor.Purple800, Gradient.Shape.Radial, isLocal: true), TWColor.Slate200, 4f);
+            // A square cut to the limit is a diamond.
+            _sb.FillChamfer(new Vector2(60, -320), new Vector2(104), 52f,
+                new Gradient(new Vector2(112, -268), TWColor.Lime300, new Vector2(112, -216), TWColor.Green700, Gradient.Shape.Radial));
+            _sb.DrawChamfer(new Vector2(260, -320), card, 24f, TWColor.Gray800, TWColor.Cyan300, 5f, rotation: 0.25f);
+            _sb.FillChamfer(new Vector2(450, -320), card, 24f,
+                new Gradient(new Vector2(525, -268), TWColor.Yellow300, new Vector2(525, -320), TWColor.Orange600, Gradient.Shape.Conical));
+
+            // The whole range of the cut at one size, so the two ends read as the rectangle and the
+            // diamond they are.
+            _sb.DrawString(font, "The cut, from 0 up to half the smaller side", new Vector2(-620, -184), TWColor.Gray400);
+            float[] cuts = [0f, 5f, 11f, 17f, 23f, 29f, 33f, 35f];
+            for (int i = 0; i < cuts.Length; i++) {
+                _sb.DrawChamfer(new Vector2(-620 + i * 155, -156), new Vector2(100, 70), cuts[i], TWColor.Gray800, TWColor.Slate200, 3f);
+            }
+
+            // Dashes walk eight vertices instead of four, and every cut size hands the corner over
+            // differently, so this is the row to scrub with Left and Right.
+            _sb.DrawString(font, "Dashed: caps, per corner, a diamond, a fixed count, dots, a gradient", new Vector2(-620, -60), TWColor.Gray400);
+            _sb.BorderChamfer(new Vector2(-620, -32), card, 26f, TWColor.Sky300, 6f, dash: new DashStyle(24f, 16f, offset));
+            _sb.DrawChamfer(new Vector2(-452, -32), card, 26f, TWColor.Gray800, TWColor.Lime300, 8f, dash: new DashStyle(24f, 20f, offset, cap: DashCap.Round));
+            _sb.BorderChamfer(new Vector2(-284, -32), card, new CornerChamfers(0f, 46f, 16f, 30f), TWColor.Amber300, 6f, dash: new DashStyle(22f, 16f, offset));
+            _sb.BorderChamfer(new Vector2(-116, -32), new Vector2(104), 52f, TWColor.Rose400, 7f, dash: new DashStyle(26f, 18f, offset));
+            _sb.BorderChamfer(new Vector2(30, -32), card, 26f, TWColor.Violet300, 6f, rotation: 0.25f, dash: DashStyle.FromCount(10, 0.6f, offset));
+            // A dash of no length with round caps is a dotted outline.
+            _sb.BorderChamfer(new Vector2(250, -32), card, 26f, TWColor.Teal300, 7f, dash: new DashStyle(0f, 24f, offset, cap: DashCap.Round));
+            _sb.BorderChamfer(new Vector2(430, -32), card, 26f,
+                new Gradient(new Vector2(430, -32), TWColor.Orange400, new Vector2(580, 72), TWColor.Red600), 6f, dash: new DashStyle(24f, 16f, offset));
+
+            _sb.DrawString(font, "Blurred, then clipped, and the box Measure hands back", new Vector2(-620, 100), TWColor.Gray400);
+            // A drop shadow: an opaque card over a blurred copy of its own silhouette. The lighter
+            // surface under it is what makes a black shadow visible at all on a dark background.
+            _sb.FillRectangle(new Vector2(-636, 128), new Vector2(182, 140), TWColor.Gray700, new CornerRadii(10));
+            _sb.FillChamferBlurred(new Vector2(-613, 145), card, 24f, TWColor.Black, 10f);
+            _sb.FillChamfer(new Vector2(-620, 136), card, 24f, TWColor.Sky500);
+            _sb.BorderChamferBlurred(new Vector2(-430, 136), card, 24f, TWColor.Cyan300, 6f, 14f);
+            // A glow: the same blurred fill stacked under a crisp one reads as light off it.
+            _sb.FillChamferBlurred(new Vector2(-270, 148), new Vector2(140, 88), 26f, TWColor.Fuchsia500, 16f);
+            _sb.FillChamfer(new Vector2(-252, 162), new Vector2(104, 60), 18f, TWColor.Fuchsia200);
+
+            // Clipped: the window cuts the first and last shapes, the middle one keeps its cuts.
+            _sb.SetClipRect(new RectangleF(-60, 126, 340, 124), 18f);
+            _sb.FillChamfer(new Vector2(-95, 134), new Vector2(150, 108), 34f, TWColor.Red500);
+            _sb.FillChamfer(new Vector2(60, 134), new Vector2(150, 108), 34f, TWColor.Amber400);
+            _sb.FillChamfer(new Vector2(215, 134), new Vector2(150, 108), 34f, TWColor.Sky500);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(-60, 126), new Vector2(340, 124), TWColor.Gray600, 2f, new CornerRadii(18));
+
+            // Measure.Chamfer answers with the box the shape covers, rotation and all, which is
+            // what a camera culls against. The dashed outline is that box.
+            Vector2 mAt = new(450, 130);
+            Vector2 mSize = new(150, 100);
+            CornerChamfers mCut = new(10f, 40f, 10f, 40f);
+            _sb.FillChamfer(mAt, mSize, mCut, TWColor.Teal400, rotation: 0.5f);
+            RectangleF mb = Measure.Chamfer(mAt, mSize, mCut, 0.5f);
+            _sb.BorderRectangle(new Vector2(mb.X, mb.Y), new Vector2(mb.Width, mb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
+
+            _sb.DrawString(font, "[Tab] next scene   [Left/Right] scrub the dash phase   [P] play/pause", new Vector2(-620, 300), TWColor.Gray300);
+
+            _sb.End();
+        }
+
+        // The per shape scenes below share one grid: four labelled rows, the label on the left at
+        // the top of each, and a footer. Row centers sit at -262, -104, 52 and 210, so nothing a
+        // row draws should reach more than 54 either side of its own center.
+        private const float _rowA = -262f, _rowB = -104f, _rowC = 52f, _rowD = 210f;
+
+        private void DrawCircleScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "Fill, Border at rising thickness, Draw, and gradients");
+            _sb.FillCircle(new Vector2(-560, _rowA), 50, TWColor.Sky400);
+            for (int i = 0; i < 3; i++) {
+                _sb.BorderCircle(new Vector2(-430 + i * 130, _rowA), 50, TWColor.Emerald300, 2f + i * 5f);
+            }
+            _sb.DrawCircle(new Vector2(-40, _rowA), 50, TWColor.Gray800, TWColor.Amber300, 5f);
+            _sb.FillCircle(new Vector2(90, _rowA), 50, new Gradient(new Vector2(90, _rowA), TWColor.Fuchsia400, new Vector2(140, _rowA), TWColor.Purple800, Gradient.Shape.Radial));
+            _sb.FillCircle(new Vector2(220, _rowA), 50, new Gradient(new Vector2(220, _rowA), TWColor.Lime300, new Vector2(220, _rowA - 50), TWColor.Teal700, Gradient.Shape.Conical));
+            _sb.FillCircle(new Vector2(350, _rowA), 50, new Gradient(new Vector2(350, _rowA - 50), TWColor.Rose300, new Vector2(350, _rowA + 50), TWColor.Red800));
+
+            // Down to a radius the anti-aliasing is most of, which is where a fade that reaches
+            // outward shows up as a shape bigger than the one asked for.
+            L(-186, "Radius, from 2 up to 50");
+            float[] radii = [2f, 4f, 7f, 11f, 16f, 22f, 30f, 39f, 50f];
+            float rx = -600f;
+            foreach (float r in radii) {
+                _sb.FillCircle(new Vector2(rx + r, _rowB), r, TWColor.White);
+                rx += r * 2f + 34f;
+            }
+
+            L(-30, "Ellipse: two radii, so it also takes a rotation");
+            _sb.FillEllipse(new Vector2(-540, _rowC), 76, 40, TWColor.Sky400);
+            _sb.BorderEllipse(new Vector2(-370, _rowC), 76, 40, TWColor.Emerald300, 6f);
+            _sb.DrawEllipse(new Vector2(-200, _rowC), 76, 40, TWColor.Gray800, TWColor.Amber300, 5f);
+            _sb.DrawEllipse(new Vector2(-20, _rowC), 76, 40, TWColor.Gray800, TWColor.Cyan300, 5f, rotation: 0.6f);
+            _sb.FillEllipse(new Vector2(160, _rowC), 40, 50, new Gradient(new Vector2(160, _rowC - 50), TWColor.Violet300, new Vector2(160, _rowC + 50), TWColor.Purple800));
+            _sb.FillEllipse(new Vector2(300, _rowC), 90, 14, TWColor.Pink400);
+
+            L(128, "Dashed, blurred, and the box Measure hands back");
+            _sb.BorderCircle(new Vector2(-560, _rowD), 50, TWColor.Sky300, 6f, dash: new DashStyle(22f, 16f, _dashOffset));
+            _sb.BorderEllipse(new Vector2(-400, _rowD), 76, 46, TWColor.Lime300, 6f, dash: new DashStyle(22f, 16f, _dashOffset, cap: DashCap.Round));
+            _sb.FillCircleBlurred(new Vector2(-210, _rowD), 44, TWColor.Amber400, 9f);
+            _sb.BorderCircleBlurred(new Vector2(-80, _rowD), 44, TWColor.Cyan300, 5f, 10f);
+            _sb.FillEllipseBlurred(new Vector2(90, _rowD), 70, 34, TWColor.Fuchsia500, 10f);
+            _sb.FillEllipse(new Vector2(280, _rowD), 70, 40, TWColor.Teal400, rotation: 0.5f);
+            RectangleF eb = Measure.Ellipse(new Vector2(280, _rowD), 70, 40, 0.5f);
+            _sb.BorderRectangle(new Vector2(eb.X, eb.Y), new Vector2(eb.Width, eb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
+
+            Footer(font, "Scroll to zoom, right drag to pan");
+            _sb.End();
+        }
+
+        private void DrawRectangleScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            Vector2 size = new(140, 96);
+            Vector2 At(float x, float cy) => new(x, cy - size.Y * 0.5f);
+
+            L(-348, "Fill, Border, Draw, rounded, rotated, and a local gradient");
+            _sb.FillRectangle(At(-620, _rowA), size, TWColor.Sky400);
+            _sb.BorderRectangle(At(-460, _rowA), size, TWColor.Emerald300, 6f);
+            _sb.DrawRectangle(At(-300, _rowA), size, TWColor.Gray800, TWColor.Amber300, 5f, default);
+            _sb.DrawRectangle(At(-140, _rowA), size, TWColor.Gray800, TWColor.Rose300, 5f, new CornerRadii(24));
+            _sb.DrawRectangle(At(30, _rowA), size, TWColor.Gray800, TWColor.Cyan300, 5f, new CornerRadii(24), 0.3f);
+            _sb.FillRectangle(At(230, _rowA), size, new Gradient(new Vector2(0, 0), TWColor.Violet400, new Vector2(140, 96), TWColor.Purple800, isLocal: true), new CornerRadii(24));
+
+            // The four constructors CornerRadii offers, in the order the corners are named.
+            L(-186, "CornerRadii: one value, two, three, and one per corner");
+            _sb.DrawRectangle(At(-620, _rowB), size, TWColor.Gray800, TWColor.Slate200, 3f, new CornerRadii(20));
+            _sb.DrawRectangle(At(-460, _rowB), size, TWColor.Gray800, TWColor.Slate200, 3f, new CornerRadii(8, 40));
+            _sb.DrawRectangle(At(-300, _rowB), size, TWColor.Gray800, TWColor.Slate200, 3f, new CornerRadii(40, 8, 40));
+            _sb.DrawRectangle(At(-140, _rowB), size, TWColor.Gray800, TWColor.Slate200, 3f, new CornerRadii(0, 16, 32, 48));
+
+            L(-30, "The radius, from 0 up to half the smaller side");
+            float[] rr = [0f, 6f, 13f, 21f, 30f, 40f, 48f];
+            for (int i = 0; i < rr.Length; i++) {
+                _sb.DrawRectangle(At(-620 + i * 176, _rowC), size, TWColor.Gray800, TWColor.Slate200, 3f, new CornerRadii(rr[i]));
+            }
+
+            L(128, "Dashed, blurred, and a drop shadow");
+            _sb.BorderRectangle(At(-620, _rowD), size, TWColor.Sky300, 6f, new CornerRadii(20), dash: new DashStyle(22f, 16f, _dashOffset));
+            _sb.DrawRectangle(At(-460, _rowD), size, TWColor.Gray800, TWColor.Lime300, 8f, new CornerRadii(20), dash: new DashStyle(22f, 18f, _dashOffset, cap: DashCap.Round));
+            _sb.BorderRectangleBlurred(At(-300, _rowD), size, TWColor.Cyan300, 5f, 10f, new CornerRadii(20));
+            _sb.FillRectangle(new Vector2(-140, _rowD - 66), new Vector2(178, 132), TWColor.Gray700, new CornerRadii(10));
+            _sb.FillRectangleBlurred(At(-113, _rowD) + new Vector2(7, 9), size, TWColor.Black, 10f, new CornerRadii(20));
+            _sb.FillRectangle(At(-120, _rowD), size, TWColor.Sky500, new CornerRadii(20));
+            _sb.FillRectangle(At(80, _rowD), size, TWColor.Teal400, new CornerRadii(20), 0.5f);
+            RectangleF rb = Measure.Rectangle(At(80, _rowD), size, new CornerRadii(20), 0.5f);
+            _sb.BorderRectangle(new Vector2(rb.X, rb.Y), new Vector2(rb.Width, rb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
+
+            Footer(font, "The radii are clamped to half the smaller side");
+            _sb.End();
+        }
+
+        private void DrawPolygonScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "Hexagon: the radius runs to the flat edges, and rounded takes the corners off");
+            _sb.FillHexagon(new Vector2(-540, _rowA), 50, TWColor.Sky400);
+            _sb.BorderHexagon(new Vector2(-400, _rowA), 50, TWColor.Emerald300, 6f);
+            _sb.DrawHexagon(new Vector2(-260, _rowA), 50, TWColor.Gray800, TWColor.Amber300, 5f);
+            for (int i = 0; i < 4; i++) {
+                _sb.DrawHexagon(new Vector2(-110 + i * 140, _rowA), 50, TWColor.Gray800, TWColor.Slate200, 3f, rounded: i * 14f);
+            }
+            _sb.FillHexagon(new Vector2(460, _rowA), 50, TWColor.Rose400, rotation: 0.5f);
+
+            L(-186, "Equilateral triangle: the radius is the circle that fits inside it");
+            _sb.FillEquilateralTriangle(new Vector2(-540, _rowB), 32, TWColor.Sky400);
+            _sb.BorderEquilateralTriangle(new Vector2(-400, _rowB), 32, TWColor.Emerald300, 6f);
+            _sb.DrawEquilateralTriangle(new Vector2(-260, _rowB), 32, TWColor.Gray800, TWColor.Amber300, 5f);
+            for (int i = 0; i < 3; i++) {
+                _sb.DrawEquilateralTriangle(new Vector2(-110 + i * 140, _rowB), 32, TWColor.Gray800, TWColor.Slate200, 3f, rounded: i * 9f);
+            }
+            _sb.FillEquilateralTriangle(new Vector2(330, _rowB), 32, TWColor.Rose400, rotation: MathF.PI);
+
+            L(-30, "Triangle: three points in any order, with the corners rounded off");
+            for (int i = 0; i < 4; i++) {
+                float x = -600 + i * 150;
+                _sb.DrawTriangle(new Vector2(x, _rowC + 46), new Vector2(x + 55, _rowC - 46), new Vector2(x + 118, _rowC + 46),
+                                 TWColor.Gray800, TWColor.Slate200, 3f, rounded: i * 8f);
+            }
+            _sb.FillTriangle(new Vector2(30, _rowC + 46), new Vector2(140, _rowC - 30), new Vector2(190, _rowC + 46),
+                             new Gradient(new Vector2(110, _rowC - 46), TWColor.Amber300, new Vector2(110, _rowC + 46), TWColor.Red700));
+
+            L(128, "Dashed, at every corner style");
+            _sb.BorderHexagon(new Vector2(-540, _rowD), 50, TWColor.Sky300, 6f, rounded: 10f, dash: new DashStyle(22f, 16f, _dashOffset));
+            _sb.BorderEquilateralTriangle(new Vector2(-380, _rowD), 32, TWColor.Lime300, 6f, rounded: 8f, dash: new DashStyle(20f, 15f, _dashOffset));
+            _sb.BorderTriangle(new Vector2(-260, _rowD + 46), new Vector2(-190, _rowD - 46), new Vector2(-120, _rowD + 46),
+                               TWColor.Amber300, 6f, rounded: 6f, dash: new DashStyle(20f, 15f, _dashOffset));
+            _sb.DrawHexagon(new Vector2(0, _rowD), 50, TWColor.Gray800, TWColor.Fuchsia300, 8f, rounded: 8f, dash: new DashStyle(20f, 18f, _dashOffset, cap: DashCap.Round));
+            _sb.FillHexagon(new Vector2(160, _rowD), 50, TWColor.Teal400, rounded: 12f, rotation: 0.4f);
+            RectangleF hb = Measure.Hexagon(new Vector2(160, _rowD), 50, 12f, 0.4f);
+            _sb.BorderRectangle(new Vector2(hb.X, hb.Y), new Vector2(hb.Width, hb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
+
+            Footer(font, "Rotation turns every one of them about its own center");
+            _sb.End();
+        }
+
+        private void DrawLineScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "Two points and a radius, which is half the thickness. The caps are round");
+            // Stacked by their own radius, so a thick one never runs into its neighbour.
+            float[] rs = [2f, 4f, 7f, 11f, 16f];
+            float ly = _rowA - 50f;
+            foreach (float r in rs) {
+                ly += r;
+                _sb.FillLine(new Vector2(-600, ly), new Vector2(-190, ly), r, TWColor.Sky400);
+                ly += r + 5f;
+            }
+            _sb.DrawLine(new Vector2(-130, _rowA + 40), new Vector2(310, _rowA - 40), 18, TWColor.Gray800, TWColor.Amber300, 4f);
+            _sb.FillLine(new Vector2(390, _rowA + 40), new Vector2(600, _rowA - 40), 18,
+                         new Gradient(new Vector2(390, _rowA), TWColor.Fuchsia400, new Vector2(600, _rowA), TWColor.Purple800));
+
+            L(-186, "Dashed: flat caps, round caps, and a dash of no length, which is a dot");
+            _sb.FillLine(new Vector2(-600, _rowB - 34), new Vector2(400, _rowB - 34), 12, TWColor.Lime300, dash: new DashStyle(30f, 22f, _dashOffset));
+            _sb.DrawLine(new Vector2(-600, _rowB), new Vector2(400, _rowB), 12, TWColor.Gray800, TWColor.Pink400, 3f, dash: new DashStyle(34f, 24f, _dashOffset));
+            _sb.FillLine(new Vector2(-600, _rowB + 34), new Vector2(400, _rowB + 34), 10, TWColor.Teal300, dash: new DashStyle(0f, 30f, _dashOffset, cap: DashCap.Round));
+
+            L(-30, "Blurred, and blurred with a radius per end");
+            _sb.FillLineBlurred(new Vector2(-600, _rowC - 28), new Vector2(180, _rowC - 28), 12, TWColor.Amber400, 4f);
+            _sb.FillLineBlurred(new Vector2(-600, _rowC + 28), new Vector2(180, _rowC + 28), 14, 2f, TWColor.Cyan300, 4f);
+            _sb.BorderLineBlurred(new Vector2(290, _rowC), new Vector2(600, _rowC), 22, TWColor.Fuchsia400, 4f, 6f);
+
+            L(128, "A line whose two points are the same draws as a circle");
+            _sb.FillLine(new Vector2(-560, _rowD), new Vector2(-560, _rowD), 44, TWColor.Rose400);
+            _sb.BorderLine(new Vector2(-420, _rowD), new Vector2(-120, _rowD), 30, TWColor.Emerald300, 6f);
+            _sb.FillLine(new Vector2(-40, _rowD), new Vector2(300, _rowD), 30,
+                         new Gradient(new Vector2(-40, _rowD), new Color(TWColor.Sky400, 0.55f), new Vector2(300, _rowD), new Color(TWColor.Fuchsia500, 0.55f)));
+            Vector2 la = new(380, _rowD - 40), lb = new(600, _rowD + 40);
+            _sb.FillLine(la, lb, 22, TWColor.Teal400);
+            RectangleF lbx = Measure.Line(la, lb, 22);
+            _sb.BorderRectangle(new Vector2(lbx.X, lbx.Y), new Vector2(lbx.Width, lbx.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
+
+            Footer(font, "For more than two points, use a path");
+            _sb.End();
+        }
+
+        private void DrawPathScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+
+            L(-348, "Joins: round, miter, and bevel");
+            PathJoin[] joins = [PathJoin.Round, PathJoin.Miter, PathJoin.Bevel];
+            for (int i = 0; i < 3; i++) {
+                float x = -600 + i * 220;
+                _sb.FillPath([new Vector2(x, _rowA + 34), new Vector2(x + 80, _rowA - 34), new Vector2(x + 160, _rowA + 34)], 16, TWColor.Sky400, join: joins[i]);
+                Under(x + 40, _rowA + 46, joins[i].ToString());
+            }
+            _sb.DrawPath([new Vector2(80, _rowA + 44), new Vector2(160, _rowA - 44), new Vector2(240, _rowA + 44), new Vector2(320, _rowA - 44)],
+                         14, TWColor.Gray800, TWColor.Amber300, 3f, join: PathJoin.Miter);
+
+            L(-180, "Caps: round, butt, and square, and cap and capEnd are set apart");
+            PathCap[] caps = [PathCap.Round, PathCap.Butt, PathCap.Square];
+            for (int i = 0; i < 3; i++) {
+                float y = _rowB - 34 + i * 34;
+                _sb.FillPath([new Vector2(-600, y), new Vector2(-380, y)], 15, TWColor.Emerald300, cap: caps[i]);
+                Under(-360, y - 12, caps[i].ToString());
+            }
+            _sb.FillPath([new Vector2(-160, _rowB + 40), new Vector2(-60, _rowB - 40), new Vector2(40, _rowB + 40), new Vector2(140, _rowB - 40), new Vector2(240, _rowB + 40)],
+                         14, TWColor.Rose400, cap: PathCap.Butt, capEnd: PathCap.Square);
+
+            // A radius per point, which is what a pressure sensitive pen gives you.
+            L(-30, "A radius per point, so the stroke swells and tapers");
+            Vector2[] wave = new Vector2[25];
+            float[] wr = new float[25];
+            for (int i = 0; i < 25; i++) {
+                wave[i] = new Vector2(-600 + i * 40, _rowC + MathF.Sin(i * 0.55f) * 34);
+                wr[i] = 2 + i * 0.7f;
+            }
+            _sb.FillPath(wave, wr, new Gradient(new Vector2(-600, _rowC), TWColor.Cyan300, new Vector2(360, _rowC), TWColor.Blue700));
+
+            L(128, "Dashed, closed, and joins set per point");
+            _sb.FillPath([new Vector2(-600, _rowD + 40), new Vector2(-500, _rowD - 40), new Vector2(-400, _rowD + 40), new Vector2(-300, _rowD - 40)],
+                         12, TWColor.Lime300, dash: new DashStyle(26f, 18f, _dashOffset));
+            _sb.FillPath([new Vector2(-220, _rowD + 44), new Vector2(-130, _rowD - 44), new Vector2(-40, _rowD + 44)], 13, TWColor.Amber300,
+                         join: PathJoin.Miter, closed: true, dash: new DashStyle(24f, 16f, _dashOffset));
+            _sb.FillPath([
+                new Vector2(40, _rowD + 40),
+                (new Vector2(130, _rowD - 40), PathJoin.Miter),
+                new Vector2(220, _rowD + 40),
+                (new Vector2(310, _rowD - 40), PathJoin.Bevel),
+                new Vector2(400, _rowD + 40)
+            ], 13, TWColor.Fuchsia400, cap: PathCap.Butt, capEnd: PathCap.Square);
+
+            Footer(font, "A translucent path blends once even where its segments meet");
+            _sb.End();
+        }
+
+        private void DrawArcScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "Arc: a stroke along a circle, with round caps. 0 points right, angles grow clockwise");
+            float[] spans = [0.4f, 1f, 1.6f, 2.2f, 2.8f, MathF.PI];
+            for (int i = 0; i < spans.Length; i++) {
+                _sb.FillArc(new Vector2(-540 + i * 150, _rowA), -spans[i], spans[i], 46, 11, TWColor.Sky400);
+            }
+            _sb.FillArc(new Vector2(420, _rowA), 0f, MathF.Tau, 46, 11, TWColor.Emerald300);
+
+            L(-186, "Ring: the same, cut flat at both ends");
+            for (int i = 0; i < spans.Length; i++) {
+                _sb.FillRing(new Vector2(-540 + i * 150, _rowB), -spans[i], spans[i], 46, 11, TWColor.Amber300);
+            }
+            _sb.FillRing(new Vector2(420, _rowB), 0f, MathF.Tau, 46, 11, TWColor.Rose400);
+
+            L(-30, "The second radius is the band's half thickness");
+            float[] bands = [2f, 4f, 7f, 10f, 13f, 15f];
+            for (int i = 0; i < bands.Length; i++) {
+                _sb.FillArc(new Vector2(-540 + i * 150, _rowC), MathF.PI * 0.75f, MathF.PI * 2.25f, 38, bands[i], TWColor.Violet300);
+            }
+
+            L(128, "Dashed and drawn: a stroke, so each dash gets its own fill and border");
+            _sb.FillArc(new Vector2(-540, _rowD), MathF.PI * 0.75f, MathF.PI * 2.25f, 46, 12, TWColor.Lime300, dash: new DashStyle(24f, 18f, _dashOffset));
+            _sb.FillArc(new Vector2(-380, _rowD), MathF.PI * 0.75f, MathF.PI * 2.25f, 46, 12, TWColor.Teal300, dash: new DashStyle(26f, 20f, _dashOffset, cap: DashCap.Round));
+            _sb.DrawRing(new Vector2(-220, _rowD), MathF.PI * 0.75f, MathF.PI * 2.25f, 46, 12, TWColor.Gray800, TWColor.Pink400, 3f, dash: new DashStyle(28f, 20f, _dashOffset));
+            // A counted pattern always lays down the same number of repeats, whatever the size.
+            _sb.FillRing(new Vector2(-60, _rowD), 0f, MathF.Tau, 46, 12, TWColor.Cyan300, dash: DashStyle.FromCount(9, 0.6f, _dashOffset));
+            _sb.FillArc(new Vector2(120, _rowD), MathF.PI * 0.6f, MathF.PI * 2.4f, 46, 12,
+                        new Gradient(new Vector2(120, _rowD), TWColor.Red500, new Vector2(120, _rowD - 58), TWColor.Amber300, Gradient.Shape.Conical));
+
+            Footer(font, "Only the swept part is measured, so a small arc of a big circle has a small box");
+            _sb.End();
+        }
+
+        private void DrawGradientScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+
+            L(-348, "Gradient.Shape, on a circle so the shape of the gradient is the only thing changing");
+            (string Name, Gradient.Shape Shape)[] shapes = [
+                ("Radial", Gradient.Shape.Radial), ("Linear", Gradient.Shape.Linear), ("Bilinear", Gradient.Shape.Bilinear),
+                ("Conical", Gradient.Shape.Conical), ("ConicalAsym", Gradient.Shape.ConicalAsym), ("Square", Gradient.Shape.Square),
+                ("Cross", Gradient.Shape.Cross), ("SpiralCW", Gradient.Shape.SpiralCW),
+            ];
+            for (int i = 0; i < shapes.Length; i++) {
+                float x = -560 + i * 152;
+                _sb.FillCircle(new Vector2(x, _rowA), 46, new Gradient(new Vector2(x, _rowA), TWColor.Sky300, new Vector2(x + 46, _rowA), TWColor.Indigo800, shapes[i].Shape));
+                Under(x - 44, _rowA + 52, shapes[i].Name);
+            }
+
+            L(-180, "Gradient.RepeatStyle, over a frame a third of the bar wide");
+            (string Name, Gradient.RepeatStyle Style)[] styles = [
+                ("None", Gradient.RepeatStyle.None), ("Sawtooth", Gradient.RepeatStyle.Sawtooth),
+                ("Triangle", Gradient.RepeatStyle.Triangle), ("Sine", Gradient.RepeatStyle.Sine),
+            ];
+            for (int i = 0; i < styles.Length; i++) {
+                float y = _rowB - 42 + i * 28;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), TWColor.Cyan400, new Vector2(-300, y), TWColor.Blue800, Gradient.Shape.Linear, styles[i].Style), 4f);
+                Under(320, y - 2, styles[i].Name);
+            }
+
+            L(-30, "Offsets hold each end solid before the transition starts");
+            float[][] offs = [[0f, 0f], [0.25f, 0f], [0f, 0.25f], [0.3f, 0.3f]];
+            for (int i = 0; i < offs.Length; i++) {
+                float y = _rowC - 42 + i * 28;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), TWColor.Amber300, new Vector2(300, y), TWColor.Red700, Gradient.Shape.Linear, Gradient.RepeatStyle.None, offs[i][0], offs[i][1]), 4f);
+                Under(320, y - 2, $"{offs[i][0]:0.##} / {offs[i][1]:0.##}");
+            }
+
+            L(128, "A local gradient is placed on the shape, so it travels and turns with it");
+            for (int i = 0; i < 4; i++) {
+                _sb.FillRectangle(new Vector2(-600 + i * 170, _rowD - 38), new Vector2(110, 76),
+                    new Gradient(new Vector2(0, 0), TWColor.Fuchsia400, new Vector2(110, 76), TWColor.Purple900, isLocal: true), new CornerRadii(16), i * 0.13f);
+            }
+            _sb.FillCircle(new Vector2(180, _rowD), 48, new Gradient(new Vector2(180, _rowD), TWColor.Lime300, new Vector2(180, _rowD - 48), TWColor.Green800, Gradient.Shape.SpiralCCW));
+            _sb.FillHexagon(new Vector2(300, _rowD), 46, new Gradient(new Vector2(0, 0), TWColor.Teal300, new Vector2(0, 46), TWColor.Sky800, Gradient.Shape.Radial, isLocal: true));
+
+            Footer(font, "Any shape takes a gradient wherever it takes a Color");
+            _sb.End();
+        }
+
+        private void DrawColorSpaceScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "The same two stops interpolated in each space. ColorSpace is read per shape");
+            (string Name, ColorSpace Space)[] spaces = [("Oklch", ColorSpace.Oklch), ("Oklab", ColorSpace.Oklab), ("Rgb", ColorSpace.Rgb)];
+            for (int i = 0; i < spaces.Length; i++) {
+                float y = _rowA - 54 + i * 36;
+                _sb.ColorSpace = spaces[i].Space;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(820, 30),
+                    new Gradient(new Vector2(-600, y), TWColor.Blue600, new Vector2(220, y), TWColor.Red600), 8f);
+                _sb.DrawString(font, spaces[i].Name, new Vector2(240, y + 2), TWColor.Gray300);
+            }
+
+            L(-186, "Gray has no hue of its own, so Oklch borrows the other stop's");
+            for (int i = 0; i < spaces.Length; i++) {
+                float y = _rowB - 54 + i * 36;
+                _sb.ColorSpace = spaces[i].Space;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(820, 30),
+                    new Gradient(new Vector2(-600, y), TWColor.Gray500, new Vector2(220, y), TWColor.Blue600), 8f);
+                _sb.DrawString(font, spaces[i].Name, new Vector2(240, y + 2), TWColor.Gray300);
+            }
+
+            L(-30, "Yellow to blue, the pair that separates them most");
+            for (int i = 0; i < spaces.Length; i++) {
+                float y = _rowC - 54 + i * 36;
+                _sb.ColorSpace = spaces[i].Space;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(820, 30),
+                    new Gradient(new Vector2(-600, y), TWColor.Yellow300, new Vector2(220, y), TWColor.Blue700), 8f);
+                _sb.DrawString(font, spaces[i].Name, new Vector2(240, y + 2), TWColor.Gray300);
+            }
+
+            _sb.ColorSpace = ColorSpace.Oklab;
+            L(128, "Oklab is the default. Textures and text are always plain RGBA masks");
+            _sb.FillRectangle(new Vector2(-600, _rowD - 30), new Vector2(500, 60),
+                new Gradient(new Vector2(-600, _rowD), TWColor.Emerald300, new Vector2(-100, _rowD), TWColor.Fuchsia600), 12f);
+
+            Footer(font, "Mixing spaces inside one frame never breaks the batch");
+            _sb.End();
+        }
+
+        private void DrawClipScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "A clip rectangle, with and without rounding");
+            for (int i = 0; i < 2; i++) {
+                float x = -600 + i * 460;
+                float round = i * 26f;
+                _sb.SetClipRect(new RectangleF(x, _rowA - 50, 400, 100), round);
+                _sb.FillCircle(new Vector2(x + 60, _rowA + 10), 60, TWColor.Red500);
+                _sb.FillCircle(new Vector2(x + 200, _rowA + 10), 60, TWColor.Amber400);
+                _sb.FillCircle(new Vector2(x + 340, _rowA + 10), 60, TWColor.Sky500);
+                _sb.SetClipRect(null);
+                _sb.BorderRectangle(new Vector2(x, _rowA - 50), new Vector2(400, 100), TWColor.Gray600, 2f, new CornerRadii(round));
+            }
+
+            L(-186, "The clip turns too, and it cuts strokes and text the same way");
+            // Turned, so the clip is not axis aligned. A wide box grows tall fast once it turns,
+            // so this one is kept short enough to stay inside its row.
+            _sb.SetClipRect(new RectangleF(-600, _rowB - 28, 220, 56), 14f, 0.22f);
+            _sb.FillLine(new Vector2(-640, _rowB + 26), new Vector2(-330, _rowB - 26), 18, TWColor.Emerald400);
+            _sb.FillLine(new Vector2(-640, _rowB - 16), new Vector2(-330, _rowB + 34), 12, TWColor.Fuchsia400);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(-600, _rowB - 28), new Vector2(220, 56), TWColor.Gray600, 2f, new CornerRadii(14), 0.22f);
+            _sb.SetClipRect(new RectangleF(-300, _rowB - 40, 420, 80), 20f);
+            _sb.FillRectangle(new Vector2(-320, _rowB - 52), new Vector2(460, 104), TWColor.Indigo700);
+            _sb.DrawString(font, "clipped text runs off the edge", new Vector2(-280, _rowB - 12), TWColor.Amber200);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(-300, _rowB - 40), new Vector2(420, 80), TWColor.Gray600, 2f, new CornerRadii(20));
+
+            L(-30, "Setting it back to null draws unclipped again, in the same batch");
+            _sb.SetClipRect(new RectangleF(-600, _rowC - 48, 300, 96), 16f);
+            _sb.FillHexagon(new Vector2(-450, _rowC), 70, TWColor.Teal400);
+            _sb.SetClipRect(null);
+            _sb.FillHexagon(new Vector2(-160, _rowC), 46, TWColor.Teal400);
+            _sb.BorderRectangle(new Vector2(-600, _rowC - 48), new Vector2(300, 96), TWColor.Gray600, 2f, new CornerRadii(16));
+            _sb.SetClipRect(new RectangleF(0, _rowC - 48, 300, 96), 16f);
+            _sb.FillChamfer(new Vector2(20, _rowC - 70), new Vector2(260, 140), 40f, TWColor.Rose400);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(0, _rowC - 48), new Vector2(300, 96), TWColor.Gray600, 2f, new CornerRadii(16));
+
+            L(128, "A blurred shape clips like any other");
+            _sb.SetClipRect(new RectangleF(-600, _rowD - 54, 520, 108), 24f);
+            _sb.FillCircleBlurred(new Vector2(-470, _rowD), 60, TWColor.Amber400, 14f);
+            _sb.FillCircleBlurred(new Vector2(-250, _rowD), 60, TWColor.Cyan300, 14f);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(-600, _rowD - 54), new Vector2(520, 108), TWColor.Gray600, 2f, new CornerRadii(24));
+
+            Footer(font, "The clip has its own anti-aliased edge, so it never comes out jagged");
+            _sb.End();
+        }
+
+        private void DrawTextScene(FontStashSharp.SpriteFontBase font, FontStashSharp.SpriteFontBase titleFont) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+
+            L(-348, "Text goes through the FontStashSharp API, into the same batch as the shapes");
+            _sb.DrawString(titleFont, "Apos.Shapes", new Vector2(-600, _rowA - 40), TWColor.Gray100);
+            _sb.DrawString(font, "Shape rendering in MonoGame", new Vector2(-600, _rowA + 16), TWColor.Gray400);
+
+            L(-186, "Any color, and it composites with whatever is under it");
+            _sb.FillRectangle(new Vector2(-600, _rowB - 40), new Vector2(560, 80),
+                new Gradient(new Vector2(-600, _rowB), TWColor.Indigo700, new Vector2(-40, _rowB), TWColor.Fuchsia800), 14f);
+            _sb.DrawString(font, "over a gradient", new Vector2(-560, _rowB - 12), TWColor.White);
+            _sb.DrawString(font, "translucent", new Vector2(-260, _rowB - 12), new Color(TWColor.White, 0.5f));
+            _sb.DrawString(font, "colored", new Vector2(60, _rowB - 12), TWColor.Amber300);
+
+            L(-30, "Mixed with shapes, one draw call for the lot");
+            for (int i = 0; i < 4; i++) {
+                float x = -600 + i * 190;
+                _sb.DrawRectangle(new Vector2(x, _rowC - 40), new Vector2(160, 80), TWColor.Gray800, TWColor.Slate300, 2f, new CornerRadii(14));
+                _sb.FillCircle(new Vector2(x + 34, _rowC), 18, TWColor.Sky400);
+                _sb.DrawString(font, $"item {i + 1}", new Vector2(x + 62, _rowC - 12), TWColor.Gray200);
+            }
+
+            L(128, "Clipped, so a label can be cut to its own box");
+            _sb.SetClipRect(new RectangleF(-600, _rowD - 30, 300, 60), 12f);
+            _sb.FillRectangle(new Vector2(-600, _rowD - 30), new Vector2(300, 60), TWColor.Slate800, new CornerRadii(12));
+            _sb.DrawString(font, "a label too long for its box", new Vector2(-580, _rowD - 12), TWColor.Gray100);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(-600, _rowD - 30), new Vector2(300, 60), TWColor.Gray600, 2f, new CornerRadii(12));
+
+            Footer(font, "The font is loaded once and drawn straight into the ShapeBatch");
+            _sb.End();
+        }
+
+        private void Footer(FontStashSharp.SpriteFontBase font, string text) {
+            _sb.DrawString(font, text, new Vector2(-620, 300), TWColor.Gray500);
         }
 
         // Blurred shapes. The falloff is a world space Gaussian rather than a screen space AA
@@ -437,6 +996,7 @@ namespace GameProject {
         ICondition _strengthUp = new KeyboardCondition(Keys.Up);
         ICondition _strengthDown = new KeyboardCondition(Keys.Down);
         ICondition _toggleScene = new KeyboardCondition(Keys.Tab);
+        ICondition _sceneBack = new AnyCondition(new KeyboardCondition(Keys.LeftShift), new KeyboardCondition(Keys.RightShift));
         ICondition _dashBack = new KeyboardCondition(Keys.Left);
         ICondition _dashForward = new KeyboardCondition(Keys.Right);
         ICondition _dashStepFast = new AnyCondition(new KeyboardCondition(Keys.LeftShift), new KeyboardCondition(Keys.RightShift));
@@ -462,6 +1022,17 @@ namespace GameProject {
 
         enum Scene {
             Main,
+            Circle,
+            Rectangle,
+            Chamfer,
+            Polygon,
+            Line,
+            Path,
+            Arc,
+            Gradient,
+            ColorSpace,
+            Clip,
+            Text,
             Dash,
             Closed,
             Blur,

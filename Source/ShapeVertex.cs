@@ -156,7 +156,8 @@ namespace Apos.Shapes {
             Ring = 8,
             Texture = 9,
             String = 10,
-            Path = 11
+            Path = 11,
+            Chamfer = 12
         }
 
         static VertexShape() {

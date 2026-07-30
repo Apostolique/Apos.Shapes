@@ -15,7 +15,7 @@ The default `DashStyle` draws solid, so shapes are undashed until you pass one. 
 
 Dashes mean two different things depending on the shape.
 
-Closed outlines (circle, ellipse, rectangle, hexagon, equilateral triangle, and triangle) dash their **border** along the perimeter. The fill is left alone, so the gaps show whatever is inside:
+Closed outlines (circle, ellipse, rectangle, chamfer, hexagon, equilateral triangle, and triangle) dash their **border** along the perimeter. The fill is left alone, so the gaps show whatever is inside:
 
 ```csharp
 _sb.DrawCircle(new Vector2(120, 120), 75, new Color(96, 165, 250), Color.White, 8f, dash: new DashStyle(26f, 20f));

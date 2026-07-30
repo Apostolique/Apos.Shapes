@@ -85,6 +85,44 @@ float RoundBoxSDF(float2 p, float2 b, float4 r) {
     float2 q = abs(p) - b + r.x;
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
 }
+// Box with half size b whose corners are cut straight across, each by r measured along both of
+// its edges from the corner. The radii arrive in the order RoundBoxSDF takes its own, and the
+// corner the point sits over picks one the same way.
+//
+// Folding onto q.x >= q.y halves what is left. The corner's own region is an intersection of
+// three half planes - the two edges and the cut - and it is symmetric across that diagonal
+// whatever b is, so one octant answers for both. Which of the three is nearest is then two
+// compares: the edge, the cut, or the vertex where they meet, exact inside and out.
+//
+// One corner alone is exact OUTSIDE, since a point in a quadrant has its nearest point in that
+// quadrant: clamping any candidate back into the quadrant keeps it inside the shape and never
+// moves it further off. Inside it is not, because a neighbour's cut can run nearer than
+// anything this corner has, and a shallow cut beside a deep one leaves a step along the axis
+// between them - right where a border band's inner edge lands. Inside a convex polygon the
+// distance to the boundary is the smallest distance to any edge's LINE, so folding the other
+// three cuts back in as plain half planes settles it. Outside they are supporting lines, which
+// can never beat the true distance, so the same max leaves that case alone.
+float ChamferBoxSDF(float2 p, float2 b, float4 r) {
+    float2 rx = (p.x > 0.0) ? r.xy : r.zw;
+    float cut = (p.y > 0.0) ? rx.y : rx.x;
+
+    float2 q = abs(p) - b;
+    q = (q.y > q.x) ? q.yx : q.xy;
+    q.y += cut;
+    float d;
+    if (q.y < 0.0 && q.y - q.x * 0.41421356237 < 0.0) { // 1 - sqrt(2): the vertex's own plane.
+        d = q.x;
+    } else if (q.x < q.y) {
+        d = (q.x + q.y) * 0.70710678119;
+    } else {
+        d = length(q);
+    }
+
+    // The four cuts as half planes, each at 45 degrees, so all of them read off one sum and one
+    // difference. Scaled by the shared 1 / sqrt(2) once the max has picked one.
+    float4 e = float4(p.x - p.y, p.x + p.y, -p.x - p.y, -p.x + p.y) - (b.x + b.y) + r;
+    return max(d, max(max(e.x, e.y), max(e.z, e.w)) * 0.70710678119);
+}
 float SegmentSDF(float2 p, float2 a, float2 b) {
     float2 ba = b - a;
     float2 pa = p - a;
@@ -401,15 +439,16 @@ float DashDistance(float u, float2 data) {
 // Signed pattern distance to the nearest dash edge, plus the contour positions of the two
 // edges bounding the pixel's dash or gap, so the caller can measure to both edges' real
 // geometry: near a corner they sit on different zones, and using only the nearest one
-// would jump where the pattern midpoint flips between them.
-float3 DashEdges(float u, float2 data) {
+// would jump where the pattern midpoint flips between them. How long one dash runs comes
+// along in w, since it is already unpacked here and a round cap's own end needs it.
+float4 DashEdges(float u, float2 data) {
     float m = data.y;
     float ph = DecodeDigit(m, 2048.0) / 2047.0;
     float h = m / 2047.0 * 0.5;
     float t = frac(u / data.x - ph + 0.5) - 0.5;
     float db = min(frac(t - h), frac(t + h));
     float da = min(frac(h - t), frac(-h - t));
-    return float3((abs(t) - h) * data.x, u - db * data.x, u + da * data.x);
+    return float4((abs(t) - h) * data.x, u - db * data.x, u + da * data.x, 2.0 * h * data.x);
 }
 
 float2 Perp(float2 v) {
@@ -422,17 +461,48 @@ float2 Rot(float2 v, float a) {
     return float2(v.x * c - v.y * s, v.x * s + v.y * c);
 }
 
+// An eighth of a turn either way, which is what every vertex a chamfer walks turns by. s picks the
+// direction; both sine and cosine are the same constant, so there is no trigonometry in it.
+float2 Rot45(float2 v, float s) {
+    return float2(v.x - s * v.y, s * v.x + v.y) * 0.70710678119;
+}
+
+// Distance to the segment that leaves a along the unit direction d and runs len. A length of zero
+// leaves the point itself, which is the disc a dash with no body comes down to.
+float SegRun(float2 q, float2 a, float2 d, float len) {
+    float2 f = q - a;
+    return length(f - d * clamp(dot(f, d), 0.0, max(len, 0.0)));
+}
+
+// Component i of a float4, halved then halved again, the way a corner picks its own.
+float Pick4(float4 v, float i) {
+    float2 h = i < 1.5 ? v.xy : v.zw;
+    return (i < 0.5 || (i > 1.5 && i < 2.5)) ? h.x : h.y;
+}
+
 // Signed world distance to the nearest dash edge of a closed outline, negative inside a dash.
-// Every dash edge is a straight line: perpendicular to a straight run, or a ray out of a
-// corner arc's center. So the distance to one is exact, taken from any point on it and its
-// unit tangent, and for an arc the center serves as that point since it lies on every ray.
-// The alternative, rescaling the contour offset by the local gradient of the perimeter
-// coordinate, is only right when the pixel and the dash edge sit in the same zone. That
-// gradient jumps where a run meets a corner - parallel lines on one side, converging rays on
-// the other - so a dash edge landing near a corner rather than on it puts a step in the
-// middle of the anti-aliasing ramp, and coverage climbs again as it falls off.
-float DashCutFromEdges(float2 q, float3 de, float2 pb, float2 nb, float2 pa, float2 na) {
-    float m = min(dot(q - pb, nb), -dot(q - pa, na));
+// Every dash edge is a straight line - perpendicular to a straight run, or a ray out of a
+// corner arc's center - and it is measured as the stretch of that line that actually crosses
+// the band, never any further. Two shorter measurements suggest themselves and both are wrong.
+// Rescaling the contour offset by the local gradient of the perimeter coordinate is only right
+// when the pixel and the dash edge sit in the same zone: the gradient jumps where a run meets
+// a corner - parallel lines on one side, converging rays on the other - which puts a step in
+// the middle of the anti-aliasing ramp. And the plane through the edge is exact beside it but
+// carries on around the outline, its projection shrinking by the cosine of the accumulated
+// turn; past ninety degrees - one eqtriangle corner, two box corners, three chamfer vertices,
+// half a circle - that is negative, the plane is back on the wrong side of itself, and every
+// pixel out there reads as being out of its own dash: a wedge bitten out of the dash, or a
+// spur of band left standing in a gap.
+// The stretch has no side to flip. It runs out of the fan's fillet center along the ray, or
+// out of the run's inner band crossing along the outward normal - lo says where it starts -
+// and unbounded outward, since a convex outline never lets either line come back to the band.
+// The sign cannot come from the measurement then, and it does not need to: the pattern
+// already says which cell the pixel is in, exactly, and the distance only has to be right
+// near the cut where the anti-aliasing reads it. aa backs the inner bound off so the cut
+// stays a true distance through the band's inner blur collar.
+float DashCutFromSegs(float2 q, float4 de, float2 pb, float2 db, float lob, float2 pa, float2 da, float loa, float aa) {
+    float m = min(SegRun(q, pb + db * (lob - aa), db, 1e6),
+                  SegRun(q, pa + da * (loa - aa), da, 1e6));
     return de.x >= 0.0 ? m : -m;
 }
 
@@ -503,7 +573,7 @@ float PathRadiusAt(float ue, float uA, float uB, float rA, float rB, float lean)
 // what keeps edges, borders and AA at their true width right through the corner fans. Every
 // dash edge is a straight line - perpendicular to a straight run, or a ray out of the fillet
 // center - so the distance to one is exact from any point on it and its unit tangent, which
-// is what PathEdgeFrame returns. See DashCutFromEdges, the same measurement every closed
+// is what PathEdgeFrame returns. See DashCutFromSegs, the same measurement every closed
 // outline makes.
 // Rounded dashes are the exact capsule around the rounded spine, built from the bounding
 // edges' spine points. thA and thB are the signed turn angles at the ends, zero at caps and
@@ -514,7 +584,7 @@ float PathRadiusAt(float ue, float uA, float uB, float rA, float rB, float lean)
 // rounded dash's body and caps - takes the width where it stands rather than one for the whole
 // segment. A uniform stroke passes the same radius twice and every one of them collapses.
 // type >= 1.5 selects rounded dashes.
-float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float startLen, float thA, float thB, float2 data, float type) {
+float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float startLen, float thA, float thB, float2 data, float type, float aa) {
     float aA = abs(thA);
     float aB = abs(thB);
     float sA = sign(thA);
@@ -546,7 +616,7 @@ float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float star
         v = length(w) - fr.x;
     }
 
-    float3 de = DashEdges(u, data);
+    float4 de = DashEdges(u, data);
 
     // The exact capsule around the rounded spine: inside the dash's span the distance to the
     // spine, and nothing else is needed there.
@@ -563,7 +633,19 @@ float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float star
         return min(length(q - pb) - PathRadiusAt(de.y, uA, uB, rA, rB, lean),
                    length(q - pa) - PathRadiusAt(de.z, uA, uB, rA, rB, lean));
     }
-    float du = DashCutFromEdges(q, de, pb, nb, pa, na);
+    // The cut measured to the edge's own stretch across the stroke rather than to its infinite
+    // plane: a plane carried across a joint turning more than a right angle comes back on the
+    // wrong side of itself and takes the dash in half (see DashCutFromSegs). The stroke's band
+    // straddles the spine, so unlike a closed outline's cut the segment is bounded on both
+    // sides, by the band's half width where the edge stands - which both quads at a joint agree
+    // on, since past a segment's own span the taper saturates to the end it left from.
+    float hwB = PathRadiusAt(de.y, uA, uB, rA, rB, lean) + aa;
+    float hwA = PathRadiusAt(de.z, uA, uB, rA, rB, lean) + aa;
+    float2 eb = Perp(nb);
+    float2 ea = Perp(na);
+    float m = min(SegRun(q, pb - eb * hwB, eb, 2.0 * hwB),
+                  SegRun(q, pa - ea * hwA, ea, 2.0 * hwA));
+    float du = de.x >= 0.0 ? m : -m;
 
     // Miter and bevel tips reach past the joint disc. A dash edge near the corner would
     // sweep them as a needle, so out there the dash is bounded by the disc instead and
@@ -592,6 +674,125 @@ float PatternRadius(float ro, float lineSize, float cap) {
     return max(ro, min(1.5 * lineSize, cap));
 }
 
+// Where a corner fan's dash edge meets the band's centerline, and the direction the centerline
+// runs there. fc is the fan's own center, rp the radius it sweeps on, nh the outward normal it
+// has swept to after ang of a turn of turn, and orr which way it sweeps. ro is the shape's own
+// rounding at the corner and rd is half the band.
+//
+// The pattern fillets every corner on a radius of its own, wider than the shape's rounding (see
+// PatternRadius), so a ray out of that fillet's center crosses the centerline at an angle
+// everywhere but the two ends of the fan. Both halves of this matter to a round cap. Following
+// the ray to the centerline is what puts the cap where the dash really ends, and taking the
+// centerline's own direction there instead of the ray's is what keeps the cap square across the
+// band. Measure the cap on the ray instead and it leans: the band reaches past the cap on one
+// side of the centerline and falls short of it on the other, which is a whisker off the cap and
+// a notch out of it, one of each, and the wider the corner turns the worse both get.
+//
+// The centerline is the outline pulled in by rd, so its corner is an arc of the rounding less
+// that much around the same center - or a plain vertex once the band is at least as thick as
+// the rounding, which is where a chamfer and a square corner always sit. The ray leaves through
+// that arc while the crossing stays within the arc's own span, and through the nearer of the two
+// flat faces past it.
+//
+// Both branches end on the outline's outward normal where the crossing lands, and the centerline
+// runs a quarter turn from that, so each one only has to say which way that normal points. Taken
+// against the ray, which is a normal itself, both come out as a pair of components rather than a
+// rotation, and the walk needs no more trigonometry than the half turn and how far it has swept.
+//
+// far is what a dash's body needs when the crossing lands on a flat face with the corner still
+// between it and the rest of the dash. A round dash is every disc of half the band centered on
+// the stretch of centerline it covers, and once that stretch turns a corner the discs coming off
+// the far face cover the inside of the corner as well - a place the cut's own face never points
+// at, so a plain cut takes a bite out of it. far.xy is where that face starts, zw its direction,
+// and fsd which way round the corner sits, so a caller with a dash on the wrong side of it can
+// leave it alone; a corner whose arc still holds the crossing hands back zero. arc is the rest of
+// the corner between the two faces - the centerline arc's center, its radius, and the corner's
+// whole turn signed the way a walk from the crossing's face sweeps across it - because the
+// stretch of centerline between the cap and the far face bends around that arc, and a stadium
+// strung straight across it chords the corner and bites the band; see WalkCorner.
+void CornerCenter(float2 fc, float rp, float2 nh, float ang, float turn, float orr, float ro, float rd,
+                  out float2 ctr, out float2 ctn, out float4 far, out float fsd, out float4 arc) {
+    float hf = turn * 0.5;
+    float sh, ch;
+    sincos(hf, sh, ch);
+    float psi = ang - hf;                      // How far past the bisector the fan has swept.
+    float sp, cp;
+    sincos(psi, sp, cp);
+    float sg = psi >= 0.0 ? 1.0 : -1.0;        // Which of the two faces the ray is nearer.
+    float ap = sg * psi;                       // How far it has swept from the bisector either way.
+    float asp = sg * sp;                       // And the sine of that, which the arc span wants.
+    float rc = max(ro - rd, 0.0);              // The centerline's own corner radius.
+    float dl = max(rp - max(ro, rd), 0.0) / max(ch, 1e-4); // Fan center to centerline corner.
+    float root = rc * rc - dl * dl * sp * sp;
+    float sr = sqrt(max(root, 0.0));
+    float ta = dl * cp + sr;
+    float2 e = Perp(nh);
+    float2 nrm;
+    // The crossing sits on the arc only while its offset from the bisector stays inside the span
+    // the arc actually covers; past that the ray has left through a face and the circle it also
+    // meets is the part of it the corner never draws.
+    if (rc > 1e-4 && root >= 0.0 && ta * asp <= rc * sh) {
+        ctr = fc + nh * ta;
+        nrm = (nh * sr + e * (orr * dl * sp)) / rc;
+        far = float4(0.0, 0.0, 1.0, 0.0);
+        fsd = 0.0;
+        arc = float4(0.0, 0.0, 0.0, 0.0);
+    } else {
+        float sf, cf;
+        sincos(hf - ap, sf, cf); // What the ray has left to lean against the nearer face.
+        ctr = fc + nh * ((rp - rd) / max(cf, 1e-4));
+        nrm = nh * cf + e * (orr * sg * sf);
+        // The other face of the same corner, swept to from the same ray, and where it starts.
+        float so, co;
+        sincos(hf + ap, so, co);
+        float2 nf = nh * co - e * (orr * sg * so);
+        float2 tf = orr * Perp(nf);
+        float2 oc = fc + (nh * cp - e * (orr * sp)) * dl;
+        far = float4(oc + nf * rc, tf);
+        fsd = -sg;
+        arc = float4(oc, rc, -sg * orr * turn);
+    }
+    ctn = orr * Perp(nrm);
+}
+
+// One end of a round capped dash whose cut stands in a corner fan with the corner between the
+// cut and the rest of the dash. The cut has nothing useful to say there - the band around the
+// corner belongs to two faces at once, and a plane across either one cuts the other - so say the
+// dash as it is built instead, the discs of half the band strung along the stretch of centerline
+// it covers, walked from the cap: the cut's own face as far as the corner's arc, the arc for as
+// far as the dash still reaches, then the face on the far side, each piece held to whatever
+// length is left when the walk arrives. A corner the centerline rounds off has the arc between
+// the two faces, so a stadium strung straight from the cap to the far face chords across it and
+// bites the band's outer belly - a notch that switches on and off as the crossing passes the arc
+// ends, twice every corner. A sharp corner has an arc of nothing and the walk degenerates to the
+// same two stadiums. dir is the centerline's direction at the cap, body which way the dash runs
+// along it, and the arc's sweep starts on the cap's own face normal, which is dir turned a
+// quarter against the sweep.
+float WalkCorner(float2 q, float2 cap, float2 dir, float body, float fsd, float4 far, float4 arc,
+                 float reach, float rd) {
+    float wt = arc.w;
+    float swp = wt >= 0.0 ? 1.0 : -1.0;
+    float2 oc = arc.xy;
+    float rc = arc.z;
+    float2 nrm = -swp * fsd * Perp(dir);
+    float s1 = length(oc + nrm * rc - cap);
+    float best = SegRun(q, cap, dir * body, min(s1, reach));
+    float r2 = reach - s1;
+    if (r2 > 0.0) {
+        float phi = min(r2 / max(rc, 1e-6), abs(wt));
+        float2 nend = Rot(nrm, swp * phi);
+        float2 w = q - oc;
+        float arcD = min((nrm.x * w.y - nrm.y * w.x) * swp, (w.x * nend.y - w.y * nend.x) * swp) >= 0.0
+                   ? abs(length(w) - rc) : 1e6;
+        best = min(best, min(arcD, length(q - (oc + nend * rc))));
+        float r3 = r2 - rc * abs(wt);
+        if (r3 > 0.0) {
+            best = min(best, SegRun(q, far.xy, far.zw * body, r3));
+        }
+    }
+    return best - rd;
+}
+
 // Perimeter coordinate of a regular polygon with the given apothem and half side, dilated
 // outward by ro. Edge k's outward normal sits at normal0 + k * step; u runs one edge then
 // one corner arc per sector, with sectors bounded by the rays through the corners. Sector
@@ -616,42 +817,62 @@ float RegularPerimeter(float2 q, float aP, float hsP, float step, float normal0,
     return u;
 }
 
-// Point on the perimeter at contour position ue, the unit tangent there, and the point the
-// band's centerline crosses. The first two pin down the dash edge (see DashCutFromEdges); the
-// third is a rounded dash's cap center. One sector is one edge run followed by one corner arc,
-// so the sector index falls out of a floor and needs no wrapping.
-void RegularFrame(float ue, float aP, float hsP, float step, float normal0, float rp, float rd,
-                  out float2 pt, out float2 tng, out float2 ctr) {
+// Point on the perimeter at contour position ue, the unit tangent there, where the band
+// crossing starts along the cut's own line (see DashCutFromSegs), and the point and
+// direction of the band's centerline where the dash edge crosses it. The first three pin down
+// the dash edge; the last two place and square a rounded dash's cap (see CornerCenter). One
+// sector is one edge run followed by one corner arc, so the sector index falls out of a floor
+// and needs no wrapping.
+void RegularFrame(float ue, float aP, float hsP, float step, float normal0, float rp, float ro, float rd,
+                  out float2 pt, out float2 tng, out float lo, out float2 ctr, out float2 ctn, out float4 far, out float fsd, out float4 arc) {
     float sl = 2.0 * hsP + rp * step;
     float k = floor(ue / sl);
     float s = ue - k * sl;
     float2 dirN;
     sincos(normal0 + k * step, dirN.y, dirN.x);
     float2 e = Perp(dirN);
-    float2 nh = dirN;
     if (s <= 2.0 * hsP) {
+        // On a run the perimeter point sits on the pattern's own inset polygon, so the outline is
+        // rp out along the normal and the centerline rd back in from that.
         pt = dirN * aP + e * (s - hsP);
         tng = e;
+        lo = rp - 2.0 * rd;
+        ctr = pt + dirN * (rp - rd);
+        ctn = e;
+        far = float4(0.0, 0.0, 1.0, 0.0);
+        fsd = 0.0;
+        arc = float4(0.0, 0.0, 0.0, 0.0);
     } else {
         pt = dirN * aP + e * hsP; // The arc center, which every ray out of it passes through.
-        nh = Rot(dirN, (s - 2.0 * hsP) / max(rp, 1e-6));
+        lo = 0.0;
+        float ang = (s - 2.0 * hsP) / max(rp, 1e-6);
+        float2 nh = Rot(dirN, ang);
         tng = Perp(nh);
+        CornerCenter(pt, rp, nh, ang, step, 1.0, ro, rd, ctr, ctn, far, fsd, arc);
     }
-    ctr = pt + nh * (rp - rd);
 }
 
 float RegularDashCut(float2 q, float apothem, float hs, float step, float normal0, float ro,
-                     float lineSize, float2 data, out float2 capA, out float2 capB) {
+                     float lineSize, float2 data, float aa, out float2 capA, out float2 dirA,
+                     out float2 capB, out float2 dirB, out float4 farA, out float4 farB, out float2 farS,
+                     out float4 arcA, out float4 arcB, out float span, out float pat) {
     float aOut = apothem + ro; // Apothem of the outline itself.
     float rp = PatternRadius(ro, lineSize, aOut * 0.5);
     float aP = aOut - rp;
     float hsP = apothem > 1e-6 ? hs * aP / apothem : hs;
 
-    float3 de = DashEdges(RegularPerimeter(q, aP, hsP, step, normal0, rp), data);
+    float4 de = DashEdges(RegularPerimeter(q, aP, hsP, step, normal0, rp), data);
     float2 pb, nb, pa, na;
-    RegularFrame(de.y, aP, hsP, step, normal0, rp, lineSize * 0.5, pb, nb, capA);
-    RegularFrame(de.z, aP, hsP, step, normal0, rp, lineSize * 0.5, pa, na, capB);
-    return DashCutFromEdges(q, de, pb, nb, pa, na);
+    float lob, loa;
+    RegularFrame(de.y, aP, hsP, step, normal0, rp, ro, lineSize * 0.5, pb, nb, lob, capA, dirA, farA, farS.x, arcA);
+    RegularFrame(de.z, aP, hsP, step, normal0, rp, ro, lineSize * 0.5, pa, na, loa, capB, dirB, farB, farS.y, arcB);
+    // A dash reaches no further than it is long. That is what keeps a dot round: a dot has no
+    // body for a cut to trim, so at zero length this shuts the cut down to the cap disc alone.
+    span = de.w + lineSize * 0.5;
+    pat = de.x;
+    // The equilateral triangle's corners turn 120 degrees, past where a cut plane holds; the
+    // cut's own line has no side to flip. See DashCutFromSegs.
+    return DashCutFromSegs(q, de, pb, float2(nb.y, -nb.x), lob, pa, float2(na.y, -na.x), loa, aa);
 }
 
 // Perimeter coordinate of the rounded box, zero where the top edge leaves the top-left arc,
@@ -691,10 +912,14 @@ float RoundBoxPerimeter(float2 q, float2 b, float4 r) {
     return q.y > 0.0 ? uBottom + b.x - r.y - q.x : q.x + b.x - r.z;
 }
 
-// Point on the perimeter at contour position ue and the unit tangent there; the eight zones
-// run in the same order the coordinate does. Unlike the regular polygon the corners differ,
-// so ue wraps against the whole perimeter rather than falling out of one sector.
-void RoundBoxFrame(float ue, float2 b, float4 r, float rd, out float2 pt, out float2 tng, out float2 ctr) {
+// Point on the perimeter at contour position ue, the unit tangent there, and where the band
+// crossing starts along the cut's own line (see DashCutFromSegs), plus the point and
+// direction of the band's centerline where the edge crosses it; the eight zones run in the same
+// order the coordinate does. Unlike the regular polygon the corners differ, so ue wraps against
+// the whole perimeter rather than falling out of one sector. r is the pattern's corner radii and
+// rr the shape's own, which are what the centerline's corners are cut from; see CornerCenter.
+void RoundBoxFrame(float ue, float2 b, float4 r, float4 rr, float rd,
+                   out float2 pt, out float2 tng, out float lo, out float2 ctr, out float2 ctn, out float4 far, out float fsd, out float4 arc) {
     const float hpi = 1.5707963267948966;
     float uTR = 2.0 * b.x - r.z - r.x;
     float uRight = uTR + hpi * r.x;
@@ -707,57 +932,431 @@ void RoundBoxFrame(float ue, float2 b, float4 r, float rd, out float2 pt, out fl
     float s = ue - floor(ue / max(per, 1e-6)) * per;
 
     // On a run the perimeter point sits on the outline, so the centerline is one band radius
-    // inward; on an arc it is that much in from the arc's own radius.
+    // inward, running the same way. All four corners are the same walk on their own radius and
+    // start direction, so each one only picks those out and the walk itself is written once:
+    // CornerCenter is the largest thing in this file that a corner needs, and it is inlined once
+    // per bounding dash edge already.
+    float2 nh = float2(0.0, 0.0);
+    float ang = -1.0;
+    float2 cr = float2(0.0, 0.0); // The pattern's radius here and the shape's own.
     if (s < uTR) {
         pt = float2(-b.x + r.z + s, -b.y);
         tng = float2(1.0, 0.0);
         ctr = float2(pt.x, -b.y + rd);
     } else if (s < uRight) {
         pt = float2(b.x - r.x, -b.y + r.x);
-        float2 nh = Rot(float2(0.0, -1.0), (s - uTR) / max(r.x, 1e-6));
-        tng = Perp(nh);
-        ctr = pt + nh * (r.x - rd);
+        cr = float2(r.x, rr.x);
+        ang = (s - uTR) / max(r.x, 1e-6);
+        nh = Rot(float2(0.0, -1.0), ang);
     } else if (s < uBR) {
         pt = float2(b.x, -b.y + r.x + (s - uRight));
         tng = float2(0.0, 1.0);
         ctr = float2(b.x - rd, pt.y);
     } else if (s < uBottom) {
         pt = float2(b.x - r.y, b.y - r.y);
-        float2 nh = Rot(float2(1.0, 0.0), (s - uBR) / max(r.y, 1e-6));
-        tng = Perp(nh);
-        ctr = pt + nh * (r.y - rd);
+        cr = float2(r.y, rr.y);
+        ang = (s - uBR) / max(r.y, 1e-6);
+        nh = Rot(float2(1.0, 0.0), ang);
     } else if (s < uBL) {
         pt = float2(b.x - r.y - (s - uBottom), b.y);
         tng = float2(-1.0, 0.0);
         ctr = float2(pt.x, b.y - rd);
     } else if (s < uLeft) {
         pt = float2(-b.x + r.w, b.y - r.w);
-        float2 nh = Rot(float2(0.0, 1.0), (s - uBL) / max(r.w, 1e-6));
-        tng = Perp(nh);
-        ctr = pt + nh * (r.w - rd);
+        cr = float2(r.w, rr.w);
+        ang = (s - uBL) / max(r.w, 1e-6);
+        nh = Rot(float2(0.0, 1.0), ang);
     } else if (s < uTL) {
         pt = float2(-b.x, b.y - r.w - (s - uLeft));
         tng = float2(0.0, -1.0);
         ctr = float2(-b.x + rd, pt.y);
     } else {
         pt = float2(-b.x + r.z, -b.y + r.z);
-        float2 nh = Rot(float2(-1.0, 0.0), (s - uTL) / max(r.z, 1e-6));
+        cr = float2(r.z, rr.z);
+        ang = (s - uTL) / max(r.z, 1e-6);
+        nh = Rot(float2(-1.0, 0.0), ang);
+    }
+    ctn = tng;
+    far = float4(0.0, 0.0, 1.0, 0.0);
+    fsd = 0.0;
+    arc = float4(0.0, 0.0, 0.0, 0.0);
+    // On a run the perimeter point sits on the outline itself, so the band crossing runs from
+    // one thickness inside it; on a corner the edge is a ray out of the fillet center.
+    lo = -2.0 * rd;
+    if (ang >= 0.0) {
+        lo = 0.0;
         tng = Perp(nh);
-        ctr = pt + nh * (r.z - rd);
+        // A box corner turns a quarter.
+        CornerCenter(pt, cr.x, nh, ang, hpi, 1.0, cr.y, rd, ctr, ctn, far, fsd, arc);
     }
 }
 
-float RoundBoxDashCut(float2 q, float2 b, float4 rr, float lineSize, float2 data,
-                      out float2 capA, out float2 capB) {
+float RoundBoxDashCut(float2 q, float2 b, float4 rr, float lineSize, float2 data, float aa, out float2 capA,
+                      out float2 dirA, out float2 capB, out float2 dirB, out float4 farA, out float4 farB, out float2 farS,
+                      out float4 arcA, out float4 arcB, out float span, out float pat) {
     float cap = min(b.x, b.y) * 0.5;
     float4 r = float4(PatternRadius(rr.x, lineSize, cap), PatternRadius(rr.y, lineSize, cap),
                       PatternRadius(rr.z, lineSize, cap), PatternRadius(rr.w, lineSize, cap));
 
-    float3 de = DashEdges(RoundBoxPerimeter(q, b, r), data);
+    float4 de = DashEdges(RoundBoxPerimeter(q, b, r), data);
     float2 pb, nb, pa, na;
-    RoundBoxFrame(de.y, b, r, lineSize * 0.5, pb, nb, capA);
-    RoundBoxFrame(de.z, b, r, lineSize * 0.5, pa, na, capB);
-    return DashCutFromEdges(q, de, pb, nb, pa, na);
+    float lob, loa;
+    RoundBoxFrame(de.y, b, r, rr, lineSize * 0.5, pb, nb, lob, capA, dirA, farA, farS.x, arcA);
+    RoundBoxFrame(de.z, b, r, rr, lineSize * 0.5, pa, na, loa, capB, dirB, farB, farS.y, arcB);
+    // A dash reaches no further than it is long. That is what keeps a dot round: a dot has no
+    // body for a cut to trim, so at zero length this shuts the cut down to the cap disc alone.
+    span = de.w + lineSize * 0.5;
+    pat = de.x;
+    // A box corner only turns a quarter, but the turns accumulate: one cell wrapping two of
+    // them flips a cut plane just the same. See DashCutFromSegs.
+    return DashCutFromSegs(q, de, pb, float2(nb.y, -nb.x), lob, pa, float2(na.y, -na.x), loa, aa);
+}
+
+// The cuts the dash pattern walks a chamfer box on, and the radius it fillets all eight of the
+// vertices with. Every one of them turns by 45 degrees, so a fillet of radius rp eats
+// rp * tan(22.5) off each of the two edges it meets, and an edge shorter than two of those has
+// no room for both of its fillets.
+//
+// Both ends of that squeeze close the same way, and it is the one thing this needs to get
+// right, since the center a corner's dash edges all run out of is the fillet's and it has to
+// clear the band that gets drawn. A cut with no room is one no shorter than (2 - sqrt(2)) * rp,
+// where its two fillet centers coincide, the run between them is zero, and the pair becomes the
+// single quarter turn a square corner wants - which is what a cut of nothing is. A SIDE with no
+// room is the mirror of it: hold every cut to min(b) - rp * tan(22.5) and the two fillets facing
+// each other across a side meet exactly, merging into the quarter turn a diamond's tip wants.
+// So one radius serves all eight vertices at any cut from none to the limit, and the pattern
+// walks a shape that is the outline everywhere except where the outline had no room, which is
+// the same trade PatternRadius makes on a rounded box's corner.
+void ChamferPattern(float2 b, float4 c, float lineSize, out float4 cq, out float rp) {
+    rp = max(min(1.5 * lineSize, min(b.x, b.y) * 0.5), 0.0);
+    float f = rp * 0.41421356237;
+    // The two bounds cross only past rp = min(b), and the cap above is half of that.
+    cq = clamp(c, (2.0 - 1.41421356237) * rp, min(b.x, b.y) - f);
+}
+
+// Every corner takes one straight run, one fillet, the cut's own run and a second fillet, in
+// that order. run is how long each of those runs is and starts where each corner's four zones
+// start, both in travel order - top-right, bottom-right, bottom-left, top-left - which runs
+// clockwise on screen.
+void ChamferSpans(float2 b, float4 cq, float rp, out float4 cut, out float4 run, out float4 starts, out float per) {
+    float f = rp * 0.41421356237; // What one fillet takes off each edge it meets.
+    float4 side = float4(2.0 * b.x, 2.0 * b.y, 2.0 * b.x, 2.0 * b.y);
+    cut = float4(cq.x, cq.y, cq.w, cq.z);         // The cut this corner turns on.
+    float4 back = float4(cq.z, cq.x, cq.y, cq.w); // The one the run came off.
+    run = side - cut - back - 2.0 * f;
+    float4 pair = run + rp * 1.57079632679 + cut * 1.41421356237 - 2.0 * f;
+    starts = float4(0.0, pair.x, pair.x + pair.y, pair.x + pair.y + pair.z);
+    per = starts.w + pair.w;
+}
+
+// The un-chamfered corner j turns at, the direction the contour arrives on, its cut, and the two
+// spans that place it on the contour. The outgoing direction is a quarter turn clockwise from
+// the incoming one, so it and both outward normals fall out of din alone.
+// cut is the four cuts already in travel order, the way ChamferSpans reorders them.
+void ChamferCorner(float j, float2 b, float4 cut, float4 run, float4 starts,
+                   out float2 v, out float2 din, out float ch, out float ru, out float bs) {
+    // Travel turns a quarter clockwise at each corner, so the incoming direction is an axis whose
+    // sign flips over the second half and which alternates between x and y. Both fall out of the
+    // index, and the corner itself is then just b with those two signs on it.
+    float odd = (j < 0.5 || (j > 1.5 && j < 2.5)) ? 0.0 : 1.0;
+    float sg = j < 1.5 ? 1.0 : -1.0;
+    din = odd < 0.5 ? float2(sg, 0.0) : float2(0.0, sg);
+    v = float2(b.x * (din.x + din.y), b.y * (din.y - din.x));
+    // Picking component j out of a float4 the same way, halved then halved again.
+    float2 c2 = j < 1.5 ? cut.xy : cut.zw;
+    float2 r2 = j < 1.5 ? run.xy : run.zw;
+    float2 s2 = j < 1.5 ? starts.xy : starts.zw;
+    ch = odd < 0.5 ? c2.x : c2.y;
+    ru = odd < 0.5 ? r2.x : r2.y;
+    bs = odd < 0.5 ? s2.x : s2.y;
+}
+
+// Perimeter coordinate of the chamfer box, with every vertex filleted on the pattern radius.
+// Zero sits where the top edge leaves the top-left corner and it grows clockwise on screen.
+//
+// A corner owns its own two fillets, its cut, and half of each straight run beside it, so the
+// walk only ever needs one corner's geometry. The split lands on each run's midpoint rather
+// than on the axes: with one cut deep and its neighbour shallow a run's middle slides well off
+// centre, and a point past the far corner's fillet has to be read on that corner. The two
+// readings of a shared run agree exactly, term for term, so the seam between them is invisible.
+float ChamferPerimeter(float2 q, float2 b, float4 cut, float rp, float4 run, float4 starts) {
+    // Run midpoints, off the cuts in travel order: top-right, bottom-right, bottom-left, top-left.
+    // The fillets take the same bite off both ends of a run, so they cancel and only the two cuts
+    // decide where the middle is.
+    float xt = (cut.w - cut.x) * 0.5;
+    float yr = (cut.x - cut.y) * 0.5;
+    float xb = (cut.z - cut.y) * 0.5;
+    float yl = (cut.w - cut.z) * 0.5;
+    float j;
+    if (q.x >= xt && q.y <= yr) j = 0.0;
+    else if (q.x >= xb && q.y >= yr) j = 1.0;
+    else if (q.x <= xb && q.y >= yl) j = 2.0;
+    else j = 3.0;
+
+    float2 v, din;
+    float ch, ru, bs;
+    ChamferCorner(j, b, cut, run, starts, v, din, ch, ru, bs);
+    float2 dout = Perp(din);
+    float2 nin = -dout;                              // Outward normal of the run coming in.
+    float2 nch = (din - dout) * 0.70710678119;       // Outward normal of the cut.
+    float2 dch = (din + dout) * 0.70710678119;       // The cut's own direction of travel.
+    float f = rp * 0.41421356237;
+    float2 fa = v - din * (ch + f) + dout * rp;      // First fillet's center.
+    float2 fb = v + dout * (ch + f) - din * rp;      // Second fillet's center.
+
+    float arc = rp * 0.78539816340;                  // rp * pi / 4, one fillet's arc length.
+    float uArcA = bs + ru;
+    float uArcB = uArcA + arc + ch * 1.41421356237 - 2.0 * f;
+
+    // Each zone hands over on a ray out of the fillet center it belongs to, so one dot product
+    // per boundary places the point and the chain walks them in order.
+    float ea = dot(q - fa, din);
+    if (ea <= 0.0) return uArcA + ea;
+    float2 wa = q - fa;
+    if (dot(wa, dch) <= 0.0) return uArcA + rp * atan2(nin.x * wa.y - nin.y * wa.x, dot(nin, wa));
+    float2 wb = q - fb;
+    if (dot(wb, dch) <= 0.0) return uArcA + arc + dot(q - (fa + nch * rp), dch);
+    if (dot(wb, dout) <= 0.0) return uArcB + rp * atan2(nch.x * wb.y - nch.y * wb.x, dot(nch, wb));
+    return uArcB + arc + dot(wb, dout);
+}
+
+// How long face k of the band's CENTERLINE is. The eight faces run in travel order, a corner's
+// incoming run and then its cut, so an even index is a run and an odd one that corner's cut, and the
+// index wraps. Each is the outline's own face less what insetting by half the band takes off either
+// end, and every one of the eight vertices turns 45 degrees, so that is half the band times
+// tan(22.5) twice. A face with no room left comes back as nothing rather than as a negative.
+float ChamferFaceLen(float k, float4 cuts, float4 run, float rp, float rd) {
+    float m = k - floor(k / 8.0) * 8.0;
+    float j = floor(m * 0.5);
+    float bite = 2.0 * rd * 0.41421356237;
+    float f = rp * 0.41421356237;
+    return m - 2.0 * j >= 0.5 ? max(Pick4(cuts, j) * 1.41421356237 - bite, 0.0)
+                              : max(Pick4(run, j) + 2.0 * f - bite, 0.0);
+}
+
+// Point on the CENTERLINE at arc position ue, the direction it runs there, and the walk's start:
+// which centerline face the position stands on and how far it is from the end of that face the way
+// the dash runs. The centerline octagon has nothing filleted, so this is ChamferFrame with every
+// fillet zone empty - one flat run and one flat cut per corner, no trigonometry, and the offsets
+// are the zone coordinate itself rather than a measured length.
+void ChamferCenterFrame(float ue, float2 b, float4 cuts, float4 run, float4 starts, float per,
+                        float body, out float2 ctr, out float2 ctn, out float face, out float l1) {
+    float s = ue - floor(ue / max(per, 1e-6)) * per;
+    float j = s < starts.y ? 0.0 : (s < starts.z ? 1.0 : (s < starts.w ? 2.0 : 3.0));
+    float2 v, din;
+    float ch, ru, bs;
+    ChamferCorner(j, b, cuts, run, starts, v, din, ch, ru, bs);
+    float2 vtx = v - din * ch; // Where the incoming run hands over to the cut.
+    float t = s - bs;
+    if (t < ru) {
+        ctr = vtx - din * (ru - t);
+        ctn = din;
+        face = 2.0 * j;
+        l1 = body > 0.0 ? ru - t : t;
+    } else {
+        float2 dch = (din + Perp(din)) * 0.70710678119;
+        ctr = vtx + dch * (t - ru);
+        ctn = dch;
+        face = 2.0 * j + 1.0;
+        l1 = body > 0.0 ? max(ch * 1.41421356237 - (t - ru), 0.0) : t - ru;
+    }
+}
+
+// One end of a round capped dash: the discs of half the band strung along the stretch of centerline
+// the dash covers, walked from its own cap.
+//
+// A dash IS that union and nothing else, so saying it this way is exact where measuring the band
+// against a cut plane is not. A plane is only right while the pixel's nearest stretch of centerline
+// is the cut's own face; at a sharp centerline vertex - which is every vertex a chamfer has, since
+// it rounds nothing - the band on the inside of the vertex belongs to two faces at once, so the
+// nearest stretch can be the other face's, behind the corner and outside the dash entirely, and no
+// plane across either face has anything to say about that. Walking the faces has no such blind spot:
+// each stadium is measured on the face it belongs to.
+//
+// dir already runs the way the dash's body does, l1 is how far the cap stands from the end of its own
+// face that way, step says which way round the walk turns, and reach is how long the dash is. Every
+// vertex turns the same 45 degrees, so each face's direction is the last one turned again and the
+// walk needs no trigonometry at all. Three faces are walked, unrolled rather than looped - a loop
+// carrying values into the next round does not survive the GLSL ES the OpenGL profile targets. That
+// covers a dash spanning two vertices; one long enough to span three loses the far end of its last
+// face, which the cut at that end draws anyway.
+// cuts and run are the CENTERLINE's own spans, so the face lengths come back raw; rd is only the
+// half band the discs are swept with.
+float ChamferWalk(float2 q, float2 cap, float2 dir, float face, float step, float l1, float reach,
+                  float4 cuts, float4 run, float rd) {
+    float2 p = cap;
+    float2 d = dir;
+    float len = l1;
+    float left = reach;
+    float best = SegRun(q, p, d, min(len, left));
+    p += d * len;
+    left -= len;
+    d = Rot45(d, step);
+    len = ChamferFaceLen(face + step, cuts, run, 0.0, 0.0);
+    best = left > 0.0 ? min(best, SegRun(q, p, d, min(len, left))) : best;
+    p += d * len;
+    left -= len;
+    d = Rot45(d, step);
+    len = ChamferFaceLen(face + 2.0 * step, cuts, run, 0.0, 0.0);
+    best = left > 0.0 ? min(best, SegRun(q, p, d, min(len, left))) : best;
+    return best - rd;
+}
+
+// Point on the perimeter at contour position ue, the unit tangent there, and the point and
+// direction of the band's centerline where the edge crosses it. On a fillet the point handed back
+// is the arc's center, since every dash edge in a fan is a ray out of it and the center is what
+// pins that line down; the four zones run in the same order the coordinate does.
+//
+// face and l1 are the start of the walk a round capped dash off this edge takes: which centerline
+// face the crossing stands on and how far it is from the end of that face in the direction body
+// runs. See ChamferWalk. The centerline's vertices are the outline's own pulled in along their
+// bisectors, and since two unit normals a quarter turn apart sum to their bisector times twice its
+// cosine, the whole pull is that sum times half the band over 1 + cos(45), which is 2 - sqrt(2).
+// Both of the ones a corner owns are its own; the one behind its incoming run belongs to the corner
+// before, and that needs nothing of that corner either - a run's straight zone starts one fillet
+// bite past the vertex behind it, and the two normals meeting there are this corner's own turned an
+// eighth of a turn back.
+void ChamferFrame(float ue, float2 b, float4 cuts, float rp, float4 run, float4 starts, float per, float rd,
+                  float body, out float2 pt, out float2 tng, out float lo, out float2 ctr, out float2 ctn,
+                  out float face, out float l1) {
+    float s = ue - floor(ue / max(per, 1e-6)) * per;
+    float j = s < starts.y ? 0.0 : (s < starts.z ? 1.0 : (s < starts.w ? 2.0 : 3.0));
+
+    float2 v, din;
+    float ch, ru, bs;
+    ChamferCorner(j, b, cuts, run, starts, v, din, ch, ru, bs);
+    float2 dout = Perp(din);
+    float2 nin = -dout;
+    float2 nch = (din - dout) * 0.70710678119;
+    float2 dch = (din + dout) * 0.70710678119;
+    float f = rp * 0.41421356237;
+    float2 fa = v - din * (ch + f) + dout * rp;
+    float2 fb = v + dout * (ch + f) - din * rp;
+    float arc = rp * 0.78539816340;
+    float cut = ch * 1.41421356237 - 2.0 * f;
+
+    // The three centerline vertices in reach: this corner's own two, and the one the corner before
+    // leaves at the start of this one's incoming run. The outgoing run's far vertex is the next
+    // corner's and is never the nearest one to any crossing this corner owns.
+    float pull = rd * 0.58578643763;             // 2 - sqrt(2), which is 1 / (1 + cos(45)).
+    float2 nback = Rot45(nin, -1.0);             // The previous corner's cut, an eighth turn back.
+    float2 cvA = (v - din * ch) - (nin + nch) * pull;
+    float2 cvB = (v + dout * ch) - (nch + din) * pull;
+    float2 cvBack = (fa + nin * rp - din * (ru + f)) - (nin + nback) * pull;
+    float2 faceStart;
+
+    // The four zones are two of a kind. Both runs are a point sliding along a direction with the
+    // outline's normal beside it, and both fillets are an arc swept off a center, so each pair is
+    // written once and told apart by which end of the corner it is on. That keeps one Rot in the
+    // shader instead of two, which is worth doing twice over: the whole walk is inlined once per
+    // bounding dash edge.
+    float t = s - bs;
+    bool second = t >= ru + arc;
+    if (t < ru || (second && t < ru + arc + cut)) {
+        // On a run the perimeter point sits on the outline, so the centerline is one band radius
+        // inward.
+        float2 dir = second ? dch : din;
+        float2 nrm = second ? nch : nin;
+        float2 from = second ? fa + nch * rp : fa + nin * rp - din * ru;
+        pt = from + dir * (second ? t - ru - arc : t);
+        tng = dir;
+        lo = -2.0 * rd; // The perimeter point is on the outline, the band one thickness deep.
+        ctr = pt - nrm * rd;
+        ctn = dir;
+        // The incoming run is this corner's first face and its cut the second, each starting at the
+        // vertex before it.
+        face = second ? 2.0 * j + 1.0 : 2.0 * j;
+        faceStart = second ? cvA : cvBack;
+    } else {
+        // A fillet's dash edge is a ray out of the arc's center, so the center is the point that
+        // pins it down. Every one of the eight vertices a chamfer walks is a sharp 135 degree one,
+        // so the centerline has no arc of its own here and the ray always leaves through a flat
+        // face; CornerCenter takes it from there.
+        bool tail = t >= ru + arc + cut;
+        float ang = (t - ru - (tail ? arc + cut : 0.0)) / max(rp, 1e-6);
+        float2 nh = Rot(tail ? nch : nin, ang);
+        pt = tail ? fb : fa;
+        tng = Perp(nh);
+        lo = 0.0; // The edge is a ray out of the fillet center.
+        // Quarter of pi: the fillet's whole sweep, since every vertex turns 45 degrees. The far face
+        // it also works out is for the shapes that measure a dash against a cut plane; a chamfer
+        // walks the centerline instead and has no use for it.
+        float4 far;
+        float fsd;
+        float4 arcU;
+        CornerCenter(pt, rp, nh, ang, 0.78539816340, 1.0, 0.0, rd, ctr, ctn, far, fsd, arcU);
+        // A fan's crossing lands on the face before its own vertex until the sweep reaches the
+        // bisector and on the face after it from there on, so which face it stands on turns over
+        // exactly halfway. The second fillet's later face is the next corner's incoming run.
+        bool over = ang >= 0.39269908170;
+        face = 2.0 * j + (tail ? (over ? 2.0 : 1.0) : (over ? 1.0 : 0.0));
+        faceStart = tail ? (over ? cvB : cvA) : (over ? cvA : cvBack);
+    }
+
+    // Where the walk starts: how far the crossing stands from the end of its own face the way the
+    // dash runs. Against the contour that is its offset from the face's start, and with it whatever
+    // is left of the face past that.
+    float off = length(ctr - faceStart);
+    l1 = body > 0.0 ? max(ChamferFaceLen(face, cuts, run, rp, rd) - off, 0.0) : off;
+}
+
+// Dash cut for a chamfer box, negative inside a dash. Butt caps get the world distance to the
+// nearest dash edge, the same measurement every other closed outline makes; round caps get the
+// finished capsule, because a chamfer is the one shape here whose centerline corners are sharp
+// vertices rather than arcs and so the only one a cut plane cannot describe. See ChamferWalk. Each
+// bounding edge walks the centerline from its own cap: inside a dash the two are its two ends and it
+// is what both of them hold, so they intersect, and in a gap they are the tails of the dashes either
+// side of it, so they union. Both readings of a shared edge come out the same, since each walk is
+// the whole dash and not a piece of it.
+//
+// The two cap styles walk two different contours. Butt cuts are rays out of the pattern's fillet
+// centers, so their pattern runs on the widened outline ChamferPattern builds - the fillets are
+// what keep those rays from meeting inside the band. A round capped dash is discs strung along the
+// CENTERLINE, so its pattern runs on the centerline itself, by its own arc length: the outline
+// inset by half the band, another chamfer box with nothing filleted, whose sharp vertices cost the
+// walk nothing since there is no cut geometry to converge. Run the round pattern on the widened
+// outline instead and the map from pattern to centerline stretches across every corner - the
+// fillet arc is longer than the centerline it lands on - so dots bunch up and slow down through
+// all eight of them instead of riding at one speed. The CPU resolves the period against the
+// matching perimeter; see ChamferCenterPerimeter in ShapeBatch.
+float ChamferDashCut(float2 q, float2 b, float4 c, float lineSize, float2 data, float aa, bool roundCap, out float pat) {
+    float rd = lineSize * 0.5;
+    float4 cuts, run, starts;
+    float per;
+    if (roundCap) {
+        // The centerline: half extents in by half the band, each cut leg shorter by that times
+        // 2 - sqrt(2), held to what the inset box has room for.
+        float2 bC = max(b - rd, 1e-4);
+        float4 cqC = clamp(c - rd * 0.58578643763, 0.0, min(bC.x, bC.y));
+        ChamferSpans(bC, cqC, 0.0, cuts, run, starts, per);
+        float4 de = DashEdges(ChamferPerimeter(q, bC, cuts, 0.0, run, starts), data);
+        pat = de.x;
+        // Which way each edge's own dash runs: with the contour off the earlier edge and against
+        // it off the later one when the pixel is inside a dash, and the other way round in a gap,
+        // where the two edges belong to the dashes either side instead.
+        float sd = de.x < 0.0 ? 1.0 : -1.0;
+        float2 capA, dirA, capB, dirB;
+        float faceA, faceB, l1A, l1B;
+        ChamferCenterFrame(de.y, bC, cuts, run, starts, per, sd, capA, dirA, faceA, l1A);
+        ChamferCenterFrame(de.z, bC, cuts, run, starts, per, -sd, capB, dirB, faceB, l1B);
+        float endA = ChamferWalk(q, capA, dirA * sd, faceA, sd, l1A, de.w, cuts, run, rd);
+        float endB = ChamferWalk(q, capB, dirB * -sd, faceB, -sd, l1B, de.w, cuts, run, rd);
+        return de.x < 0.0 ? max(endA, endB) : min(endA, endB);
+    }
+    float4 cq;
+    float rp;
+    ChamferPattern(b, c, lineSize, cq, rp);
+    ChamferSpans(b, cq, rp, cuts, run, starts, per);
+    float4 de2 = DashEdges(ChamferPerimeter(q, b, cuts, rp, run, starts), data);
+    pat = de2.x;
+    float2 pb2, nb2, pa2, na2, capA2, dirA2, capB2, dirB2;
+    float lob, loa;
+    float faceA2, faceB2, l1A2, l1B2;
+    ChamferFrame(de2.y, b, cuts, rp, run, starts, per, rd, 1.0, pb2, nb2, lob, capA2, dirA2, faceA2, l1A2);
+    ChamferFrame(de2.z, b, cuts, rp, run, starts, per, rd, -1.0, pa2, na2, loa, capB2, dirB2, faceB2, l1B2);
+    // A chamfer's vertices only turn 45 degrees each, but a cell wrapping three of them has
+    // accumulated past a right angle and its cut plane flips. See DashCutFromSegs.
+    return DashCutFromSegs(q, de2, pb2, float2(nb2.y, -nb2.x), lob, pa2, float2(na2.y, -na2.x), loa, aa);
 }
 
 // How far a vertex slides when both its edges are pushed inward by delta.
@@ -820,10 +1419,11 @@ float TrianglePerimeter(float2 q, float2 vA, float2 vB, float2 vC, float rp, flo
     return u;
 }
 
-// Point on the perimeter at contour position ue and the unit tangent there. The six zones are
-// the three edge runs, each followed by the corner arc at the vertex it ends on.
-void TriangleFrame(float ue, float2 vA, float2 vB, float2 vC, float rp, float orr, float rd,
-                   out float2 pt, out float2 tng, out float2 ctr) {
+// Point on the perimeter at contour position ue, the unit tangent there, and where the band
+// crossing starts along the cut's own line (see DashCutFromSegs). The six zones are the three
+// edge runs, each followed by the corner arc at the vertex it ends on.
+void TriangleFrame(float ue, float2 vA, float2 vB, float2 vC, float rp, float orr, float ro, float rd,
+                   out float2 pt, out float2 tng, out float lo, out float2 ctr, out float2 ctn, out float4 far, out float fsd, out float4 arc) {
     float2 e0 = vB - vA;
     float2 e1 = vC - vB;
     float2 e2 = vA - vC;
@@ -842,13 +1442,19 @@ void TriangleFrame(float ue, float2 vA, float2 vB, float2 vC, float rp, float or
 
     // Walk the zones in order, peeling each one off s as it is ruled out. The perimeter point
     // on a run sits on the inset triangle, so the centerline is that far out along the run's
-    // outward normal; on an arc it is the same distance out from the vertex.
+    // outward normal and runs the same way; a corner hands both over to CornerCenter.
     float2 v = vB;
     float2 dIn = d0;
+    float aw = aB;
     if (s < l0) {
         pt = vA + d0 * s;
         tng = d0;
+        lo = rp - 2.0 * rd;
         ctr = pt + orr * Perp(-d0) * (rp - rd);
+        ctn = d0;
+        far = float4(0.0, 0.0, 1.0, 0.0);
+        fsd = 0.0;
+        arc = float4(0.0, 0.0, 0.0, 0.0);
         return;
     }
     s -= l0;
@@ -857,40 +1463,56 @@ void TriangleFrame(float ue, float2 vA, float2 vB, float2 vC, float rp, float or
         if (s < l1) {
             pt = vB + d1 * s;
             tng = d1;
+            lo = rp - 2.0 * rd;
             ctr = pt + orr * Perp(-d1) * (rp - rd);
+            ctn = d1;
+            far = float4(0.0, 0.0, 1.0, 0.0);
+            fsd = 0.0;
+            arc = float4(0.0, 0.0, 0.0, 0.0);
             return;
         }
         s -= l1;
         v = vC;
         dIn = d1;
+        aw = aC;
         if (s >= aC) {
             s -= aC;
             if (s < l2) {
                 pt = vC + d2 * s;
                 tng = d2;
+                lo = rp - 2.0 * rd;
                 ctr = pt + orr * Perp(-d2) * (rp - rd);
+                ctn = d2;
+                far = float4(0.0, 0.0, 1.0, 0.0);
+                fsd = 0.0;
+                arc = float4(0.0, 0.0, 0.0, 0.0);
                 return;
             }
             s -= l2;
             v = vA;
             dIn = d2;
+            aw = aA;
         }
     }
     // Corner arc: a ray out of the vertex, so the vertex itself pins the line down. The arc
     // starts on the outward normal of the edge that runs into it and sweeps by the exterior
-    // angle, and the tangent is a quarter turn ahead of wherever it has swept to.
-    float2 nh = Rot(orr * Perp(-dIn), orr * s / max(rp, 1e-6));
+    // angle, and the tangent is a quarter turn ahead of wherever it has swept to. The arc spans
+    // are already the exterior angles times the radius, so dividing one back out gives the turn.
+    float ang = s / max(rp, 1e-6);
+    float2 nh = Rot(orr * Perp(-dIn), orr * ang);
     pt = v;
     tng = orr * Perp(nh);
-    ctr = v + nh * (rp - rd);
+    lo = 0.0;
+    CornerCenter(v, rp, nh, ang, aw / max(rp, 1e-6), orr, ro, rd, ctr, ctn, far, fsd, arc);
 }
 
 // Dash cut for the triangle A(0,0) → b → c. The corner arcs run wider than the shape's own
 // rounding (see PatternRadius), so the triangle is re-inset by the difference to keep them
 // tangent to the same edges. Parallel inset never turns an edge, so the exterior angles, and
 // with them the corner arc spans, are untouched.
-float TriangleDashCut(float2 q, float2 b, float2 c, float ro, float lineSize, float2 data,
-                      out float2 capA, out float2 capB) {
+float TriangleDashCut(float2 q, float2 b, float2 c, float ro, float lineSize, float2 data, float aa, out float2 capA,
+                      out float2 dirA, out float2 capB, out float2 dirB, out float4 farA, out float4 farB, out float2 farS,
+                      out float4 arcA, out float4 arcB, out float span, out float pat) {
     // The winding sign makes the exterior angles positive for either input orientation.
     float orr = (b.x * (c.y - b.y) - b.y * (c.x - b.x)) >= 0.0 ? 1.0 : -1.0;
 
@@ -910,11 +1532,18 @@ float TriangleDashCut(float2 q, float2 b, float2 c, float ro, float lineSize, fl
     float2 vB = b + MiterShift(n0, n1, delta);
     float2 vC = c + MiterShift(n1, n2, delta);
 
-    float3 de = DashEdges(TrianglePerimeter(q, vA, vB, vC, rp, orr), data);
+    float4 de = DashEdges(TrianglePerimeter(q, vA, vB, vC, rp, orr), data);
     float2 pb, nb, pa, na;
-    TriangleFrame(de.y, vA, vB, vC, rp, orr, lineSize * 0.5, pb, nb, capA);
-    TriangleFrame(de.z, vA, vB, vC, rp, orr, lineSize * 0.5, pa, na, capB);
-    return DashCutFromEdges(q, de, pb, nb, pa, na);
+    float lob, loa;
+    TriangleFrame(de.y, vA, vB, vC, rp, orr, ro, lineSize * 0.5, pb, nb, lob, capA, dirA, farA, farS.x, arcA);
+    TriangleFrame(de.z, vA, vB, vC, rp, orr, ro, lineSize * 0.5, pa, na, loa, capB, dirB, farB, farS.y, arcB);
+    // A dash reaches no further than it is long. That is what keeps a dot round: a dot has no
+    // body for a cut to trim, so at zero length this shuts the cut down to the cap disc alone.
+    span = de.w + lineSize * 0.5;
+    pat = de.x;
+    // A triangle's corner can turn by nearly a half turn, far past where a cut plane holds; the
+    // cut's own line has no side to flip. See DashCutFromSegs.
+    return DashCutFromSegs(q, de, pb, orr * float2(nb.y, -nb.x), lob, pa, orr * float2(na.y, -na.x), loa, aa);
 }
 
 // An ellipse's arc length is an incomplete elliptic integral of the second kind, with no closed
@@ -1074,8 +1703,8 @@ float EllipseCapsule(float2 p, float d, float cut, float2 cA, float2 cB, float2 
 // Dash cut for the ellipse, the world distance to the nearest dash edge, negative inside a dash.
 // Every dash edge is a straight line - the outline's normal, or a ray out of the tip fan - so a
 // dash keeps a straight edge front and back everywhere on the ellipse, tips included, the way
-// every other closed outline does; see DashCutFromEdges, which is the same idea with the sides
-// taken from the geometry instead.
+// every other closed outline does; see DashCutFromSegs, which is the same idea and takes its
+// side from the same place.
 // The side comes from the pixel's own contour coordinate, and the whole reason that works is that
 // the coordinate does not fold: inside the fan it is where the pixel's own ray out of the pivot
 // meets the outline, outside it the nearest point, and the two agree along the junction ray where
@@ -1137,7 +1766,7 @@ float EllipseDashCut(float2 p, float2 ab, float sq, float lineSize, float2 data,
     // coordinate was read in, which is a reflection and so leaves every distance alone - so the
     // cap centers stay in it too, and a rounded dash's capsule is built here without unswapping
     // anything.
-    float3 de = DashEdges(u, data);
+    float4 de = DashEdges(u, data);
     float db = EllipseEdgeRoom(pw, de.y, 1.0, abw, sq, psi, uj, xp, lineSize, aa, capA, capR.x);
     float da = EllipseEdgeRoom(pw, de.z, -1.0, abw, sq, psi, uj, xp, lineSize, aa, capB, capR.y);
 
@@ -1177,7 +1806,7 @@ float EllipseDashCut(float2 p, float2 ab, float sq, float lineSize, float2 data,
     float mirror = sqrt(sdf * sdf + 4.0 * abs(pw.y) * footY);
     if (!inFan && mirror < lineSize + aa) {
         float2 fcapA, fcapB, fcapR;
-        float3 df = DashEdges(4.0 * sq - u, data);
+        float4 df = DashEdges(4.0 * sq - u, data);
         float fb = EllipseEdgeRoom(pw, df.y, 1.0, abw, sq, psi, uj, xp, lineSize, aa, fcapA, fcapR.x);
         float fa = EllipseEdgeRoom(pw, df.z, -1.0, abw, sq, psi, uj, xp, lineSize, aa, fcapB, fcapR.y);
         float mf = min(fb, fa);
@@ -1587,8 +2216,15 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float dashCut = 1.0;   // Closed outlines: world distance to the dash edge, negative inside.
     float2 dashCapA = float2(0.0, 0.0); // Where the band's centerline crosses each of the two
     float2 dashCapB = float2(0.0, 0.0); // bounding edges: a rounded dash's cap centers.
-    float2 dashCapR = float2(0.0, 0.0); // Each cap's radius, when a shape needs one wider than
-                                        // half the band; below the band's own half wins.
+    float2 dashDirA = float2(1.0, 0.0); // The centerline's own direction at each of those, which
+    float2 dashDirB = float2(1.0, 0.0); // is what squares the cap across the band.
+    float dashCapSpan = 0.0;  // How far from its cap a cut still binds; see the round cap below.
+    float4 dashFarA = float4(0.0, 0.0, 1.0, 0.0); // Where the corner beyond each cut hands the
+    float4 dashFarB = float4(0.0, 0.0, 1.0, 0.0); // dash on, when one does; see CornerCenter.
+    float2 dashFarS = float2(0.0, 0.0);           // Which side of each cut that corner sits on.
+    float4 dashArcA = float4(0.0, 0.0, 0.0, 0.0); // And the centerline arc that corner rounds the
+    float4 dashArcB = float4(0.0, 0.0, 0.0, 0.0); // band on, which the walk between them follows.
+    float dashPat = 1.0;      // Signed pattern distance to the nearest edge, negative in a dash.
     bool dashCapDone = false; // Set when the cut already IS the rounded capsule, see below.
     float dashV = 0.0;
     float dashR = 0.0;
@@ -1600,16 +2236,25 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         d = CircleSDF(q, sdfSize);
         if (dashType >= 0.5) {
             // The circle is one arc end to end, so every dash edge is a ray out of the center
-            // and the center pins each of them down; see DashCutFromEdges.
+            // and the center pins each of them down. Measured as a plane through the center the
+            // cut flips once a dash wraps more than half the circle; the ray it really is has no
+            // side to flip. See DashCutFromSegs.
             float rc = max(sdfSize, 1e-6);
-            float3 de = DashEdges(atan2(q.y, q.x) * rc, p.Meta2.xy);
+            float4 de = DashEdges(atan2(q.y, q.x) * rc, p.Meta2.xy);
             float2 nb;
             sincos(de.y / rc, nb.y, nb.x);
             float2 na;
             sincos(de.z / rc, na.y, na.x);
-            dashCut = DashCutFromEdges(q, de, float2(0.0, 0.0), Perp(nb), float2(0.0, 0.0), Perp(na));
+            dashCut = DashCutFromSegs(q, de, float2(0.0, 0.0), nb, 0.0,
+                                      float2(0.0, 0.0), na, 0.0, 0.0);
+            // One arc end to end, so a dash edge is always a radius and always square across the
+            // band: the cap sits half a band in from the outline and the centerline runs across it.
             dashCapA = nb * (rc - lineSize * 0.5);
             dashCapB = na * (rc - lineSize * 0.5);
+            dashDirA = Perp(nb);
+            dashDirB = Perp(na);
+            dashCapSpan = de.w + lineSize * 0.5;
+            dashPat = de.x;
         }
     } else if (shape < 1.5) {
         float4 rr = p.Meta2;
@@ -1622,7 +2267,8 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             float bx = DecodeDigit(mx, 2048.0);
             float by = DecodeDigit(my, 2048.0);
             rr = float4(mx, bx, my, by) / 2047.0 * mr;
-            dashCut = RoundBoxDashCut(q, float2(sdfSize, p.Meta1.w), rr, lineSize, p.Meta2.zw, dashCapA, dashCapB);
+            dashCut = RoundBoxDashCut(q, float2(sdfSize, p.Meta1.w), rr, lineSize, p.Meta2.zw,
+                                      footprint.y * aaPixels, dashCapA, dashDirA, dashCapB, dashDirB, dashFarA, dashFarB, dashFarS, dashArcA, dashArcB, dashCapSpan, dashPat);
         }
         d = RoundBoxSDF(q, float2(sdfSize, p.Meta1.w), rr);
     } else if (shape < 2.5) {
@@ -1658,13 +2304,15 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             float apothem = hex ? sdfSize : sdfSize * invSqrt3;
             float halfSide = hex ? sdfSize * invSqrt3 : sdfSize;
             float sectorStep = hex ? 1.0471975512 : 2.0943951024;
-            dashCut = RegularDashCut(q, apothem, halfSide, sectorStep, 0.52359877560, rounded, lineSize, p.Meta2.xy, dashCapA, dashCapB);
+            dashCut = RegularDashCut(q, apothem, halfSide, sectorStep, 0.52359877560, rounded, lineSize,
+                                     p.Meta2.xy, footprint.y * aaPixels, dashCapA, dashDirA, dashCapB, dashDirB, dashFarA, dashFarB, dashFarS, dashArcA, dashArcB, dashCapSpan, dashPat);
         }
     } else if (shape < 5.5) {
         if (dashType >= 0.5) {
             // Dashed triangles put their first corner at the local origin, freeing Meta1.zw.
             d = TriangleSDF(q, float2(0.0, 0.0), p.Meta2.xy, p.Meta2.zw);
-            dashCut = TriangleDashCut(q, p.Meta2.xy, p.Meta2.zw, rounded, lineSize, p.Meta1.zw, dashCapA, dashCapB);
+            dashCut = TriangleDashCut(q, p.Meta2.xy, p.Meta2.zw, rounded, lineSize, p.Meta1.zw,
+                                      footprint.y * aaPixels, dashCapA, dashDirA, dashCapB, dashDirB, dashFarA, dashFarB, dashFarS, dashArcA, dashArcB, dashCapSpan, dashPat);
         } else {
             d = TriangleSDF(q, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);
         }
@@ -1701,6 +2349,28 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             dashR = p.Meta2.z;
             dashData = float2(p.Meta1.w, p.Meta2.w);
             dashStroke = true;
+        }
+    } else if (shape > 11.5) {
+        float2 hb = float2(sdfSize, p.Meta1.w);
+        float4 cc = p.Meta2;
+        if (dashType >= 0.5) {
+            // Dashed chamfers carry their four cuts as 11 bit fractions of the largest allowed
+            // one, freeing Meta2.zw for the pattern, exactly as a dashed rectangle does with its
+            // corner radii.
+            float mc = min(sdfSize, p.Meta1.w);
+            float mx = cc.x;
+            float my = cc.y;
+            float bx = DecodeDigit(mx, 2048.0);
+            float by = DecodeDigit(my, 2048.0);
+            cc = float4(mx, bx, my, by) / 2047.0 * mc;
+        }
+        d = ChamferBoxSDF(q, hb, cc);
+        if (dashType >= 0.5) {
+            // A chamfer builds its own rounded capsule: its centerline corners are sharp vertices,
+            // so the walk below the composition here does is the only exact thing to say. See
+            // ChamferWalk.
+            dashCut = ChamferDashCut(q, hb, cc, lineSize, p.Meta2.zw, footprint.y * aaPixels, dashType >= 1.5, dashPat);
+            dashCapDone = dashType >= 1.5;
         }
     } else {
         float4 sd = p.Meta2;
@@ -1740,7 +2410,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             float sA = sign(thA);
             float sB = sign(thB);
             sd = float4(modeBits, atan2(-sA * hA.x, -sA * hA.y), atan2(-sB * hB.x, sB * hB.y), rEnd);
-            pathCut = PathDashCut(q, p.Meta1.w, sdfSize, rEnd, fr, startLen, thA, thB, float2(p.Meta2.w, rounded), dashType);
+            pathCut = PathDashCut(q, p.Meta1.w, sdfSize, rEnd, fr, startLen, thA, thB, float2(p.Meta2.w, rounded), dashType, footprint.y * aaPixels);
             rounded = 0.0;
             dashType = 0.0;
         }
@@ -1824,33 +2494,81 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // rescaled by how fast the coordinate runs here, so it stays a true distance right through
     // the corners, where the two differ most: the band's inner side runs on a tighter arc than
     // its outer side, and the rescale factor jumps where a run meets a corner. See
-    // DashCutFromEdges, and EllipseDashCut, which measures to the edges for a reason of its own.
+    // DashCutFromSegs, and EllipseDashCut, which measures to the edges for a reason of its own.
     if (dashType >= 0.5 && !dashStroke) {
         float aaU = footprint.y * aaPixels;
         if (dashType >= 1.5) {
             // Round capped dashes: the exact capsule around the band's centerline, the way
-            // PathDashCut builds one. It is the dash cut square across the band, which is the
-            // band and the cut whichever binds, unioned with a disc on the centerline at each
-            // end. Measuring the ends on the centerline is what keeps the caps circular right
-            // across the band, at corners as much as anywhere.
-            // Written as one union clipped back to the band, rather than as the band inside the
-            // dash's span and the discs outside it, because those two only agree along the span's
-            // own boundary where the dash edge crosses the centerline SQUARELY: the disc is round,
-            // so its distance grows at the band's rate only across a square cut. It does wherever
-            // an edge is a normal, which is everywhere but an ellipse's tip fan, and there the
-            // fan's ray leans and the two branches would part company mid band and notch the cap.
-            // A union cannot part company with itself, and the cap radius carries the lean, so the
-            // disc reaches the band's edges. Clipping to the band is what keeps a wider cap from
-            // spilling past the inner edge; everywhere else the cap is half a band and the clip
-            // does nothing.
-            // The ellipse has already done all of this to itself, since behind a sharp tip it
-            // needs the union of the capsules coming in from both sides of the outline.
+            // PathDashCut builds one. Each bounding edge contributes the same thing, the band on
+            // the dash's side of that edge together with a whole disc of half the band centered
+            // where the edge crosses the centerline. Inside a dash the two are the two ends of it
+            // and the dash is what both of them hold, so they intersect; in a gap they are the
+            // tails of the dashes either side of it, so they union. Both readings of a shared
+            // edge come out the same, since the disc never leaves the band and so never loses to
+            // it, which is what lets the pixel pick its dash off the pattern and still land on
+            // one continuous shape.
+            //
+            // The side of an edge is measured against the centerline's own direction there and
+            // NOT against the dash edge itself. The two differ through a corner fan, where the
+            // edge is a ray out of the pattern's fillet center and crosses the centerline at an
+            // angle (see CornerCenter): cut on the ray and the band reaches past the cap on one
+            // side of the centerline and stops short of it on the other, a whisker off the cap
+            // and a notch out of it. Square across the centerline the cut and the disc agree
+            // exactly, because both grow at the band's own rate there.
+            //
+            // A cut speaks for the stretch of centerline it stands on and no further, and it is
+            // let go by exactly how far the pixel lies off that stretch. Measured across the cut,
+            // a pixel is as far from the centerline as the band is deep only while it faces the
+            // cut's own stretch; around a corner behind it the centerline turns away and comes
+            // nearer than that, and the difference is the slack. It is zero along the whole face
+            // the cut sits on, band edge included, so nothing there is softened. Let the cut run
+            // on as a plain plane instead and it reaches around that corner and slices a wedge out
+            // of the band on the face it came from, which is a notch at any corner and, once one
+            // turns more than a right angle, the plane coming back on the wrong side of itself and
+            // taking the dash in half.
+            //
+            // A dash also reaches no further than it is long, which is what keeps a dot round: a
+            // dot has no body for a cut to trim, so at zero length that shuts the cut down to the
+            // cap disc alone.
+            //
+            // And where the corner itself lies between a cut and the rest of the dash, the walk
+            // takes over from the cut entirely: the discs past the corner reach around its inside,
+            // which the cut's own face never points at, and where the centerline rounds the corner
+            // they follow that arc - a stadium strung straight across it would chord the corner
+            // and bite the band's outer belly, on and off as the crossing passes the arc's ends.
+            // A corner whose arc still holds the crossing never parts from itself that way and
+            // stays with the cut; the fan's flat-face reaches are where the walk earns its keep.
+            //
+            // The ellipse builds its own, since behind a sharp tip it needs the union of the
+            // capsules coming in from both sides of the outline.
             float rd = lineSize * 0.5;
-            float2 cr = max(dashCapR, rd);
-            float capD = dashCapDone ? dashCut
-                                     : max(abs(d + rd) - rd,
-                                           min(dashCut, min(length(q - dashCapA) - cr.x,
-                                                            length(q - dashCapB) - cr.y)));
+            float band = abs(d + rd) - rd;
+            bool inDash = dashPat < 0.0;
+            float sd = inDash ? 1.0 : -1.0;
+            float2 fa = q - dashCapA;
+            float2 fb = q - dashCapB;
+            float la = length(fa);
+            float lb = length(fb);
+            float2 slack = abs(float2(dot(fa, Perp(dashDirA)), dot(fb, Perp(dashDirB)))) - (band + rd);
+            float2 ea = float2(-dot(fa, dashDirA), dot(fb, dashDirB)) - slack;
+            float2 ec = dashCapSpan - float2(la, lb);
+            float2 body = float2(sd, -sd); // Which way each cut's own dash runs.
+            float2 kp = sd * min(ea, ec);  // The cut, held to the dash's own length either way.
+            // With a corner between the cap and the rest of the dash, the cut has nothing useful
+            // to say: the band there belongs to two faces at once and a plane across either one
+            // cuts the other. Say it as the dash itself is built instead, as the discs strung
+            // along the centerline walked from the cap: the cut's own face, the corner's arc, the
+            // face on the far side. Each piece is exact and they hand over on the arc's two
+            // tangent points with nothing left over; see WalkCorner.
+            float reach = dashCapSpan - rd; // How far a dash's body runs from either cap.
+            bool2 turns = dashFarS * body > 0.0;
+            float endA = min(turns.x ? WalkCorner(q, dashCapA, dashDirA, body.x, dashFarS.x,
+                                                  dashFarA, dashArcA, reach, rd)
+                                     : max(band, kp.x), la - rd);
+            float endB = min(turns.y ? WalkCorner(q, dashCapB, dashDirB, body.y, dashFarS.y,
+                                                  dashFarB, dashArcB, reach, rd)
+                                     : max(band, kp.y), lb - rd);
+            float capD = dashCapDone ? dashCut : (inDash ? max(endA, endB) : min(endA, endB));
             borderMix = 1.0 - smoothstep(0.0, 1.0, saturate(capD / aaU + aaBias));
         } else {
             borderMix *= 1.0 - smoothstep(0.0, 1.0, saturate(dashCut / aaU + aaBias));

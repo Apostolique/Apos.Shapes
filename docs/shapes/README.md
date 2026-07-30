@@ -181,6 +181,26 @@ _sb.FillRectangle(new Vector2(100, 100), new Vector2(200, 100), Color.White, new
 
 `CornerRadii` also has shorter constructors. With two numbers, the first one is used for the top left and bottom right corners, the second one for the top right and bottom left corners. The radii are clamped so that they never exceed half of the rectangle's smaller side.
 
+## Chamfer
+
+A chamfer is a rectangle whose corners are cut straight across instead of rounded. It takes the same top left corner and size a rectangle does, plus how far each cut reaches back along its edges.
+
+```csharp
+_sb.FillChamfer(new Vector2(100, 100), new Vector2(200, 100), 24f, Color.White);
+```
+
+![A rectangle with all four corners cut straight across](chamfer.png)
+
+Each corner can have its own cut. Pass a `CornerChamfers`, which takes the same constructors `CornerRadii` does, in the order top left, top right, bottom right, bottom left:
+
+```csharp
+_sb.FillChamfer(new Vector2(100, 100), new Vector2(200, 100), new CornerChamfers(10f, 20f, 30f, 40f), Color.White);
+```
+
+![A rectangle with a different cut on each corner](chamfer-corners.png)
+
+The cuts are clamped to half the smaller side, same as corner radii. A cut of 0 leaves a square corner, so a chamfer of 0 draws exactly what `FillRectangle` draws. At the other end a square cut to the limit is a diamond.
+
 ## Hexagon
 
 A hexagon is defined by a center and a radius. The top and bottom edges are flat. The radius is the distance from the center to the flat edges.
@@ -258,7 +278,7 @@ What the rectangle leaves out is the anti-aliasing edge. That's `aaSize` pixels 
 
 The rectangle is tight for most shapes. Three cases leave more room. A bevel join, or a miter past its limit, reserves the corner the bevel cuts off. A butt cap reserves the round cap's radius past the end of a path. And a dashed shape is measured as the solid one, so every gap in the pattern is room the box keeps.
 
-Blurred shapes measure with their own family: `Measure.CircleBlurred`, `Measure.EllipseBlurred`, `Measure.RectangleBlurred`, and `Measure.LineBlurred`. A blur is authored in world units and it reaches far, so unlike the anti-aliasing edge it does go in the box. See the [Blur](../blur/README.md) guide.
+Blurred shapes measure with their own family: `Measure.CircleBlurred`, `Measure.EllipseBlurred`, `Measure.RectangleBlurred`, `Measure.ChamferBlurred`, and `Measure.LineBlurred`. A blur is authored in world units and it reaches far, so unlike the anti-aliasing edge it does go in the box. See the [Blur](../blur/README.md) guide.
 
 ## Follow up
 

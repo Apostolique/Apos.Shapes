@@ -37,6 +37,11 @@ namespace Apos.Shapes {
             return RectangleBounds(xy, size, cornerRadii, rotation, 0f);
         }
 
+        /// <summary>Bounds of DrawChamfer, rotated about the rectangle's center.</summary>
+        public static RectangleF Chamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers = default, float rotation = 0f) {
+            return ChamferBounds(xy, size, chamfers, rotation, 0f);
+        }
+
         /// <summary>Bounds of DrawLine: the capsule between the two end circles.</summary>
         public static RectangleF Line(Vector2 a, Vector2 b, float radius) {
             float r = MathF.Max(radius, 0f);
@@ -201,6 +206,11 @@ namespace Apos.Shapes {
             return RectangleBounds(xy, size, cornerRadii, rotation, BlurReach(blur));
         }
 
+        /// <summary>Bounds of FillChamferBlurred and BorderChamferBlurred.</summary>
+        public static RectangleF ChamferBlurred(Vector2 xy, Vector2 size, float blur, CornerChamfers chamfers = default, float rotation = 0f) {
+            return ChamferBounds(xy, size, chamfers, rotation, BlurReach(blur));
+        }
+
         /// <summary>Bounds of FillLineBlurred and BorderLineBlurred.</summary>
         public static RectangleF LineBlurred(Vector2 a, Vector2 b, float radius, float blur) {
             return LineBlurred(a, b, radius, radius, blur);
@@ -245,6 +255,28 @@ namespace Apos.Shapes {
             bb.Add(center + Rotate(new Vector2(half.X - rBR, half.Y - rBR), sin, cos), rBR + margin);
             bb.Add(center + Rotate(new Vector2(rBL - half.X, half.Y - rBL), sin, cos), rBL + margin);
             return bb;
+        }
+
+        // A chamfer box is the hull of its eight corners, so the box is what those corners reach
+        // once the rotation has turned them. The margin rides on each of them because the offset
+        // of a convex shape by d is its own support plus d in every direction.
+        private static RectangleF ChamferBounds(Vector2 xy, Vector2 size, CornerChamfers chamfers, float rotation, float margin) {
+            Vector2 half = size / 2f;
+            Vector2 center = xy + half;
+
+            float maxC = MathF.Min(size.X, size.Y) / 2f;
+            float cTL = MathHelper.Clamp(chamfers.TopLeft,     0f, maxC);
+            float cTR = MathHelper.Clamp(chamfers.TopRight,    0f, maxC);
+            float cBR = MathHelper.Clamp(chamfers.BottomRight, 0f, maxC);
+            float cBL = MathHelper.Clamp(chamfers.BottomLeft,  0f, maxC);
+
+            Span<Vector2> corners = stackalloc Vector2[] {
+                new(-half.X + cTL, -half.Y), new(half.X - cTR, -half.Y),
+                new(half.X, -half.Y + cTR), new(half.X, half.Y - cBR),
+                new(half.X - cBR, half.Y), new(-half.X + cBL, half.Y),
+                new(-half.X, half.Y - cBL), new(-half.X, -half.Y + cTL),
+            };
+            return HullOfDiscs(corners, center, rotation, margin);
         }
 
         // The offset of a convex shape by d has the shape's own support plus d in every direction,

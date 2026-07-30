@@ -10,7 +10,7 @@ _sb.BorderCircleBlurred(new Vector2(270, 95), 50, Color.White, 8f, 14f);
 
 ![A blurred circle next to a blurred ring](blur.png)
 
-There are eight: `FillCircleBlurred`, `FillEllipseBlurred`, `FillRectangleBlurred` and `FillLineBlurred`, and a `Border` version of each. They share the vertex buffer and the draw call with every other shape, so mixing shadows into a scene never splits the batch.
+There are ten: `FillCircleBlurred`, `FillEllipseBlurred`, `FillRectangleBlurred`, `FillChamferBlurred` and `FillLineBlurred`, and a `Border` version of each. They share the vertex buffer and the draw call with every other shape, so mixing shadows into a scene never splits the batch.
 
 ## Lines
 

@@ -32,7 +32,7 @@ namespace Apos.Shapes {
     }
 
     /// <summary>
-    /// Dashes a shape. On closed outlines (circle, rectangle, hexagon, equilateral triangle, triangle)
+    /// Dashes a shape. On closed outlines (circle, rectangle, chamfer, hexagon, equilateral triangle, triangle)
     /// the border is dashed along the perimeter and the fill is untouched. On strokes (line, arc, ring,
     /// path) the whole stroke is cut into dashes and each dash keeps its own fill, border and caps.
     /// The pattern rounds every corner it walks, so dashes bend around joints and corners at full

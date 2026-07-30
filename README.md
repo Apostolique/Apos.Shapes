@@ -13,10 +13,10 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 
 ## Features
 
-* 10 shapes: Circle, Ellipse, Line, Path, Rectangle, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
+* 11 shapes: Circle, Ellipse, Line, Path, Rectangle, Chamfer, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
 * `Fill`, `Border`, and `Draw` variants for every shape
 * Paths draw a polyline as one continuous shape, with round, miter, or bevel joins and round, butt, or square caps. Open or closed
-* Rounded corners (per-corner radii on rectangles), rotation, and adjustable anti-aliasing
+* Rounded or chamfered corners, one per corner, plus rotation and adjustable anti-aliasing
 * Dashed outlines and strokes, flat or round-capped, down to dotted lines
 * Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
 * Blurred shapes with a Gaussian edge, for drop shadows and glows

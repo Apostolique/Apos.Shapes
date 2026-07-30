@@ -1293,6 +1293,112 @@ namespace Apos.Shapes {
             DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
 
+        /// <summary>
+        /// Draws a rectangle whose corners are cut straight across instead of rounded. Each
+        /// chamfer is how far the cut reaches back along both of its edges, so a chamfer of 0
+        /// leaves a square corner and the largest one turns a square into a diamond. They are
+        /// clamped to half the rectangle's smaller side, the same bound corner radii get.
+        /// </summary>
+        public void DrawChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            PrepareQuad();
+
+            float maxC = MathF.Min(size.X, size.Y) / 2f;
+            float cTL = MathHelper.Clamp(chamfers.TopLeft,     0f, maxC);
+            float cTR = MathHelper.Clamp(chamfers.TopRight,    0f, maxC);
+            float cBR = MathHelper.Clamp(chamfers.BottomRight, 0f, maxC);
+            float cBL = MathHelper.Clamp(chamfers.BottomLeft,  0f, maxC);
+
+            UpdatePixelSize(xy + size / 2f, (size / 2f).Length());
+            float aaOffset = AaOffset(aaSize);
+            Vector2 xy1 = xy - new Vector2(aaOffset); // Account for AA.
+            Vector2 size1 = size + new Vector2(aaOffset * 2f); // Account for AA.
+            Vector2 half = size / 2f;
+            Vector2 half1 = half + new Vector2(aaOffset); // Account for AA.
+
+            var topLeft = xy1;
+            var topRight = xy1 + new Vector2(size1.X, 0);
+            var bottomRight = xy1 + size1;
+            var bottomLeft = xy1 + new Vector2(0, size1.Y);
+
+            Vector2 center = xy1 + half1;
+            if (rotation != 0f) {
+                RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
+            }
+
+            GradientToWorld(ref fill, ref border, xy + half, -half, rotation);
+
+            // Dashed chamfers ship their four cuts as 11 bit fractions of the largest allowed cut,
+            // freeing two channels for the pattern. Snapping the cuts to that grid here keeps the
+            // CPU perimeter bit-exact with the one the shader walks.
+            ResolvedDash rd = default;
+            if (dash.IsEnabled) {
+                if (maxC > 0f) {
+                    cTL = MathF.Round(cTL / maxC * 2047f) / 2047f * maxC;
+                    cTR = MathF.Round(cTR / maxC * 2047f) / 2047f * maxC;
+                    cBR = MathF.Round(cBR / maxC * 2047f) / 2047f * maxC;
+                    cBL = MathF.Round(cBL / maxC * 2047f) / 2047f * maxC;
+                }
+                // Round capped dashes ride the band's centerline and are parameterized by its own
+                // arc length, so their pattern resolves against that; see ChamferDashCut. Butt
+                // dashes keep the widened pattern contour their cuts are placed on.
+                rd = dash.Resolve(dash.Cap == DashCap.Round
+                    ? ChamferCenterPerimeter(half, cTL, cTR, cBR, cBL, thickness)
+                    : ChamferPatternPerimeter(half, cTL, cTR, cBR, cBL, thickness), closed: true);
+            }
+            float a = cTR;
+            float b = cBR;
+            float c = cTL;
+            float d = cBL;
+            if (rd.TypeDigit > 0) {
+                float mc = MathF.Max(maxC, 1e-9f);
+                a = DashStyle.Pack11(cTR / mc, cBR / mc);
+                b = DashStyle.Pack11(cTL / mc, cBL / mc);
+                c = rd.Period;
+                d = rd.FracPhase;
+            }
+
+            if (thickness > 0f && IsTransparent(fill)) {
+                float maxCorner = MathF.Max(MathF.Max(cTL, cTR), MathF.Max(cBR, cBL));
+                float inset = thickness + aaOffset + _pixelSize + maxCorner;
+                Vector2 hole = new(half.X - inset, half.Y - inset);
+                float minHole = _hollowMinHolePixels * _pixelSize;
+                if (hole.X > 4f * _pixelSize && hole.Y > 4f * _pixelSize && hole.X * hole.Y > minHole * minHole) {
+                    // Offsetting the outline outward by delta keeps its eight edge directions and
+                    // slides each cut out by (2 - sqrt(2)) * delta, so the frame's outer ring is
+                    // another chamfer box and its corners are the miter points outright. The hole
+                    // stays the plain inset box the rounded rectangle uses, which sits inside the
+                    // cut outline whatever the four cuts are; the repeated corners leave the four
+                    // quads over the cuts as triangles.
+                    float delta = aaOffset + _pixelSize;
+                    float grow = (2f - MathF.Sqrt(2f)) * delta;
+                    Span<Vector2> outerCorners = stackalloc Vector2[8];
+                    ChamferCorners(half + new Vector2(delta), cTL + grow, cTR + grow, cBR + grow, cBL + grow, outerCorners);
+                    Span<Vector2> innerCorners = stackalloc Vector2[] {
+                        new(-hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, hole.Y),
+                        new(hole.X, hole.Y), new(-hole.X, hole.Y), new(-hole.X, hole.Y), new(-hole.X, -hole.Y),
+                    };
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Chamfer, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d, rd.TypeDigit);
+                    return;
+                }
+            }
+
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            _vertices[_vertexCount + 0] = v;
+            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
+            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
+            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), GetClipSpace(bottomLeft));
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+        public void FillChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
+            DrawChamfer(xy, size, chamfers, g, g, 0f, rotation, aaSize);
+        }
+        public void BorderChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawChamfer(xy, size, chamfers, Color.Transparent, g, thickness, rotation, aaSize, dash);
+        }
+
         // The blurred shapes are their own family rather than a parameter on the ones above,
         // because a blur only factors out of the convolution while the color is constant: the
         // moment a gradient, a border or a dash varies the color along the contour, blurring the
@@ -1442,6 +1548,59 @@ namespace Apos.Shapes {
             }
 
             VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, blur: sigma);
+            _vertices[_vertexCount + 0] = v;
+            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
+            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
+            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), GetClipSpace(bottomLeft));
+
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
+        /// <summary>
+        /// Fills a chamfered rectangle whose edge falls off as a Gaussian of standard deviation
+        /// <paramref name="blur"/>, measured in world units. See <see cref="FillCircleBlurred"/>.
+        /// A corner tighter than the blur reads slightly too solid, the same way a rectangle's does.
+        /// </summary>
+        public void FillChamferBlurred(Vector2 xy, Vector2 size, CornerChamfers chamfers, Color color, float blur, float rotation = 0f) {
+            DrawChamferBlurred(xy, size, chamfers, color, blur, 0f, rotation);
+        }
+        /// <summary>
+        /// Draws a blurred chamfered outline of the given thickness with nothing inside it. See
+        /// <see cref="BorderCircleBlurred"/>.
+        /// </summary>
+        public void BorderChamferBlurred(Vector2 xy, Vector2 size, CornerChamfers chamfers, Color color, float blur, float thickness = 1f, float rotation = 0f) {
+            DrawChamferBlurred(xy, size, chamfers, color, blur, MathF.Max(thickness, 0f), rotation);
+        }
+        private void DrawChamferBlurred(Vector2 xy, Vector2 size, CornerChamfers chamfers, Color color, float blur, float thickness, float rotation) {
+            UpdatePixelSize(xy + size / 2f, (size / 2f).Length());
+            PrepareQuad();
+
+            float maxC = MathF.Min(size.X, size.Y) / 2f;
+            float cTL = MathHelper.Clamp(chamfers.TopLeft,     0f, maxC);
+            float cTR = MathHelper.Clamp(chamfers.TopRight,    0f, maxC);
+            float cBR = MathHelper.Clamp(chamfers.BottomRight, 0f, maxC);
+            float cBL = MathHelper.Clamp(chamfers.BottomLeft,  0f, maxC);
+
+            float sigma = BlurSigma(blur);
+            float reach = _blurReach * sigma;
+            Vector2 half = size / 2f;
+            Vector2 half1 = half + new Vector2(reach);
+            Vector2 xy1 = xy - new Vector2(reach);
+            Vector2 size1 = size + new Vector2(reach * 2f);
+
+            var topLeft = xy1;
+            var topRight = xy1 + new Vector2(size1.X, 0);
+            var bottomRight = xy1 + size1;
+            var bottomLeft = xy1 + new Vector2(0, size1.Y);
+
+            Vector2 center = xy1 + half1;
+            if (rotation != 0f) {
+                RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
+            }
+
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: cTR, b: cBR, c: cTL, d: cBL, colorSpace: ColorSpace, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -2120,6 +2279,48 @@ namespace Apos.Shapes {
         // on lands past the border band's inner edge instead of inside it.
         private static float PatternRadius(float rounded, float thickness, float cap) {
             return MathF.Max(rounded, MathF.Min(1.5f * thickness, cap));
+        }
+
+        // Length of the contour the dash pattern walks on a chamfer box. Mirrors ChamferPattern
+        // and ChamferSpans in the shader: the pattern's cuts are widened until every one of the
+        // eight vertices has room for a fillet of the pattern radius, then all eight are filleted,
+        // which trades 2 * tan(22.5) of straight run per vertex for a quarter of that radius'
+        // circumference.
+        private static float ChamferPatternPerimeter(Vector2 half, float cTL, float cTR, float cBR, float cBL, float thickness) {
+            float rp = MathF.Max(MathF.Min(1.5f * thickness, MathF.Min(half.X, half.Y) * 0.5f), 0f);
+            float fillet = (MathF.Sqrt(2f) - 1f) * rp;
+            float lo = (2f - MathF.Sqrt(2f)) * rp;
+            float hi = MathF.Min(half.X, half.Y) - fillet;
+            float cuts = MathHelper.Clamp(cTL, lo, hi) + MathHelper.Clamp(cTR, lo, hi)
+                       + MathHelper.Clamp(cBR, lo, hi) + MathHelper.Clamp(cBL, lo, hi);
+            return 4f * (half.X + half.Y) - (2f - MathF.Sqrt(2f)) * cuts - 16f * fillet + MathF.Tau * rp;
+        }
+
+        // Length of the band's centerline on a chamfer box, which is what a round capped dash
+        // pattern resolves against; see ChamferDashCut. The centerline is the outline inset by
+        // half the band: another chamfer box, its half extents in by that much and each cut leg
+        // shorter by (2 - sqrt(2)) times it, held to what the inset box has room for.
+        private static float ChamferCenterPerimeter(Vector2 half, float cTL, float cTR, float cBR, float cBL, float thickness) {
+            float rd = thickness * 0.5f;
+            Vector2 h = new(MathF.Max(half.X - rd, 1e-4f), MathF.Max(half.Y - rd, 1e-4f));
+            float hi = MathF.Min(h.X, h.Y);
+            float pull = (2f - MathF.Sqrt(2f)) * rd;
+            float cuts = MathHelper.Clamp(cTL - pull, 0f, hi) + MathHelper.Clamp(cTR - pull, 0f, hi)
+                       + MathHelper.Clamp(cBR - pull, 0f, hi) + MathHelper.Clamp(cBL - pull, 0f, hi);
+            return 4f * (h.X + h.Y) - (2f - MathF.Sqrt(2f)) * cuts;
+        }
+
+        // The eight corners of a chamfer box, clockwise on screen from where the top edge leaves
+        // the top-left cut.
+        private static void ChamferCorners(Vector2 half, float cTL, float cTR, float cBR, float cBL, Span<Vector2> corners) {
+            corners[0] = new Vector2(-half.X + cTL, -half.Y);
+            corners[1] = new Vector2(half.X - cTR, -half.Y);
+            corners[2] = new Vector2(half.X, -half.Y + cTR);
+            corners[3] = new Vector2(half.X, half.Y - cBR);
+            corners[4] = new Vector2(half.X - cBR, half.Y);
+            corners[5] = new Vector2(-half.X + cBL, half.Y);
+            corners[6] = new Vector2(-half.X, half.Y - cBL);
+            corners[7] = new Vector2(-half.X, -half.Y + cTL);
         }
 
         private static float TriangleArea(Vector2 a, Vector2 b, Vector2 c) {
