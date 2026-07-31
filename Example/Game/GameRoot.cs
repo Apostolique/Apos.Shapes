@@ -110,11 +110,20 @@ namespace GameProject {
         }
 
         // The scene's name and where it sits in the cycle, in screen space so panning and zooming
-        // the scene underneath leaves it where it is.
+        // the scene underneath leaves it where it is. Bottom right, because the top edge belongs
+        // to each scene's first label and the bottom left to the scenes' own footers. Main fills
+        // its bottom row edge to edge but leaves the top strip clear, so it alone keeps the
+        // header up top.
         private void DrawSceneHeader(FontStashSharp.SpriteFontBase font) {
             int count = Enum.GetNames<Scene>().Length;
+            string text = $"{(int)_currentScene + 1}/{count}  {SceneTitle(_currentScene)}    [Tab] next  [Shift+Tab] back";
+            Vector2 size = font.MeasureString(text);
+            var vp = GraphicsDevice.Viewport;
+            Vector2 at = _currentScene == Scene.Main
+                ? new Vector2(10f, 4f)
+                : new Vector2(vp.Width - size.X - 10f, vp.Height - size.Y - 8f);
             _sb.Begin();
-            _sb.DrawString(font, $"{(int)_currentScene + 1}/{count}  {SceneTitle(_currentScene)}    [Tab] next  [Shift+Tab] back", new Vector2(10, 10), TWColor.Gray500);
+            _sb.DrawString(font, text, at, TWColor.Gray500);
             _sb.End();
         }
 
