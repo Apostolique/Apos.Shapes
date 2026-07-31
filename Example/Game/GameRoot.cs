@@ -152,62 +152,79 @@ namespace GameProject {
         private void DrawMainScene(FontStashSharp.SpriteFontBase font, FontStashSharp.SpriteFontBase titleFont) {
             _sb.Begin(_camera.View);
 
-            // The same two colors interpolated in each supported color space.
+            float offset = _dashOffset;
+            var half = new Vector3(0.5f);
+            // Palettes from the classic parameter sets at iquilezles.org/articles/palettes, which
+            // are tuned for Rgb channels. The wheel and the bar lift the bias and shrink the
+            // amplitude so their troughs stay clear of the background.
+            var muted = new Palette(new Vector3(0.6f), new Vector3(0.4f), new Vector3(1f), new Vector3(0.3f, 0.2f, 0.2f));
+            var wheel = new Palette(new Vector3(0.6f), new Vector3(0.35f), new Vector3(1f), new Vector3(0f, 0.33f, 0.67f));
+            var candy = new Palette(half, half, new Vector3(2f, 1f, 0f), new Vector3(0.5f, 0.2f, 0.25f));
+
+            // The same two colors interpolated in each color space, then a cosine palette in the
+            // fourth bar.
             _sb.ColorSpace = ColorSpace.Oklch;
-            _sb.FillRectangle(new Vector2(-620, -330), new Vector2(400, 44), new Gradient(new Vector2(-620, -308), TWColor.Blue600, new Vector2(-220, -308), TWColor.Red600), 8f);
-            _sb.DrawString(font, "Oklch", new Vector2(-204, -322), TWColor.Gray300);
+            _sb.FillRectangle(new Vector2(-620, -324), new Vector2(400, 44), new Gradient(new Vector2(-620, -302), TWColor.Blue600, new Vector2(-220, -302), TWColor.Red600), 8f);
+            _sb.DrawString(font, "Oklch", new Vector2(-204, -316), TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Oklab;
-            _sb.FillRectangle(new Vector2(-620, -274), new Vector2(400, 44), new Gradient(new Vector2(-620, -252), TWColor.Blue600, new Vector2(-220, -252), TWColor.Red600), 8f);
-            _sb.DrawString(font, "Oklab", new Vector2(-204, -266), TWColor.Gray300);
+            _sb.FillRectangle(new Vector2(-620, -268), new Vector2(400, 44), new Gradient(new Vector2(-620, -246), TWColor.Blue600, new Vector2(-220, -246), TWColor.Red600), 8f);
+            _sb.DrawString(font, "Oklab", new Vector2(-204, -260), TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Rgb;
-            _sb.FillRectangle(new Vector2(-620, -218), new Vector2(400, 44), new Gradient(new Vector2(-620, -196), TWColor.Blue600, new Vector2(-220, -196), TWColor.Red600), 8f);
-            _sb.DrawString(font, "Rgb", new Vector2(-204, -210), TWColor.Gray300);
-            _sb.ColorSpace = ColorSpace.Oklch;
-            // Gray stops have no hue of their own, Oklch holds the blue hue steady.
-            _sb.FillRectangle(new Vector2(-620, -162), new Vector2(400, 44), new Gradient(new Vector2(-620, -140), TWColor.Gray500, new Vector2(-220, -140), TWColor.Blue600), 8f);
-            _sb.DrawString(font, "Gray to blue", new Vector2(-204, -154), TWColor.Gray300);
+            _sb.FillRectangle(new Vector2(-620, -212), new Vector2(400, 44), new Gradient(new Vector2(-620, -190), TWColor.Blue600, new Vector2(-220, -190), TWColor.Red600), 8f);
+            _sb.DrawString(font, "Rgb", new Vector2(-204, -204), TWColor.Gray300);
+            _sb.FillRectangle(new Vector2(-620, -156), new Vector2(400, 44), new Gradient(new Vector2(-620, -134), new Vector2(-220, -134), muted), 8f);
+            _sb.DrawString(font, "Palette", new Vector2(-204, -148), TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Oklab;
 
-            // Gradient shapes in a 4x2 grid, aligned vertically with the color space bars.
-            _sb.FillCircle(new Vector2(150, -278), 52, new Gradient(new Vector2(150, -278), TWColor.Amber400, new Vector2(202, -278), TWColor.Red600, Gradient.Shape.Radial));
-            _sb.FillCircle(new Vector2(280, -278), 52, new Gradient(new Vector2(280, -278), TWColor.Sky400, new Vector2(280, -330), TWColor.Indigo700, Gradient.Shape.Conical));
-            _sb.FillCircle(new Vector2(410, -278), 52, new Gradient(new Vector2(410, -278), TWColor.Lime400, new Vector2(410, -330), TWColor.Emerald700, Gradient.Shape.ConicalAsym));
-            _sb.FillCircle(new Vector2(540, -278), 52, new Gradient(new Vector2(540, -278), TWColor.Fuchsia400, new Vector2(503, -315), TWColor.Purple800, Gradient.Shape.Square));
-            _sb.FillCircle(new Vector2(150, -168), 52, new Gradient(new Vector2(150, -168), TWColor.Rose400, new Vector2(113, -131), TWColor.Pink800, Gradient.Shape.Cross));
-            _sb.FillCircle(new Vector2(280, -168), 52, new Gradient(new Vector2(280, -168), TWColor.Cyan300, new Vector2(306, -168), TWColor.Blue700, Gradient.Shape.Radial, Gradient.RepeatStyle.Triangle));
-            _sb.FillCircle(new Vector2(410, -168), 52, new Gradient(new Vector2(410, -168), TWColor.Yellow300, new Vector2(410, -194), TWColor.Orange600, Gradient.Shape.SpiralCW));
-            _sb.FillCircle(new Vector2(540, -168), 52, new Gradient(new Vector2(540, -168), TWColor.Teal300, new Vector2(540, -194), TWColor.Sky700, Gradient.Shape.SpiralCCW));
+            // Gradient shapes in a 4x2 grid that shares its top and bottom edges with the bars.
+            _sb.FillCircle(new Vector2(178, -272), 52, new Gradient(new Vector2(178, -272), TWColor.Amber400, new Vector2(230, -272), TWColor.Red600, Gradient.Shape.Radial));
+            _sb.FillCircle(new Vector2(308, -272), 52, new Gradient(new Vector2(308, -272), TWColor.Sky400, new Vector2(308, -324), TWColor.Indigo700, Gradient.Shape.Conical));
+            _sb.FillCircle(new Vector2(568, -272), 52, new Gradient(new Vector2(568, -272), TWColor.Fuchsia400, new Vector2(531, -309), TWColor.Purple800, Gradient.Shape.Square));
+            _sb.FillCircle(new Vector2(178, -164), 52, new Gradient(new Vector2(178, -164), TWColor.Rose400, new Vector2(141, -127), TWColor.Pink800, Gradient.Shape.Cross));
+            _sb.FillCircle(new Vector2(308, -164), 52, new Gradient(new Vector2(308, -164), TWColor.Cyan300, new Vector2(334, -164), TWColor.Blue700, Gradient.Shape.Radial, Gradient.RepeatStyle.Triangle));
+            _sb.FillCircle(new Vector2(438, -164), 52, new Gradient(new Vector2(438, -164), TWColor.Yellow300, new Vector2(438, -190), TWColor.Orange600, Gradient.Shape.SpiralCW));
+            // A palette rides the two color slots a pair of stops uses, so any gradient shape takes one.
+            _sb.ColorSpace = ColorSpace.Rgb;
+            _sb.FillCircle(new Vector2(438, -272), 52, new Gradient(new Vector2(438, -272), new Vector2(438, -324), wheel, Gradient.Shape.Conical));
+            _sb.FillCircle(new Vector2(568, -164), 52, new Gradient(new Vector2(568, -164), new Vector2(568, -216), candy, Gradient.Shape.SpiralCCW));
+            _sb.ColorSpace = ColorSpace.Oklab;
 
-            // Shapes with fills, borders, rounding and local gradients.
-            _sb.DrawRectangle(new Vector2(-620, -60), new Vector2(190, 150), new Gradient(new Vector2(0, 0), TWColor.Sky400, new Vector2(190, 150), TWColor.Indigo700, isLocal: true), TWColor.Slate200, 3f, new CornerRadii(12, 48, 12, 48), rotation: 0.1f);
-            _sb.DrawHexagon(new Vector2(-310, 15), 75, new Gradient(new Vector2(0, 0), TWColor.Emerald400, new Vector2(0, 75), TWColor.Teal800, Gradient.Shape.Radial, isLocal: true), TWColor.Slate200, 3f, rounded: 8f);
-            _sb.DrawEquilateralTriangle(new Vector2(-150, 15), 38, new Gradient(new Vector2(0, -60), TWColor.Amber300, new Vector2(0, 60), TWColor.Orange700, isLocal: true), TWColor.Slate200, 3f, rounded: 6f);
-            _sb.DrawTriangle(new Vector2(-30, 85), new Vector2(60, -55), new Vector2(150, 85), new Gradient(new Vector2(60, -55), TWColor.Pink400, new Vector2(60, 85), TWColor.Rose800), TWColor.Slate200, 3f, rounded: 6f);
-            _sb.DrawEllipse(new Vector2(305, 15), 95, 55, new Gradient(new Vector2(305, -40), TWColor.Violet400, new Vector2(305, 70), TWColor.Purple800), TWColor.Slate200, 3f, rotation: -0.15f);
-            _sb.FillArc(new Vector2(465, 20), MathF.PI * 0.75f, MathF.PI * 2.25f, 44, 13, new Gradient(new Vector2(465, 20), TWColor.Red500, new Vector2(465, -37), TWColor.Amber400, Gradient.Shape.Conical));
-            _sb.FillRing(new Vector2(585, 20), MathF.PI * 0.75f, MathF.PI * 2.25f, 44, 13, new Gradient(new Vector2(585, 64), TWColor.Cyan400, new Vector2(585, -24), TWColor.Blue700));
+            // One of each silhouette on a shared center line.
+            _sb.DrawRectangle(new Vector2(-620, -50), new Vector2(170, 140), new Gradient(new Vector2(0, 0), TWColor.Sky400, new Vector2(170, 140), TWColor.Indigo700, isLocal: true), TWColor.Slate200, 3f, new CornerRadii(12, 48, 12, 48), rotation: 0.08f);
+            _sb.DrawChamfer(new Vector2(-400, -38), new Vector2(140, 116), new CornerChamfers(38f, 38f, 12f, 12f), new Gradient(new Vector2(0, 0), TWColor.Fuchsia400, new Vector2(140, 116), TWColor.Purple800, isLocal: true), TWColor.Slate200, 3f);
+            _sb.DrawHexagon(new Vector2(-135, 20), 66, new Gradient(new Vector2(0, 0), TWColor.Emerald400, new Vector2(0, 66), TWColor.Teal800, Gradient.Shape.Radial, isLocal: true), TWColor.Slate200, 3f, rounded: 8f);
+            _sb.DrawTriangle(new Vector2(-25, 85), new Vector2(35, -60), new Vector2(95, 85), new Gradient(new Vector2(35, -60), TWColor.Amber300, new Vector2(35, 85), TWColor.Orange700), TWColor.Slate200, 3f, rounded: 6f);
+            _sb.FillArc(new Vector2(200, 20), MathF.PI * 0.75f, MathF.PI * 2.25f, 46, 12, new Gradient(new Vector2(200, 20), TWColor.Red500, new Vector2(200, -38), TWColor.Amber400, Gradient.Shape.Conical));
+            _sb.FillRing(new Vector2(345, 20), MathF.PI * 0.75f, MathF.PI * 2.25f, 46, 12, new Gradient(new Vector2(345, 64), TWColor.Cyan400, new Vector2(345, -24), TWColor.Blue700));
+            // A closed path wraps back on itself, and the wrap joint blends like any other.
+            _sb.FillPath(Star(new Vector2(525, 20), 72, 30, 5), 8, TWColor.Lime300, closed: true);
 
-            // Repeat styles, plus offsets that hold the end colors solid before the transition starts.
-            _sb.FillRectangle(new Vector2(-620, 150), new Vector2(360, 36), new Gradient(new Vector2(-620, 168), TWColor.Cyan400, new Vector2(-530, 168), TWColor.Blue800, Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 6f);
-            _sb.FillRectangle(new Vector2(-620, 196), new Vector2(360, 36), new Gradient(new Vector2(-620, 214), TWColor.Fuchsia400, new Vector2(-530, 214), TWColor.Purple900, Gradient.Shape.Linear, Gradient.RepeatStyle.Triangle), 6f);
-            _sb.FillRectangle(new Vector2(-620, 242), new Vector2(360, 36), new Gradient(new Vector2(-620, 260), TWColor.Amber300, new Vector2(-530, 260), TWColor.Red700, Gradient.Shape.Linear, Gradient.RepeatStyle.Sine), 6f);
-            _sb.FillRectangle(new Vector2(-620, 288), new Vector2(360, 36), new Gradient(new Vector2(-620, 306), TWColor.Lime400, new Vector2(-260, 306), TWColor.Green800, Gradient.Shape.Linear, Gradient.RepeatStyle.None, 90f, 90f), 6f);
+            // Repeat styles over a frame a quarter of the bar, and a palette whose whole number
+            // frequency tiles the Sawtooth with no seam. Its phase slides over time.
+            _sb.FillRectangle(new Vector2(-620, 150), new Vector2(360, 36), new Gradient(new Vector2(-620, 168), TWColor.Cyan400, new Vector2(-528, 168), TWColor.Blue800, Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 6f);
+            _sb.FillRectangle(new Vector2(-620, 196), new Vector2(360, 36), new Gradient(new Vector2(-620, 214), TWColor.Fuchsia400, new Vector2(-528, 214), TWColor.Purple900, Gradient.Shape.Linear, Gradient.RepeatStyle.Triangle), 6f);
+            _sb.FillRectangle(new Vector2(-620, 242), new Vector2(360, 36), new Gradient(new Vector2(-620, 260), TWColor.Amber300, new Vector2(-528, 260), TWColor.Red700, Gradient.Shape.Linear, Gradient.RepeatStyle.Sine), 6f);
+            _sb.ColorSpace = ColorSpace.Rgb;
+            float slide = offset * 0.2f;
+            _sb.FillRectangle(new Vector2(-620, 288), new Vector2(360, 36), new Gradient(new Vector2(-620, 306), new Vector2(-528, 306), new Palette(half, half, new Vector3(1f), new Vector3(slide, 0.1f + slide, 0.2f + slide)), Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 6f);
+            _sb.ColorSpace = ColorSpace.Oklab;
 
-            // Clipping without breaking the batch.
-            _sb.SetClipRect(new RectangleF(-180, 150, 360, 180), 24f);
-            _sb.FillCircle(new Vector2(-130, 240), 70, TWColor.Red500);
-            _sb.FillCircle(new Vector2(0, 240), 70, TWColor.Amber400);
-            _sb.FillCircle(new Vector2(130, 240), 70, TWColor.Sky500);
-            _sb.BorderLine(new Vector2(-220, 320), new Vector2(220, 170), 16, TWColor.White, 3f);
+            // Clipping without breaking the batch. The window outline is dashed, and it marches.
+            _sb.SetClipRect(new RectangleF(-180, 150, 360, 174), 24f);
+            _sb.FillCircle(new Vector2(-130, 237), 70, TWColor.Red500);
+            _sb.FillCircle(new Vector2(0, 237), 70, TWColor.Amber400);
+            _sb.FillCircle(new Vector2(130, 237), 70, TWColor.Sky500);
+            _sb.BorderLine(new Vector2(-220, 320), new Vector2(220, 172), 16, TWColor.White, 3f);
             _sb.SetClipRect(null);
-            _sb.BorderRectangle(new Vector2(-180, 150), new Vector2(360, 180), TWColor.Gray600, 2f, new CornerRadii(24));
+            _sb.BorderRectangle(new Vector2(-181, 149), new Vector2(362, 176), TWColor.Gray600, 2f, new CornerRadii(24), dash: new DashStyle(12f, 9f, offset));
 
-            // Lines and text.
-            _sb.FillLine(new Vector2(280, 170), new Vector2(620, 170), 10, new Gradient(new Vector2(280, 170), TWColor.Purple500, new Vector2(620, 170), TWColor.Orange400));
-            _sb.BorderLine(new Vector2(280, 220), new Vector2(620, 220), 10, new Gradient(new Vector2(280, 220), TWColor.Teal400, new Vector2(620, 220), TWColor.Pink500), 3f);
-            _sb.DrawString(titleFont, "Apos.Shapes", new Vector2(280, 250), TWColor.Gray100);
-            // A translucent path blends once even where segments meet, and gradients span the whole stroke.
-            _sb.FillPath([new Vector2(280, 335), new Vector2(355, 305), new Vector2(430, 335), new Vector2(505, 305), new Vector2(620, 335)], 9, new Gradient(new Vector2(280, 320), new Color(TWColor.Sky400, 0.6f), new Vector2(620, 320), new Color(TWColor.Fuchsia500, 0.6f)));
+            // Lines, text over a blurred glow, and a translucent path that blends once even at the
+            // joints.
+            _sb.FillLine(new Vector2(280, 166), new Vector2(620, 166), 9, new Gradient(new Vector2(280, 166), TWColor.Purple500, new Vector2(620, 166), TWColor.Orange400), dash: new DashStyle(26f, 18f, offset, cap: DashCap.Round));
+            _sb.BorderLine(new Vector2(280, 212), new Vector2(620, 212), 10, new Gradient(new Vector2(280, 212), TWColor.Teal400, new Vector2(620, 212), TWColor.Pink500), 3f);
+            _sb.FillEllipseBlurred(new Vector2(450, 268), 150, 26, new Color(TWColor.Indigo500, 0.45f), 16f);
+            _sb.DrawString(titleFont, "Apos.Shapes", new Vector2(325, 240), TWColor.Gray100);
+            _sb.FillPath([new Vector2(280, 330), new Vector2(365, 302), new Vector2(450, 330), new Vector2(535, 302), new Vector2(620, 330)], 9, new Gradient(new Vector2(280, 316), new Color(TWColor.Sky400, 0.6f), new Vector2(620, 316), new Color(TWColor.Fuchsia500, 0.6f)));
 
             _sb.End();
         }
