@@ -87,6 +87,7 @@ namespace GameProject {
                 case Scene.Path: DrawPathScene(font); break;
                 case Scene.Arc: DrawArcScene(font); break;
                 case Scene.Gradient: DrawGradientScene(font); break;
+                case Scene.Palette: DrawPaletteScene(font); break;
                 case Scene.ColorSpace: DrawColorSpaceScene(font); break;
                 case Scene.Clip: DrawClipScene(font); break;
                 case Scene.Text: DrawTextScene(font, titleFont); break;
@@ -127,6 +128,7 @@ namespace GameProject {
             Scene.Path => "Path",
             Scene.Arc => "Arc and ring",
             Scene.Gradient => "Gradients",
+            Scene.Palette => "Palettes",
             Scene.ColorSpace => "Color spaces",
             Scene.Clip => "Clipping",
             Scene.Text => "Text",
@@ -630,6 +632,80 @@ namespace GameProject {
             _sb.End();
         }
 
+        private void DrawPaletteScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+
+            // The classic parameter sets from iquilezles.org/articles/palettes, which are tuned
+            // for raw RGB channels. The last row goes back to Oklab.
+            _sb.ColorSpace = ColorSpace.Rgb;
+            var half = new Vector3(0.5f);
+
+            L(-348, "A Palette colors a gradient from cosines: bias + amplitude * cos(tau * (frequency * t + phase))");
+            (string Name, Palette P)[] classics = [
+                ("1, 1, 1 / 0, .33, .67", new Palette(half, half, new Vector3(1f), new Vector3(0f, 0.33f, 0.67f))),
+                ("1, 1, 1 / 0, .1, .2", new Palette(half, half, new Vector3(1f), new Vector3(0f, 0.1f, 0.2f))),
+                ("1, 1, 1 / .3, .2, .2", new Palette(half, half, new Vector3(1f), new Vector3(0.3f, 0.2f, 0.2f))),
+                ("2, 1, 0 / .5, .2, .25", new Palette(half, half, new Vector3(2f, 1f, 0f), new Vector3(0.5f, 0.2f, 0.25f))),
+            ];
+            for (int i = 0; i < classics.Length; i++) {
+                float y = _rowA - 42 + i * 28;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), new Vector2(300, y), classics[i].P), 4f);
+                Under(320, y - 2, classics[i].Name);
+            }
+
+            L(-180, "The colors ride the same machinery as two stops, so every Gradient.Shape takes one");
+            var rainbow = classics[0].P;
+            (string Name, Gradient.Shape Shape)[] shapes = [
+                ("Radial", Gradient.Shape.Radial), ("Linear", Gradient.Shape.Linear), ("Conical", Gradient.Shape.Conical),
+                ("Square", Gradient.Shape.Square), ("SpiralCW", Gradient.Shape.SpiralCW),
+            ];
+            for (int i = 0; i < shapes.Length; i++) {
+                float x = -560 + i * 152;
+                _sb.FillCircle(new Vector2(x, _rowB), 46, new Gradient(new Vector2(x, _rowB), new Vector2(x + 46, _rowB), rainbow, shapes[i].Shape));
+                Under(x - 44, _rowB + 52, shapes[i].Name);
+            }
+            _sb.DrawCircle(new Vector2(200, _rowB), 46, new Gradient(new Vector2(200, _rowB), new Vector2(246, _rowB), rainbow), TWColor.Gray300, 5f);
+            Under(200 - 44, _rowB + 52, "with a border");
+
+            L(-30, "Whole number frequencies wrap on themselves, so a Sawtooth repeat tiles with no seam");
+            for (int i = 0; i < 4; i++) {
+                float y = _rowC - 42 + i * 28;
+                float ph = i * 0.25f;
+                var p = new Palette(half, half, new Vector3(1f), new Vector3(ph, 0.33f + ph, 0.67f + ph));
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), new Vector2(-300, y), p, Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 4f);
+                Under(320, y - 2, $"phase +{ph:0.##}");
+            }
+
+            L(128, "Channels follow ColorSpace, so in Oklab the cosines swing lightness and the color axes");
+            var labPastel = new Palette(new Vector3(0.75f, 0.5f, 0.5f), new Vector3(0.2f, 0.35f, 0.35f), new Vector3(1f, 1f, 2f), new Vector3(0f, 0.25f, 0.5f));
+            (string Name, ColorSpace Space, Palette P)[] spaced = [
+                ("same numbers, Rgb", ColorSpace.Rgb, labPastel),
+                ("same numbers, Oklab", ColorSpace.Oklab, labPastel),
+                ("Oklch", ColorSpace.Oklch, new Palette(new Vector3(0.8f, 0.5f, 0.5f), new Vector3(0.1f, 0.25f, 0.5f), new Vector3(1f, 1f, 1f), new Vector3(0f, 0f, 0f))),
+            ];
+            for (int i = 0; i < spaced.Length; i++) {
+                float y = _rowD - 42 + i * 28;
+                _sb.ColorSpace = spaced[i].Space;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), new Vector2(300, y), spaced[i].P), 4f);
+                Under(320, y - 2, spaced[i].Name);
+            }
+            // Animating the phase slides every color along the palette for the cost of a float.
+            _sb.ColorSpace = ColorSpace.Rgb;
+            float slide = _dashOffset * 0.2f;
+            _sb.FillRectangle(new Vector2(-600, _rowD + 42), new Vector2(900, 22),
+                new Gradient(new Vector2(-600, _rowD + 42), new Vector2(300, _rowD + 42), new Palette(half, half, new Vector3(1f), new Vector3(slide, 0.33f + slide, 0.67f + slide))), 4f);
+            Under(320, _rowD + 40, "animated phase");
+            _sb.ColorSpace = ColorSpace.Oklab;
+
+            Footer(font, "A palette packs into the two color slots a pair of stops uses, so it batches like everything else");
+            _sb.End();
+        }
+
         private void DrawColorSpaceScene(FontStashSharp.SpriteFontBase font) {
             _sb.Begin(_camera.View);
             void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
@@ -1030,6 +1106,7 @@ namespace GameProject {
             Path,
             Arc,
             Gradient,
+            Palette,
             ColorSpace,
             Clip,
             Text,

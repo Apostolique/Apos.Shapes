@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Chamfers. `DrawChamfer`, `FillChamfer`, and `BorderChamfer` draw a rectangle whose corners are cut straight across. A `CornerChamfers` sets how far back each corner is cut. They take gradients, dashes, clipping, and rotation like every other shape.
+- Palettes. A `Gradient` takes a `Palette` in place of its two stop colors: `bias + amplitude * cos(tau * (frequency * t + phase))` per channel, so one gradient runs through many colors. Takes every gradient shape, repeat style, offset, local space, and color space, and tiles with no seam on `Sawtooth`.
 - `FillChamferBlurred` and `BorderChamferBlurred`.
 - `Measure.Chamfer` and `Measure.ChamferBlurred`.
 

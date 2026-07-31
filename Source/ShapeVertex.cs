@@ -16,33 +16,20 @@ namespace Apos.Shapes {
             if (shape == Shape.Texture || shape == Shape.String) {
                 // Texture masks are multiplied in RGBA space, everything else is blended in the chosen color space.
                 colorSpace = ColorSpace.Rgb;
+                // A palette can't mask a texture, so it falls back to the stop colors, which a
+                // palette gradient carries as white.
+                fill.IsPalette = false;
+                border.IsPalette = false;
             }
 
             Position = position;
             TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash, blur > 0f ? 1 : 0));
 
-            // Fill and border are the same gradient on every Fill* and Border* call, and a flat
-            // color repeats its one stop, so the conversions worth skipping are named outright
-            // rather than left to the cache: a hit still costs a lookup, and this costs a compare.
-            bool sameStops = border.AC == fill.AC && border.BC == fill.BC;
-            if (colorSpace == ColorSpace.Oklch) {
-                (FillA, FillB) = PackOklchPair(fill.AC, fill.BC);
-                (BorderA, BorderB) = sameStops ? (FillA, FillB) : PackOklchPair(border.AC, border.BC);
-            } else if (colorSpace == ColorSpace.Oklab) {
-                FillA = PackOklab(fill.AC);
-                FillB = fill.BC == fill.AC ? FillA : PackOklab(fill.BC);
-                if (sameStops) {
-                    BorderA = FillA;
-                    BorderB = FillB;
-                } else {
-                    BorderA = PackOklab(border.AC);
-                    BorderB = border.BC == border.AC ? BorderA : PackOklab(border.BC);
-                }
+            if (fill.IsPalette || border.IsPalette) {
+                (FillA, FillB) = fill.IsPalette ? (fill.PalA, fill.PalB) : PackStops(fill, colorSpace);
+                (BorderA, BorderB) = border.IsPalette ? (border.PalA, border.PalB) : PackStops(border, colorSpace);
             } else {
-                FillA = PackRgb(fill.AC);
-                FillB = PackRgb(fill.BC);
-                BorderA = sameStops ? FillA : PackRgb(border.AC);
-                BorderB = sameStops ? FillB : PackRgb(border.BC);
+                PackBothStops(fill, border, colorSpace, out FillA, out FillB, out BorderA, out BorderB);
             }
 
             FillCoord = new Vector4(fill.AXY.X, fill.AXY.Y, fill.BXY.X, fill.BXY.Y);
@@ -58,6 +45,43 @@ namespace Apos.Shapes {
             ClipDistances = clip.Distances;
             ClipRounding = clip.Rounding;
             ClipAaSize = clip.AaSize;
+        }
+
+        private static (ulong, ulong) PackStops(in Gradient g, ColorSpace colorSpace) {
+            if (colorSpace == ColorSpace.Oklch) {
+                return PackOklchPair(g.AC, g.BC);
+            }
+            if (colorSpace == ColorSpace.Oklab) {
+                ulong a = PackOklab(g.AC);
+                return (a, g.BC == g.AC ? a : PackOklab(g.BC));
+            }
+            return (PackRgb(g.AC), PackRgb(g.BC));
+        }
+
+        private static void PackBothStops(in Gradient fill, in Gradient border, ColorSpace colorSpace, out ulong fillA, out ulong fillB, out ulong borderA, out ulong borderB) {
+            // Fill and border are the same gradient on every Fill* and Border* call, and a flat
+            // color repeats its one stop, so the conversions worth skipping are named outright
+            // rather than left to the cache: a hit still costs a lookup, and this costs a compare.
+            bool sameStops = border.AC == fill.AC && border.BC == fill.BC;
+            if (colorSpace == ColorSpace.Oklch) {
+                (fillA, fillB) = PackOklchPair(fill.AC, fill.BC);
+                (borderA, borderB) = sameStops ? (fillA, fillB) : PackOklchPair(border.AC, border.BC);
+            } else if (colorSpace == ColorSpace.Oklab) {
+                fillA = PackOklab(fill.AC);
+                fillB = fill.BC == fill.AC ? fillA : PackOklab(fill.BC);
+                if (sameStops) {
+                    borderA = fillA;
+                    borderB = fillB;
+                } else {
+                    borderA = PackOklab(border.AC);
+                    borderB = border.BC == border.AC ? borderA : PackOklab(border.BC);
+                }
+            } else {
+                fillA = PackRgb(fill.AC);
+                fillB = PackRgb(fill.BC);
+                borderA = sameStops ? fillA : PackRgb(border.AC);
+                borderB = sameStops ? fillB : PackRgb(border.BC);
+            }
         }
 
         /// <summary>
@@ -209,6 +233,47 @@ namespace Apos.Shapes {
         // every shape at once without spending any of the four shape slots left.
         private static float PackMeta(Shape shape, Gradient fill, Gradient border, ColorSpace colorSpace, int dash, int blur) {
             return (int)shape + 16 * ((int)fill.S + 16 * ((int)fill.RS + 4 * ((int)border.S + 16 * ((int)border.RS + 4 * ((int)colorSpace + 4 * (dash + 4 * blur))))));
+        }
+
+        // A palette rides in the same two color slots as eight 11 bit channels, sized so the
+        // vertex shader's 11 bit repack recovers them exactly. Channel layout, low digit first:
+        // ch0..2 carry bias (7 bits) and frequency (4 bits) per color channel, ch3..5 carry
+        // amplitude (7 bits) and the phase's top 4 bits, ch6 the x and y phases' low 5 bits,
+        // ch7 the z phase's low 5 bits and alpha (6 bits). The first lane is stored negated and
+        // pushed 2 raw units past zero: colors only ever use the positive snorm half, so the
+        // sign is what tells the shaders a palette from a pair of stops, and the nudge keeps a
+        // zero channel from losing it. The nudge stays well inside the 8 raw units of slack an
+        // 11 bit bucket has in 15, so the decode is unaffected.
+        internal static (ulong, ulong) PackPalette(in Palette p) {
+            int dx = QPhase(p.Phase.X);
+            int dy = QPhase(p.Phase.Y);
+            int dz = QPhase(p.Phase.Z);
+            int ch0 = Q7(p.Bias.X) + 128 * QFreq(p.Frequency.X);
+            int ch1 = Q7(p.Bias.Y) + 128 * QFreq(p.Frequency.Y);
+            int ch2 = Q7(p.Bias.Z) + 128 * QFreq(p.Frequency.Z);
+            int ch3 = Q7(p.Amplitude.X) + 128 * (dx >> 5);
+            int ch4 = Q7(p.Amplitude.Y) + 128 * (dy >> 5);
+            int ch5 = Q7(p.Amplitude.Z) + 128 * (dz >> 5);
+            int ch6 = (dx & 31) + 32 * (dy & 31);
+            int ch7 = (dz & 31) + 32 * (int)Math.Clamp(MathF.Round(p.Alpha * 63f), 0f, 63f);
+
+            int r0 = Math.Min((ch0 * 32767 + 1023) / 2047, 32765);
+            ulong lane0 = unchecked((ushort)(-(r0 + 2)));
+            ulong a = lane0 | Renorm(ch1) << 16 | Renorm(ch2) << 32 | Renorm(ch3) << 48;
+            ulong b = Renorm(ch4) | Renorm(ch5) << 16 | Renorm(ch6) << 32 | Renorm(ch7) << 48;
+            return (a, b);
+        }
+        private static int Q7(float v) {
+            return (int)Math.Clamp(MathF.Round(v * 127f), 0f, 127f);
+        }
+        private static int QFreq(float v) {
+            return (int)Math.Clamp(MathF.Round(v), 0f, 15f);
+        }
+        private static int QPhase(float v) {
+            return (int)MathF.Round((v - MathF.Floor(v)) * 512f) & 511;
+        }
+        private static ulong Renorm(int ch) {
+            return (ulong)((ch * 32767 + 1023) / 2047);
         }
 
         // Colors are stored as four 16 bit normalized shorts. Only the positive half of the snorm

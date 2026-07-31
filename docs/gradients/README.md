@@ -141,6 +141,30 @@ The local origin follows the shape:
 * Rectangles use their top left corner.
 * Lines and triangles use their first point, with the x axis pointing towards the second point.
 
+## Palettes
+
+A `Palette` colors a gradient from cosines instead of two stops. Each channel is `bias + amplitude * cos(tau * (frequency * t + phase))`, the construction from [Inigo Quilez's palette article](https://iquilezles.org/articles/palettes/), so one gradient can run through many colors:
+
+```csharp
+_sb.FillRectangle(new Vector2(20, 20), new Vector2(400, 40), new Gradient(
+    new Vector2(20, 0), new Vector2(420, 0),
+    new Palette(
+        new Vector3(0.5f), new Vector3(0.5f),
+        new Vector3(1f), new Vector3(0f, 0.33f, 0.67f))));
+```
+
+![A rainbow cosine palette](palette.png)
+
+The bias centers each channel's oscillation, the amplitude sets how far it swings, the frequency counts its cycles over the gradient, and the phase sets where in the cycle it starts. An `alpha` sets the opacity of the whole palette.
+
+Frequencies snap to whole numbers, which is what lets a palette wrap onto itself: a `Sawtooth` repeat tiles with no seam.
+
+![A radial palette repeating with no seam](palette-tile.png)
+
+Only the colors change, so a palette takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. The channels follow the `ColorSpace`: in `Rgb` they are the raw sRGB channels like the article, in `Oklab` the cosines swing lightness and the two color axes instead. Animating the phase slides every color along the palette for the cost of passing a different float.
+
+The parameters quantize when the shape is drawn: bias and amplitude in steps of 1/127, phase in steps of 1/512 of a cycle, alpha in steps of 1/63, and frequencies to whole numbers from 0 to 15. Texture and string masks don't take palettes, and blurred shapes keep taking a flat color.
+
 ## Banding
 
 An 8-bit display steps each color channel in 256 increments. A gradient that transitions slower than one increment per pixel quantizes into visible bands with hard edges between them. The batch dithers every shape with half an increment of screen-space noise, which dissolves the bands into the true gradient. The noise pattern is static, so it looks the same whether a gradient moves across the screen or holds still.

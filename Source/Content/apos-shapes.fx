@@ -1984,7 +1984,12 @@ float ShapeGradient(float a, float b, float c) {
     return (c - a) / (b - a);
 }
 
-float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float2 offset) {
+// pal marks a cosine palette reading the result. The wrap smoothing below stands in for the
+// box filter of a color that is linear in the gradient value, which two stops are and a
+// palette is not: pulling toward 0.5 paints the palette's midpoint color along the seam.
+// A palette's whole number frequencies make it periodic across the wrap instead, so for one
+// the seam is already continuous and the smoothing is what would draw a line there.
+float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float2 offset, bool pal) {
     float result;
     if (type.x < 0.5) {
         result = 1.0;
@@ -2007,14 +2012,18 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
             grad = ConicalGradient(rc);
         } else if (type.x < 5.5) {
             grad = ConicalAsymGradient(rc);
-            grad = SmoothWrapDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
+            if (!pal) {
+                grad = SmoothWrapDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
+            }
         } else if (type.x < 6.5) {
             grad = SquareGradient(rc, gl);
         } else if (type.x < 7.5) {
             grad = CrossGradient(rc, gl);
         } else if (type.x < 9.5) {
             grad = SpiralGradient(rc, gl, type.x < 8.5 ? 1.0 : -1.0);
-            grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB.xy, c, gl));
+            if (!pal) {
+                grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB.xy, c, gl));
+            }
         } else if (type.x < 10.5) {
             grad = ShapeGradient(posAB.x, posAB.y, d);
         }
@@ -2022,7 +2031,9 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
         if (type.y < 0.5) {
         } else if (type.y < 1.5) {
             grad = SawtoothWave(grad);
-            grad = SmoothWrapDiscontinuity(grad, aaSize / gl);
+            if (!pal) {
+                grad = SmoothWrapDiscontinuity(grad, aaSize / gl);
+            }
         } else if (type.y < 2.5) {
             grad = TriangularWave(grad);
         } else if (type.y < 3.5) {
@@ -2053,12 +2064,47 @@ float4 UnpackColor(float2 c) {
     return float4(Unpack11(c.x), Unpack11(c.y));
 }
 
+// A packed color float driven negative by the vertex shader carries a cosine palette
+// instead of two stops: bias + amplitude * cos(tau * (frequency * t + phase)) per channel,
+// after https://iquilezles.org/articles/palettes/. The channels come out in the active
+// color space's remapped [0, 1] frame, exactly what ToRgb takes, so in Oklab the cosines
+// swing lightness and the two color axes. Bit layout lives with PackPalette in
+// ShapeVertex.cs; whole number frequencies are what let a palette tile with no seam.
+float4 PaletteColor(float4 data, float t) {
+    float m = -data.x - 1.0;
+    float ch1 = DecodeDigit(m, 2048.0);
+    float ch0 = m;
+    m = data.y;
+    float ch3 = DecodeDigit(m, 2048.0);
+    float ch2 = m;
+    m = data.z;
+    float ch5 = DecodeDigit(m, 2048.0);
+    float ch4 = m;
+    m = data.w;
+    float ch7 = DecodeDigit(m, 2048.0);
+    float ch6 = m;
+
+    float bx = DecodeDigit(ch0, 128.0);
+    float by = DecodeDigit(ch1, 128.0);
+    float bz = DecodeDigit(ch2, 128.0);
+    float ax = DecodeDigit(ch3, 128.0);
+    float ay = DecodeDigit(ch4, 128.0);
+    float az = DecodeDigit(ch5, 128.0);
+    float dx = DecodeDigit(ch6, 32.0);
+    float dz = DecodeDigit(ch7, 32.0);
+
+    float3 freq = float3(ch0, ch1, ch2);
+    float3 phase = (float3(ch3, ch4, ch5) * 32.0 + float3(dx, ch6, dz)) / 512.0;
+    float3 c = (float3(bx, by, bz) + float3(ax, ay, az) * cos(6.283185307179586 * (freq * t + phase))) / 127.0;
+    return float4(saturate(c), ch7 / 63.0);
+}
+
 #if VULKAN
 // MonoGame's native Vulkan backend maps NormalizedShort4 attributes to SSCALED instead
 // of SNORM (ToVkFormat in MGG_Vulkan.cpp), so the packed colors arrive as raw 0..32767
 // integers. Unscale only when raw values show up: legitimate channels never exceed 1,
 // so this goes quiet on its own once the mapping is fixed upstream.
-float4 FixSnorm(float4 v) { return any(v > 1.5) ? v / 32767.0 : v; }
+float4 FixSnorm(float4 v) { return any(abs(v) > 1.5) ? v / 32767.0 : v; }
 #else
 float4 FixSnorm(float4 v) { return v; }
 #endif
@@ -2068,8 +2114,19 @@ PixelInput SpriteVertexShader(VertexInput v) {
 
     output.Position = mul(v.Position, view_projection);
     output.TexCoord = v.TexCoord;
-    output.Fill = PackColors(FixSnorm(v.FillA), FixSnorm(v.FillB));
-    output.Border = PackColors(FixSnorm(v.BorderA), FixSnorm(v.BorderB));
+    // A negative first lane means the color slots carry a cosine palette (see PackPalette in
+    // ShapeVertex.cs). The payload repacks exactly like colors do; the sign moves onto the
+    // packed float, pushed past -1 so a payload of zero still keeps it.
+    float4 fillA = FixSnorm(v.FillA);
+    float4 borderA = FixSnorm(v.BorderA);
+    output.Fill = PackColors(abs(fillA), FixSnorm(v.FillB));
+    output.Border = PackColors(abs(borderA), FixSnorm(v.BorderB));
+    if (fillA.x < 0.0) {
+        output.Fill.x = -output.Fill.x - 1.0;
+    }
+    if (borderA.x < 0.0) {
+        output.Border.x = -output.Border.x - 1.0;
+    }
     output.FillCoord = v.FillCoord;
     output.BorderCoord = v.BorderCoord;
     output.Meta1 = v.Meta1;
@@ -2590,7 +2647,10 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // and the driver compiles every line of it at load, so the three cases written out long
     // hand cost around a fifth of the shader on their own.
     bool sameGradient = all(p.Fill == p.Border) && all(p.FillCoord == p.BorderCoord) && all(fillStyles == borderStyles) && all(p.Meta3.xy == p.Meta3.zw);
-    bool borderOnly = fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
+    // A palette's unpacked stops are payload bits, not colors, so it never reads as a
+    // transparent fill here.
+    bool fillPal = p.Fill.x < -0.5;
+    bool borderOnly = !fillPal && fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
     if (borderOnly && borderMix <= 0.0) {
         // Transparent fill: everything inside the border band contributes nothing.
         discard;
@@ -2603,14 +2663,17 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float4 fr = float4(0.0, 0.0, 0.0, 0.0);
     float4 br = float4(0.0, 0.0, 0.0, 0.0);
     if (!borderOnly) {
-        float4 c = LerpColorPremul(fillA, fillB, Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy), space);
+        float t = Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy, fillPal);
+        float4 c = fillPal ? PaletteColor(p.Fill, t) : LerpColorPremul(fillA, fillB, t, space);
         fr = ToRgb(c, space);
         fr.rgb *= fr.a;
         // A shared gradient leaves the border reading exactly this, so it never runs its own.
         br = fr;
     }
     if (!sameGradient) {
-        float4 c = LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw), space);
+        bool borderPal = p.Border.x < -0.5;
+        float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal);
+        float4 c = borderPal ? PaletteColor(p.Border, t) : LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), t, space);
         br = ToRgb(c, space);
         br.rgb *= br.a;
     }

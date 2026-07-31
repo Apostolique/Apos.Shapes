@@ -25,6 +25,12 @@ namespace Apos.Shapes {
             IsLocal = isLocal;
         }
 
+        public Gradient(Vector2 aXY, Vector2 bXY, Palette palette, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f, bool isLocal = false)
+            : this(aXY, Color.White, bXY, Color.White, s, rs, aOffset, bOffset, isLocal) {
+            (PalA, PalB) = VertexShape.PackPalette(palette);
+            IsPalette = true;
+        }
+
         public Vector2 AXY;
         public Color AC;
         public float AOffset;
@@ -34,6 +40,9 @@ namespace Apos.Shapes {
         public Shape S;
         public RepeatStyle RS;
         public bool IsLocal;
+        public bool IsPalette;
+        internal ulong PalA;
+        internal ulong PalB;
 
         public enum Shape {
             None = 0,
