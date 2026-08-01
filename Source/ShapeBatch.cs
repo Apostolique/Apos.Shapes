@@ -9,7 +9,22 @@ using Microsoft.Xna.Framework.Graphics;
 using MonoGame.Extended;
 
 namespace Apos.Shapes {
+    /// <summary>
+    /// Draws anti-aliased shapes, text and textures on the GPU. Shapes come from signed distance
+    /// fields, so they stay crisp at any zoom and cost one quad each no matter how round they are.
+    /// Draw between <see cref="Begin"/> and <see cref="End"/>, the way a SpriteBatch works. Shapes,
+    /// text and textures can be interleaved in any order and still render as one batch.
+    /// Every shape comes in three flavors: <c>Fill</c> for the inside, <c>Border</c> for the
+    /// outline, and <c>Draw</c> for both at once with a color each. Anywhere one takes a Color it
+    /// also takes a <see cref="Gradient"/>.
+    /// This needs the <c>HiDef</c> profile, or <c>FL10_0</c> on KNI.
+    /// </summary>
     public class ShapeBatch : IDisposable {
+        /// <param name="graphicsDevice">The device to draw with.</param>
+        /// <param name="effect">
+        /// A replacement for the built-in shader. Leave it null, which loads the one embedded in
+        /// this assembly for the running backend.
+        /// </param>
         public ShapeBatch(GraphicsDevice graphicsDevice, Effect? effect = null) {
             _graphicsDevice = graphicsDevice;
 
@@ -37,6 +52,12 @@ namespace Apos.Shapes {
             _fsr = new FontStashRenderer(graphicsDevice, this);
         }
 
+        /// <summary>
+        /// The shader ships inside the assembly now, so the ContentManager goes unused.
+        /// </summary>
+        /// <param name="graphicsDevice">The device to draw with.</param>
+        /// <param name="content">Ignored.</param>
+        /// <param name="effect">A replacement for the built-in shader, or null for the embedded one.</param>
         [Obsolete("ShapeBatch no longer needs a ContentManager. Use ShapeBatch(GraphicsDevice, Effect?) instead.")]
         public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) : this(graphicsDevice, effect) { }
 
@@ -86,6 +107,7 @@ namespace Apos.Shapes {
             return bytes;
         }
 
+        /// <summary>The device this batch draws with.</summary>
         public GraphicsDevice GraphicsDevice => _graphicsDevice;
 
         /// <summary>
@@ -118,6 +140,18 @@ namespace Apos.Shapes {
         /// </summary>
         public AAStyle AAStyle { get; set; } = AAStyle.Outside;
 
+        /// <summary>
+        /// Starts a batch. Draw calls only work between this and <see cref="End"/>.
+        /// The view matrix is where a camera goes, and shapes stay crisp under it because they are
+        /// rasterized at the size they end up on screen rather than scaled up.
+        /// </summary>
+        /// <param name="view">Camera transform. Defaults to identity.</param>
+        /// <param name="projection">Defaults to an orthographic projection over the current viewport, with y pointing down.</param>
+        /// <param name="blendState">Defaults to <see cref="BlendState.AlphaBlend"/>. Colors are not premultiplied.</param>
+        /// <param name="samplerState">Defaults to <see cref="SamplerState.LinearClamp"/>. Only textures and text read it.</param>
+        /// <param name="depthStencilState">Defaults to <see cref="DepthStencilState.None"/>.</param>
+        /// <param name="rasterizerState">Defaults to <see cref="RasterizerState.CullCounterClockwise"/>.</param>
+        /// <exception cref="InvalidOperationException"><see cref="End"/> hasn't been called since the last Begin.</exception>
         public void Begin(Matrix? view = null, Matrix? projection = null, BlendState? blendState = null, SamplerState? samplerState = null, DepthStencilState? depthStencilState = null, RasterizerState? rasterizerState = null) {
             if (_beginCalled) {
                 throw new InvalidOperationException("Begin cannot be called again until End has been successfully called.");
@@ -151,6 +185,15 @@ namespace Apos.Shapes {
             _depthStencilState = depthStencilState ?? DepthStencilState.None;
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
+        /// <summary>Draws a circle with both a fill and a border.</summary>
+        /// <param name="center">Center of the circle.</param>
+        /// <param name="radius">Radius of the circle in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rotation">Angle in radians. A circle only turns its gradient and its dashes.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             UpdatePixelSize(center, radius);
             float aaOffset = AaOffset(aaSize);
@@ -191,13 +234,40 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a circle, with no border.</summary>
+        /// <param name="center">Center of the circle.</param>
+        /// <param name="radius">Radius of the circle in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rotation">Angle in radians. A circle only turns its gradient.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         public void FillCircle(Vector2 center, float radius, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawCircle(center, radius, g, g, 0f, rotation, aaSize);
         }
+        /// <summary>Outlines a circle, with nothing inside it.</summary>
+        /// <param name="center">Center of the circle.</param>
+        /// <param name="radius">Radius of the circle in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rotation">Angle in radians. A circle only turns its gradient and its dashes.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawCircle(center, radius, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
 
+        /// <summary>Draws a rectangle with both a fill and a border.</summary>
+        /// <param name="xy">Top left corner of the rectangle.</param>
+        /// <param name="size">Width and height in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="cornerRadii">
+        /// Corner radius per corner, clamped to half the smaller side. A single float converts, so
+        /// one number rounds all four.
+        /// </param>
+        /// <param name="rotation">Angle in radians, around the rectangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -287,13 +357,45 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a rectangle, with no border.</summary>
+        /// <param name="xy">Top left corner of the rectangle.</param>
+        /// <param name="size">Width and height in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="cornerRadii">Corner radius per corner, clamped to half the smaller side. A single float rounds all four.</param>
+        /// <param name="rotation">Angle in radians, around the rectangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, g, g, 0f, cornerRadii, rotation, aaSize);
         }
+        /// <summary>Outlines a rectangle, with nothing inside it.</summary>
+        /// <param name="xy">Top left corner of the rectangle.</param>
+        /// <param name="size">Width and height in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="cornerRadii">Corner radius per corner, clamped to half the smaller side. A single float rounds all four.</param>
+        /// <param name="rotation">Angle in radians, around the rectangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness, CornerRadii cornerRadii = default, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawRectangle(xy, size, Color.Transparent, g, thickness, cornerRadii, rotation, aaSize, dash);
         }
 
+        /// <summary>
+        /// Draws a line with both a fill and a border. The end caps are rounded, and a line whose
+        /// two points are the same draws as a circle. For a line through more than two points, use
+        /// <see cref="DrawPath(ReadOnlySpan{Vector2}, float, Gradient, Gradient, float, PathJoin, PathCap, PathCap?, float, float, bool, DashStyle)"/>.
+        /// </summary>
+        /// <param name="a">Where the line starts.</param>
+        /// <param name="b">Where the line ends.</param>
+        /// <param name="radius">Half the line's thickness, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">
+        /// Cuts the whole stroke into dashes along its length, so each dash keeps its own fill,
+        /// border and caps.
+        /// </param>
         public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             if (a == b) {
                 DrawCircle(a, radius, fill, border, thickness, aaSize: aaSize);
@@ -370,9 +472,24 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a line, with no border. See <see cref="DrawLine"/>.</summary>
+        /// <param name="a">Where the line starts.</param>
+        /// <param name="b">Where the line ends.</param>
+        /// <param name="radius">Half the line's thickness, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along its length.</param>
         public void FillLine(Vector2 a, Vector2 b, float radius, Gradient g, float aaSize = 1.5f, DashStyle dash = default) {
             DrawLine(a, b, radius, g, g, 0f, aaSize, dash);
         }
+        /// <summary>Outlines a line, with nothing inside it. See <see cref="DrawLine"/>.</summary>
+        /// <param name="a">Where the line starts.</param>
+        /// <param name="b">Where the line ends.</param>
+        /// <param name="radius">Half the line's thickness, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along its length, each one outlined on its own.</param>
         public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize, dash);
         }
@@ -386,6 +503,18 @@ namespace Apos.Shapes {
         /// Setting closed joins the last point back to the first, which makes the wrap an ordinary joint
         /// and leaves the cap styles unused.
         /// </summary>
+        /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border, spanning the whole stroke.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">How segments connect at a joint.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine, corners and joints included.</param>
         public void DrawPath(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             // Every segment needs a direction, so drop consecutive duplicates.
             Span<Vector2> pts = points.Length <= _pathStackPoints ? stackalloc Vector2[points.Length] : Scratch(ref _scratchPoints, points.Length);
@@ -404,6 +533,18 @@ namespace Apos.Shapes {
         /// other DrawPath rule applies, dashes included: the pattern walks the spine and takes the
         /// stroke's width wherever it stands.
         /// </summary>
+        /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
+        /// <param name="radii">Half the stroke's thickness at each point, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border, spanning the whole stroke.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">How segments connect at a joint.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine, corners and joints included.</param>
         public void DrawPath(ReadOnlySpan<Vector2> points, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             int take = Math.Min(points.Length, radii.Length);
             Span<Vector2> pts = take <= _pathStackPoints ? stackalloc Vector2[take] : Scratch(ref _scratchPoints, take);
@@ -431,6 +572,17 @@ namespace Apos.Shapes {
         /// Feed points with PathTo, then call EndPath to draw it. All the DrawPath rules apply: joins can
         /// change along the way through PathTo, and the whole path draws as one continuous shape.
         /// </summary>
+        /// <param name="radius">Half the stroke's thickness, in world units. <see cref="PathTo(Vector2, float, PathJoin?)"/> can override it per point.</param>
+        /// <param name="fill">Color or gradient inside the border, spanning the whole stroke.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">How segments connect at a joint, until a point sets a different one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
+        /// <exception cref="InvalidOperationException">A path is already open.</exception>
         public void BeginPath(float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, DashStyle dash = default) {
             if (_pathOpen) {
                 throw new InvalidOperationException("BeginPath cannot be called again until EndPath has been called.");
@@ -449,9 +601,30 @@ namespace Apos.Shapes {
             _pathAaSize = aaSize;
             _pathDash = dash;
         }
+        /// <summary>Starts building a path that fills with no border. See <see cref="BeginPath"/>.</summary>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient to fill with, spanning the whole stroke.</param>
+        /// <param name="join">How segments connect at a joint, until a point sets a different one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
+        /// <exception cref="InvalidOperationException">A path is already open.</exception>
         public void BeginFillPath(float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, DashStyle dash = default) {
             BeginPath(radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, dash);
         }
+        /// <summary>Starts building a path that outlines with nothing inside it. See <see cref="BeginPath"/>.</summary>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">How segments connect at a joint, until a point sets a different one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
+        /// <exception cref="InvalidOperationException">A path is already open.</exception>
         public void BeginBorderPath(float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, DashStyle dash = default) {
             BeginPath(radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, dash);
         }
@@ -459,6 +632,9 @@ namespace Apos.Shapes {
         /// Adds the next point to the path started by BeginPath. Passing a join switches the style for
         /// the joint at this point and every following joint until another point switches it again.
         /// </summary>
+        /// <param name="point">Where the point sits.</param>
+        /// <param name="join">Join style from this joint on, or null to keep the one already in effect.</param>
+        /// <exception cref="InvalidOperationException">No path is open.</exception>
         public void PathTo(Vector2 point, PathJoin? join = null) {
             AddPathPoint(point, _pathRadius, join);
         }
@@ -466,6 +642,10 @@ namespace Apos.Shapes {
         /// Adds the next point with its own radius, which makes the stroke taper. One point carrying a
         /// radius is enough to switch the whole path over; the rest keep the one BeginPath was given.
         /// </summary>
+        /// <param name="point">Where the point sits.</param>
+        /// <param name="radius">Half the stroke's thickness at this point, in world units.</param>
+        /// <param name="join">Join style from this joint on, or null to keep the one already in effect.</param>
+        /// <exception cref="InvalidOperationException">No path is open.</exception>
         public void PathTo(Vector2 point, float radius, PathJoin? join = null) {
             _pathTapered = true;
             AddPathPoint(point, radius, join);
@@ -480,6 +660,7 @@ namespace Apos.Shapes {
             _pathPoints[_pathPointCount++] = new PathPoint(point, join);
         }
         /// <summary>Draws the path built since BeginPath, capped at both ends.</summary>
+        /// <exception cref="InvalidOperationException">No path is open.</exception>
         public void EndPath() {
             EndPathCore(false);
         }
@@ -488,6 +669,7 @@ namespace Apos.Shapes {
         /// first. The wrap gets a joint like every other point instead of two caps, so the cap styles
         /// go unused and a dash pattern runs around the loop without a seam.
         /// </summary>
+        /// <exception cref="InvalidOperationException">No path is open.</exception>
         public void ClosePath() {
             EndPathCore(true);
         }
@@ -963,21 +1145,77 @@ namespace Apos.Shapes {
                 }
             }
         }
+        /// <summary>Fills a path, with no border. See the DrawPath overload.</summary>
+        /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient to fill with, spanning the whole stroke.</param>
+        /// <param name="join">How segments connect at a joint.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         public void FillPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             DrawPath(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
+        /// <summary>Outlines a path, with nothing inside it. See the DrawPath overload.</summary>
+        /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">How segments connect at a joint.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
         public void BorderPath(ReadOnlySpan<Vector2> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             DrawPath(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
         /// <summary>Fills a path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
+        /// <param name="radii">Half the stroke's thickness at each point, in world units.</param>
+        /// <param name="g">Color or gradient to fill with, spanning the whole stroke.</param>
+        /// <param name="join">How segments connect at a joint.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         public void FillPath(ReadOnlySpan<Vector2> points, ReadOnlySpan<float> radii, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             DrawPath(points, radii, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
         /// <summary>Outlines a path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
+        /// <param name="radii">Half the stroke's thickness at each point, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">How segments connect at a joint.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
         public void BorderPath(ReadOnlySpan<Vector2> points, ReadOnlySpan<float> radii, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             DrawPath(points, radii, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
 
+        /// <summary>
+        /// Draws a hexagon with both a fill and a border. The top and bottom edges are flat.
+        /// </summary>
+        /// <param name="center">Center of the hexagon.</param>
+        /// <param name="radius">Distance from the center to the flat edges, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the six corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the hexagon's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -1033,13 +1271,42 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a hexagon, with no border. See <see cref="DrawHexagon"/>.</summary>
+        /// <param name="center">Center of the hexagon.</param>
+        /// <param name="radius">Distance from the center to the flat edges, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rounded">Rounds the six corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the hexagon's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         public void FillHexagon(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawHexagon(center, radius, g, g, 0f, rounded, rotation, aaSize);
         }
+        /// <summary>Outlines a hexagon, with nothing inside it. See <see cref="DrawHexagon"/>.</summary>
+        /// <param name="center">Center of the hexagon.</param>
+        /// <param name="radius">Distance from the center to the flat edges, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the six corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the hexagon's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderHexagon(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawHexagon(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
 
+        /// <summary>
+        /// Draws an equilateral triangle with both a fill and a border. It points down, so pass a
+        /// rotation of pi to point it up.
+        /// </summary>
+        /// <param name="center">Center of the triangle.</param>
+        /// <param name="radius">Radius of the circle that fits inside the triangle, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the three corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the triangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -1105,13 +1372,39 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills an equilateral triangle, with no border. See <see cref="DrawEquilateralTriangle"/>.</summary>
+        /// <param name="center">Center of the triangle.</param>
+        /// <param name="radius">Radius of the circle that fits inside the triangle, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rounded">Rounds the three corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the triangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         public void FillEquilateralTriangle(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEquilateralTriangle(center, radius, g, g, 0f, rounded, rotation, aaSize);
         }
+        /// <summary>Outlines an equilateral triangle, with nothing inside it. See <see cref="DrawEquilateralTriangle"/>.</summary>
+        /// <param name="center">Center of the triangle.</param>
+        /// <param name="radius">Radius of the circle that fits inside the triangle, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the three corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the triangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
 
+        /// <summary>Draws a triangle with both a fill and a border. The points can be given in any order.</summary>
+        /// <param name="a">First corner.</param>
+        /// <param name="b">Second corner.</param>
+        /// <param name="c">Third corner.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the three corners by this many world units.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -1230,13 +1523,39 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a triangle, with no border. The points can be given in any order.</summary>
+        /// <param name="a">First corner.</param>
+        /// <param name="b">Second corner.</param>
+        /// <param name="c">Third corner.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rounded">Rounds the three corners by this many world units.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float rounded = 0f, float aaSize = 1.5f) {
             DrawTriangle(a, b, c, g, g, 0f, rounded, aaSize);
         }
+        /// <summary>Outlines a triangle, with nothing inside it. The points can be given in any order.</summary>
+        /// <param name="a">First corner.</param>
+        /// <param name="b">Second corner.</param>
+        /// <param name="c">Third corner.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the three corners by this many world units.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize, dash);
         }
 
+        /// <summary>Draws an ellipse with both a fill and a border.</summary>
+        /// <param name="center">Center of the ellipse.</param>
+        /// <param name="radius1">Horizontal radius in world units, so half the width.</param>
+        /// <param name="radius2">Vertical radius in world units, so half the height.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rotation">Angle in radians, around the ellipse's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             UpdatePixelSize(center, MathF.Max(radius1, radius2));
             float aaOffset = AaOffset(aaSize);
@@ -1288,11 +1607,27 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void FillEllipse(Vector2 center, float width, float height, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEllipse(center, width, height, g, g, 0f, rotation, aaSize);
+        /// <summary>Fills an ellipse, with no border.</summary>
+        /// <param name="center">Center of the ellipse.</param>
+        /// <param name="radius1">Horizontal radius in world units, so half the width.</param>
+        /// <param name="radius2">Vertical radius in world units, so half the height.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rotation">Angle in radians, around the ellipse's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        public void FillEllipse(Vector2 center, float radius1, float radius2, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
+            DrawEllipse(center, radius1, radius2, g, g, 0f, rotation, aaSize);
         }
-        public void BorderEllipse(Vector2 center, float width, float height, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
-            DrawEllipse(center, width, height, Color.Transparent, g, thickness, rotation, aaSize, dash);
+        /// <summary>Outlines an ellipse, with nothing inside it.</summary>
+        /// <param name="center">Center of the ellipse.</param>
+        /// <param name="radius1">Horizontal radius in world units, so half the width.</param>
+        /// <param name="radius2">Vertical radius in world units, so half the height.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rotation">Angle in radians, around the ellipse's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
+        public void BorderEllipse(Vector2 center, float radius1, float radius2, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawEllipse(center, radius1, radius2, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
 
         /// <summary>
@@ -1301,6 +1636,15 @@ namespace Apos.Shapes {
         /// leaves a square corner and the largest one turns a square into a diamond. They are
         /// clamped to half the rectangle's smaller side, the same bound corner radii get.
         /// </summary>
+        /// <param name="xy">Top left corner of the rectangle.</param>
+        /// <param name="size">Width and height in world units.</param>
+        /// <param name="chamfers">How far each corner is cut back. A single float converts, so one number cuts all four.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rotation">Angle in radians, around the rectangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
         public void DrawChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -1394,9 +1738,25 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a chamfered rectangle, with no border. See <see cref="DrawChamfer"/>.</summary>
+        /// <param name="xy">Top left corner of the rectangle.</param>
+        /// <param name="size">Width and height in world units.</param>
+        /// <param name="chamfers">How far each corner is cut back. A single float cuts all four.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rotation">Angle in radians, around the rectangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         public void FillChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawChamfer(xy, size, chamfers, g, g, 0f, rotation, aaSize);
         }
+        /// <summary>Outlines a chamfered rectangle, with nothing inside it. See <see cref="DrawChamfer"/>.</summary>
+        /// <param name="xy">Top left corner of the rectangle.</param>
+        /// <param name="size">Width and height in world units.</param>
+        /// <param name="chamfers">How far each corner is cut back. A single float cuts all four.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rotation">Angle in radians, around the rectangle's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawChamfer(xy, size, chamfers, Color.Transparent, g, thickness, rotation, aaSize, dash);
         }
@@ -1467,24 +1827,37 @@ namespace Apos.Shapes {
         /// Fills an ellipse whose edge falls off as a Gaussian of standard deviation
         /// <paramref name="blur"/>, measured in world units. See <see cref="FillCircleBlurred"/>.
         /// </summary>
-        public void FillEllipseBlurred(Vector2 center, float width, float height, Color color, float blur, float rotation = 0f) {
-            DrawEllipseBlurred(center, width, height, color, blur, 0f, rotation);
+        /// <param name="center">Center of the ellipse.</param>
+        /// <param name="radius1">Horizontal radius in world units, so half the width.</param>
+        /// <param name="radius2">Vertical radius in world units, so half the height.</param>
+        /// <param name="color">Flat color to fill with. A blur only factors out while the color is constant.</param>
+        /// <param name="blur">Standard deviation of the edge's Gaussian falloff, in world units.</param>
+        /// <param name="rotation">Angle in radians, around the ellipse's center.</param>
+        public void FillEllipseBlurred(Vector2 center, float radius1, float radius2, Color color, float blur, float rotation = 0f) {
+            DrawEllipseBlurred(center, radius1, radius2, color, blur, 0f, rotation);
         }
         /// <summary>
         /// Draws a blurred elliptical outline of the given thickness with nothing inside it. See
         /// <see cref="BorderCircleBlurred"/>. The band is measured by offsetting the ellipse's
         /// distance field inward, which is the same approximation the unblurred border makes.
         /// </summary>
-        public void BorderEllipseBlurred(Vector2 center, float width, float height, Color color, float blur, float thickness = 1f, float rotation = 0f) {
-            DrawEllipseBlurred(center, width, height, color, blur, MathF.Max(thickness, 0f), rotation);
+        /// <param name="center">Center of the ellipse.</param>
+        /// <param name="radius1">Horizontal radius in world units, so half the width.</param>
+        /// <param name="radius2">Vertical radius in world units, so half the height.</param>
+        /// <param name="color">Flat color of the outline. A blur only factors out while the color is constant.</param>
+        /// <param name="blur">Standard deviation of the edge's Gaussian falloff, in world units.</param>
+        /// <param name="thickness">Size of the outline in world units, measured inward from the edge.</param>
+        /// <param name="rotation">Angle in radians, around the ellipse's center.</param>
+        public void BorderEllipseBlurred(Vector2 center, float radius1, float radius2, Color color, float blur, float thickness = 1f, float rotation = 0f) {
+            DrawEllipseBlurred(center, radius1, radius2, color, blur, MathF.Max(thickness, 0f), rotation);
         }
-        private void DrawEllipseBlurred(Vector2 center, float width, float height, Color color, float blur, float thickness, float rotation) {
-            UpdatePixelSize(center, MathF.Max(width, height));
+        private void DrawEllipseBlurred(Vector2 center, float radius1, float radius2, Color color, float blur, float thickness, float rotation) {
+            UpdatePixelSize(center, MathF.Max(radius1, radius2));
             PrepareQuad();
 
             float sigma = BlurSigma(blur);
-            float reachX = width + _blurReach * sigma;
-            float reachY = height + _blurReach * sigma;
+            float reachX = radius1 + _blurReach * sigma;
+            float reachY = radius2 + _blurReach * sigma;
 
             var topLeft = center + new Vector2(-reachX, -reachY);
             var topRight = center + new Vector2(reachX, -reachY);
@@ -1495,7 +1868,7 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(topLeft), height, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, radius1, GetClipSpace(topLeft), radius2, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(reachX, -reachY), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(reachX, reachY), GetClipSpace(bottomRight));
@@ -1686,6 +2059,23 @@ namespace Apos.Shapes {
             _indexCount += 6;
         }
 
+        /// <summary>
+        /// Draws an arc with both a fill and a border. An arc is a stroke that follows a circle,
+        /// with rounded end caps. For flat caps, use <see cref="DrawRing"/>.
+        /// </summary>
+        /// <param name="center">Center of the circle the stroke follows.</param>
+        /// <param name="angle1">Where the arc starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the arc ends, in radians.</param>
+        /// <param name="radius1">Radius of the circle the stroke follows, in world units.</param>
+        /// <param name="radius2">Half the stroke's thickness, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">
+        /// Cuts the whole stroke into dashes along its centerline, so each dash keeps its own fill,
+        /// border and caps.
+        /// </param>
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -1735,13 +2125,49 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills an arc, with no border. See <see cref="DrawArc"/>.</summary>
+        /// <param name="center">Center of the circle the stroke follows.</param>
+        /// <param name="angle1">Where the arc starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the arc ends, in radians.</param>
+        /// <param name="radius1">Radius of the circle the stroke follows, in world units.</param>
+        /// <param name="radius2">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along its centerline.</param>
         public void FillArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f, DashStyle dash = default) {
             DrawArc(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize, dash);
         }
+        /// <summary>Outlines an arc, with nothing inside it. See <see cref="DrawArc"/>.</summary>
+        /// <param name="center">Center of the circle the stroke follows.</param>
+        /// <param name="angle1">Where the arc starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the arc ends, in radians.</param>
+        /// <param name="radius1">Radius of the circle the stroke follows, in world units.</param>
+        /// <param name="radius2">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along its centerline, each one outlined on its own.</param>
         public void BorderArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawArc(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize, dash);
         }
 
+        /// <summary>
+        /// Draws a ring with both a fill and a border. A ring is the same as an arc except that the
+        /// end caps are flat. A full turn has no caps at all.
+        /// </summary>
+        /// <param name="center">Center of the circle the stroke follows.</param>
+        /// <param name="angle1">Where the ring starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the ring ends, in radians.</param>
+        /// <param name="radius1">Radius of the circle the stroke follows, in world units.</param>
+        /// <param name="radius2">Half the stroke's thickness, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">
+        /// Cuts the whole stroke into dashes along its centerline, so each dash keeps its own fill
+        /// and border. The dashes end flat like the ring itself.
+        /// </param>
         public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             PrepareQuad(fill, border);
 
@@ -1796,13 +2222,42 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Fills a ring, with no border. See <see cref="DrawRing"/>.</summary>
+        /// <param name="center">Center of the circle the stroke follows.</param>
+        /// <param name="angle1">Where the ring starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the ring ends, in radians.</param>
+        /// <param name="radius1">Radius of the circle the stroke follows, in world units.</param>
+        /// <param name="radius2">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along its centerline.</param>
         public void FillRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float aaSize = 1.5f, DashStyle dash = default) {
             DrawRing(center, angle1, angle2, radius1, radius2, g, g, 0f, aaSize, dash);
         }
+        /// <summary>Outlines a ring, with nothing inside it. See <see cref="DrawRing"/>.</summary>
+        /// <param name="center">Center of the circle the stroke follows.</param>
+        /// <param name="angle1">Where the ring starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the ring ends, in radians.</param>
+        /// <param name="radius1">Radius of the circle the stroke follows, in world units.</param>
+        /// <param name="radius2">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the stroke into dashes along its centerline, each one outlined on its own.</param>
         public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize, dash);
         }
 
+        /// <summary>
+        /// Draws a texture through a world matrix, which is what every other Draw overload builds.
+        /// The matrix transforms a 1x1 quad, so it reaches further than the SpriteBatch API does.
+        /// The batch draws with a single texture slot, so switching textures flushes it. Group draw
+        /// calls by texture, or pack an atlas and use the source overloads.
+        /// </summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="world">Transform applied to a 1x1 quad to place it in the world.</param>
+        /// <param name="source">Transform applied to a 1x1 quad to pick the part of the texture to read, in pixels. Null reads all of it.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA. Null leaves it alone.</param>
         public void Draw(Texture2D texture, Matrix3x2 world, Matrix3x2? source = null, Color? mask = null) {
             if (_texture == null) {
                 _texture = texture;
@@ -1848,76 +2303,303 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
+        /// <summary>Draws a texture at its own size.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the texture's top left corner goes.</param>
         public void Draw(Texture2D texture, Vector2 xy) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(xy));
         }
+        /// <summary>Draws a texture at its own size, tinted.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the texture's top left corner goes.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
         public void Draw(Texture2D texture, Vector2 xy, Color mask) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(xy), mask: mask);
         }
+        /// <summary>Draws part of a texture at that part's own size.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the top left corner goes.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
         public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask) {
             Draw(texture, Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(xy), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
+        /// <summary>Draws a texture rotated and scaled around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on each axis.</param>
         public void Draw(Texture2D texture, Vector2 xy, Color mask, float rotation, Vector2 origin, Vector2 scale) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(xy), Matrix3x2.CreateScale(texture.Width, texture.Height), mask: mask);
         }
+        /// <summary>Draws a texture rotated and scaled evenly around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on both axes.</param>
         public void Draw(Texture2D texture, Vector2 xy, Color mask, float rotation, Vector2 origin, float scale) {
             Draw(texture, xy, mask, rotation, origin, new Vector2(scale));
         }
+        /// <summary>Draws part of a texture rotated and scaled around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on each axis.</param>
         public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask, float rotation, Vector2 origin, Vector2 scale) {
             Draw(texture, Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(xy), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
+        /// <summary>Draws part of a texture rotated and scaled evenly around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on both axes.</param>
         public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask, float rotation, Vector2 origin, float scale) {
             Draw(texture, xy, source, mask, rotation, origin, new Vector2(scale));
         }
+        /// <summary>Draws a texture rotated, scaled and flipped around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on each axis.</param>
+        /// <param name="effects">Flips the texture horizontally, vertically, or both.</param>
         public void Draw(Texture2D texture, Vector2 xy, Color mask, float rotation, Vector2 origin, Vector2 scale, SpriteEffects effects) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(xy), (effects & (SpriteEffects.FlipHorizontally | SpriteEffects.FlipVertically)) != 0 ? Matrix3x2.CreateScale(1f) * Matrix3x2.CreateTranslation(-0.5f, -0.5f) * Matrix3x2.CreateScale((effects & SpriteEffects.FlipHorizontally) != 0 ? -1f : 1f, (effects & SpriteEffects.FlipVertically) != 0 ? -1f : 1f) * Matrix3x2.CreateTranslation(0.5f, 0.5f) * Matrix3x2.CreateScale(texture.Width, texture.Height) : Matrix3x2.CreateScale(texture.Width, texture.Height), mask: mask);
         }
+        /// <summary>Draws a texture rotated, scaled evenly and flipped around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on both axes.</param>
+        /// <param name="effects">Flips the texture horizontally, vertically, or both.</param>
         public void Draw(Texture2D texture, Vector2 xy, Color mask, float rotation, Vector2 origin, float scale, SpriteEffects effects) {
             Draw(texture, xy, mask, rotation, origin, new Vector2(scale), effects);
         }
+        /// <summary>Draws part of a texture rotated, scaled and flipped around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on each axis.</param>
+        /// <param name="effects">Flips the texture horizontally, vertically, or both.</param>
         public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask, float rotation, Vector2 origin, Vector2 scale, SpriteEffects effects) {
             Draw(texture, Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(xy), (effects & (SpriteEffects.FlipHorizontally | SpriteEffects.FlipVertically)) != 0 ? Matrix3x2.CreateScale(1f) * Matrix3x2.CreateTranslation(-0.5f, -0.5f) * Matrix3x2.CreateScale((effects & SpriteEffects.FlipHorizontally) != 0 ? -1f : 1f, (effects & SpriteEffects.FlipVertically) != 0 ? -1f : 1f) * Matrix3x2.CreateTranslation(0.5f, 0.5f) * Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position) : Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
+        /// <summary>Draws part of a texture rotated, scaled evenly and flipped around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="xy">Where the origin lands.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around, in texture pixels.</param>
+        /// <param name="scale">Scale on both axes.</param>
+        /// <param name="effects">Flips the texture horizontally, vertically, or both.</param>
         public void Draw(Texture2D texture, Vector2 xy, RectangleF source, Color mask, float rotation, Vector2 origin, float scale, SpriteEffects effects) {
             Draw(texture, xy, source, mask, rotation, origin, new Vector2(scale), effects);
         }
+        /// <summary>Draws a texture stretched to fill a rectangle.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units.</param>
         public void Draw(Texture2D texture, RectangleF destination) {
             Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(destination.Position));
         }
+        /// <summary>Draws a texture stretched to fill a rectangle, tinted.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
         public void Draw(Texture2D texture, RectangleF destination, Color mask) {
             Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(destination.Position), mask: mask);
         }
+        /// <summary>Draws part of a texture stretched to fill a rectangle.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
         public void Draw(Texture2D texture, RectangleF destination, RectangleF source, Color mask) {
             Draw(texture, Matrix3x2.CreateScale(destination.Width, destination.Height) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
+        /// <summary>Draws a texture stretched to fill a rectangle, rotated around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units. Its position is where the origin lands.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation turns around, in texture pixels.</param>
         public void Draw(Texture2D texture, RectangleF destination, Color mask, float rotation, Vector2 origin) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(destination.Width / texture.Width, destination.Height / texture.Height) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(texture.Width, texture.Height), mask: mask);
         }
+        /// <summary>Draws part of a texture stretched to fill a rectangle, rotated around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units. Its position is where the origin lands.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation turns around, in texture pixels.</param>
         public void Draw(Texture2D texture, RectangleF destination, RectangleF source, Color mask, float rotation, Vector2 origin) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(destination.Width / texture.Width, destination.Height / texture.Height) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
+        /// <summary>Draws a texture stretched to fill a rectangle, rotated and flipped around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units. Its position is where the origin lands.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation turns around, in texture pixels.</param>
+        /// <param name="effects">Flips the texture horizontally, vertically, or both.</param>
         public void Draw(Texture2D texture, RectangleF destination, Color mask, float rotation, Vector2 origin, SpriteEffects effects) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(destination.Width / texture.Width, destination.Height / texture.Height) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), (effects & (SpriteEffects.FlipHorizontally | SpriteEffects.FlipVertically)) != 0 ? Matrix3x2.CreateScale(1f) * Matrix3x2.CreateTranslation(-0.5f, -0.5f) * Matrix3x2.CreateScale((effects & SpriteEffects.FlipHorizontally) != 0 ? -1f : 1f, (effects & SpriteEffects.FlipVertically) != 0 ? -1f : 1f) * Matrix3x2.CreateTranslation(0.5f, 0.5f) * Matrix3x2.CreateScale(texture.Width, texture.Height) : Matrix3x2.CreateScale(texture.Width, texture.Height), mask: mask);
         }
+        /// <summary>Draws part of a texture stretched to fill a rectangle, rotated and flipped around an origin.</summary>
+        /// <param name="texture">The texture to draw.</param>
+        /// <param name="destination">The rectangle to fill, in world units. Its position is where the origin lands.</param>
+        /// <param name="source">The part of the texture to read, in pixels.</param>
+        /// <param name="mask">Color multiplied into the texture in raw RGBA.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation turns around, in texture pixels.</param>
+        /// <param name="effects">Flips the texture horizontally, vertically, or both.</param>
         public void Draw(Texture2D texture, RectangleF destination, RectangleF source, Color mask, float rotation, Vector2 origin, SpriteEffects effects) {
             Draw(texture, Matrix3x2.CreateScale(texture.Width, texture.Height) * Matrix3x2.CreateTranslation(-origin) * Matrix3x2.CreateScale(destination.Width / texture.Width, destination.Height / texture.Height) * Matrix3x2.CreateRotationZ(rotation) * Matrix3x2.CreateTranslation(destination.Position), (effects & (SpriteEffects.FlipHorizontally | SpriteEffects.FlipVertically)) != 0 ? Matrix3x2.CreateScale(1f) * Matrix3x2.CreateTranslation(-0.5f, -0.5f) * Matrix3x2.CreateScale((effects & SpriteEffects.FlipHorizontally) != 0 ? -1f : 1f, (effects & SpriteEffects.FlipVertically) != 0 ? -1f : 1f) * Matrix3x2.CreateTranslation(0.5f, 0.5f) * Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position) : Matrix3x2.CreateScale(source.Width, source.Height) * Matrix3x2.CreateTranslation(source.Position), mask: mask);
         }
 
+        /// <summary>
+        /// Draws text with FontStashSharp. The font texture has its own texture slot, so text mixed
+        /// in with shapes never breaks the batch.
+        /// </summary>
+        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
+        /// <param name="text">The text to draw.</param>
+        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around.</param>
+        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
+        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
+        /// <param name="characterSpacing">Extra space between characters.</param>
+        /// <param name="lineSpacing">Extra space between lines.</param>
+        /// <param name="textStyle">Underline or strikethrough.</param>
+        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
+        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
+        /// <returns>
+        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
+        /// the font's MeasureString for layout.
+        /// </returns>
         public float DrawString(SpriteFontBase font, string text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
+        /// <summary>Draws text with a color per character. See the single color overload.</summary>
+        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
+        /// <param name="text">The text to draw.</param>
+        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="colors">One color per character, applied as raw RGBA masks.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around.</param>
+        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
+        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
+        /// <param name="characterSpacing">Extra space between characters.</param>
+        /// <param name="lineSpacing">Extra space between lines.</param>
+        /// <param name="textStyle">Underline or strikethrough.</param>
+        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
+        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
+        /// <returns>
+        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
+        /// the font's MeasureString for layout.
+        /// </returns>
         public float DrawString(SpriteFontBase font, string text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
+        /// <summary>Draws a slice of a string without copying it. See the string overload.</summary>
+        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
+        /// <param name="text">The text to draw.</param>
+        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around.</param>
+        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
+        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
+        /// <param name="characterSpacing">Extra space between characters.</param>
+        /// <param name="lineSpacing">Extra space between lines.</param>
+        /// <param name="textStyle">Underline or strikethrough.</param>
+        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
+        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
+        /// <returns>
+        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
+        /// the font's MeasureString for layout.
+        /// </returns>
         public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
+        /// <summary>Draws a slice of a string with a color per character. See the string overload.</summary>
+        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
+        /// <param name="text">The text to draw.</param>
+        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="colors">One color per character, applied as raw RGBA masks.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around.</param>
+        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
+        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
+        /// <param name="characterSpacing">Extra space between characters.</param>
+        /// <param name="lineSpacing">Extra space between lines.</param>
+        /// <param name="textStyle">Underline or strikethrough.</param>
+        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
+        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
+        /// <returns>
+        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
+        /// the font's MeasureString for layout.
+        /// </returns>
         public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
+        /// <summary>Draws a StringBuilder's text without building the string. See the string overload.</summary>
+        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
+        /// <param name="text">The text to draw.</param>
+        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around.</param>
+        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
+        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
+        /// <param name="characterSpacing">Extra space between characters.</param>
+        /// <param name="lineSpacing">Extra space between lines.</param>
+        /// <param name="textStyle">Underline or strikethrough.</param>
+        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
+        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
+        /// <returns>
+        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
+        /// the font's MeasureString for layout.
+        /// </returns>
         public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
+        /// <summary>Draws a StringBuilder's text with a color per character. See the string overload.</summary>
+        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
+        /// <param name="text">The text to draw.</param>
+        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="colors">One color per character, applied as raw RGBA masks.</param>
+        /// <param name="rotation">Angle in radians.</param>
+        /// <param name="origin">The point rotation and scaling turn around.</param>
+        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
+        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
+        /// <param name="characterSpacing">Extra space between characters.</param>
+        /// <param name="lineSpacing">Extra space between lines.</param>
+        /// <param name="textStyle">Underline or strikethrough.</param>
+        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
+        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
+        /// <returns>
+        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
+        /// the font's MeasureString for layout.
+        /// </returns>
         public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
             return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
         }
@@ -1978,6 +2660,10 @@ namespace Apos.Shapes {
             _indexCount += 6;
         }
 
+        /// <summary>
+        /// Ends the batch and sends everything drawn since <see cref="Begin"/> to the GPU.
+        /// </summary>
+        /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called, or a path is still open.</exception>
         public void End() {
             if (!_beginCalled) {
                 throw new InvalidOperationException("Begin must be called before calling End.");
@@ -1992,10 +2678,13 @@ namespace Apos.Shapes {
             // TODO: Restore old states like rasterizer, depth stencil, blend state?
         }
 
+        /// <summary>Releases the buffers and textures this batch owns.</summary>
         public void Dispose() {
             Dispose(true);
             GC.SuppressFinalize(this);
         }
+        /// <summary>Releases the buffers and textures this batch owns.</summary>
+        /// <param name="disposing">True when called from <see cref="Dispose()"/> rather than a finalizer.</param>
         protected virtual void Dispose(bool disposing) {
             if (_disposed) return;
             if (disposing) {
@@ -2624,12 +3313,56 @@ namespace Apos.Shapes {
     /// binding the ShapeBatch overloads without ambiguity on every C# language version.
     /// </summary>
     public static class ShapeBatchPathExtensions {
+        /// <summary>
+        /// Draws a styled path with both a fill and a border. Points that carry a join style switch
+        /// it from that joint on. See the
+        /// <see cref="ShapeBatch.DrawPath(ReadOnlySpan{Vector2}, float, Gradient, Gradient, float, PathJoin, PathCap, PathCap?, float, float, bool, DashStyle)"/>
+        /// overload.
+        /// </summary>
+        /// <param name="sb">The batch to draw with.</param>
+        /// <param name="points">The points the path runs through, each one optionally carrying a join style.</param>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border, spanning the whole stroke.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">Join style before the first point that sets one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, radius, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
+        /// <summary>Fills a styled path, with no border. See the DrawPath overload.</summary>
+        /// <param name="sb">The batch to draw with.</param>
+        /// <param name="points">The points the path runs through, each one optionally carrying a join style.</param>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient to fill with, spanning the whole stroke.</param>
+        /// <param name="join">Join style before the first point that sets one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         public static void FillPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, radius, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
+        /// <summary>Outlines a styled path, with nothing inside it. See the DrawPath overload.</summary>
+        /// <param name="sb">The batch to draw with.</param>
+        /// <param name="points">The points the path runs through, each one optionally carrying a join style.</param>
+        /// <param name="radius">Half the stroke's thickness, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">Join style before the first point that sets one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
         public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, float radius, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, radius, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash);
         }
@@ -2640,14 +3373,50 @@ namespace Apos.Shapes {
         /// Feed one radius per point; the shorter of the two lists decides how far the path goes.
         /// See the <see cref="ShapeBatch.DrawPath(ReadOnlySpan{Vector2}, ReadOnlySpan{float}, Gradient, Gradient, float, PathJoin, PathCap, PathCap?, float, float, bool, DashStyle)"/> overload.
         /// </summary>
+        /// <param name="sb">The batch to draw with.</param>
+        /// <param name="points">The points the path runs through, each one optionally carrying a join style.</param>
+        /// <param name="radii">Half the stroke's thickness at each point, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border, spanning the whole stroke.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">Join style before the first point that sets one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         public static void DrawPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, 0f, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash, radii);
         }
         /// <summary>Fills a styled path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        /// <param name="sb">The batch to draw with.</param>
+        /// <param name="points">The points the path runs through, each one optionally carrying a join style.</param>
+        /// <param name="radii">Half the stroke's thickness at each point, in world units.</param>
+        /// <param name="g">Color or gradient to fill with, spanning the whole stroke.</param>
+        /// <param name="join">Join style before the first point that sets one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         public static void FillPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, ReadOnlySpan<float> radii, Gradient g, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, 0f, g, g, 0f, join, cap, capEnd, miterLimit, aaSize, closed, dash, radii);
         }
         /// <summary>Outlines a styled path whose width varies, with a radius per point. See the DrawPath overload.</summary>
+        /// <param name="sb">The batch to draw with.</param>
+        /// <param name="points">The points the path runs through, each one optionally carrying a join style.</param>
+        /// <param name="radii">Half the stroke's thickness at each point, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="join">Join style before the first point that sets one.</param>
+        /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
+        /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
+        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
+        /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
         public static void BorderPath(this ShapeBatch sb, ReadOnlySpan<PathPoint> points, ReadOnlySpan<float> radii, Gradient g, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
             sb.DrawPathPoints(points, 0f, Color.Transparent, g, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash, radii);
         }

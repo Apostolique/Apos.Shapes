@@ -14,6 +14,11 @@ namespace Apos.Shapes {
     /// difference the same way it covers the display's.
     /// </summary>
     public sealed class ColorRamp {
+        /// <param name="stops">
+        /// (position, color) pairs in [0, 1], in any order. Two stops on the same position make a
+        /// hard edge, and the order they are given in decides which side is which.
+        /// </param>
+        /// <exception cref="ArgumentException">No stops were given.</exception>
         public ColorRamp(params (float Position, Color Color)[] stops) {
             if (stops == null || stops.Length == 0) {
                 throw new ArgumentException("A color ramp needs at least one stop.", nameof(stops));

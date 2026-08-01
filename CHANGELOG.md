@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Ramps and color ramps can be rebuilt every frame, so their stops animate. Past 256 distinct ones in a batch, the batch flushes early to make room.
 - `FillChamferBlurred` and `BorderChamferBlurred`.
 - `Measure.Chamfer` and `Measure.ChamferBlurred`.
+- XML documentation on the whole public API, so IntelliSense shows a summary and parameter help on every call.
+
+### Changed
+
+- `FillEllipse`, `BorderEllipse`, `FillEllipseBlurred`, `BorderEllipseBlurred`, and `Measure.EllipseBlurred` renamed their `width` and `height` parameters to `radius1` and `radius2`, matching `DrawEllipse`.
 
 ### Fixed
 

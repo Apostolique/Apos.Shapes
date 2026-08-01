@@ -5,8 +5,40 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace Apos.Shapes {
+    /// <summary>
+    /// One corner of the quad a shape is drawn on, packed the way the built-in shader reads it.
+    /// <see cref="ShapeBatch"/> builds these itself, so you only touch this type when writing a
+    /// replacement shader or feeding the vertex buffer by hand. The meaning of
+    /// <c>a</c> through <c>d</c> changes per <see cref="Shape"/>, so treat the layout as internal
+    /// and expect it to move between versions.
+    /// </summary>
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
+        /// <param name="position">Where this corner sits, in world units.</param>
+        /// <param name="textureCoordinate">The corner's position in the shape's own frame, which is what the distance field is evaluated at.</param>
+        /// <param name="shape">Which distance field the pixel shader runs.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. 0 makes the border the fill.</param>
+        /// <param name="sdfSize">The shape's main size, which each distance field reads its own way.</param>
+        /// <param name="clip">This corner's view of the clip rectangle.</param>
+        /// <param name="height">The shape's second size, where it has one.</param>
+        /// <param name="aaSize">
+        /// Size of the anti-aliasing edge in pixels. The sign carries the <see cref="AAStyle"/>:
+        /// negative puts the band across the edge, positive outside it.
+        /// </param>
+        /// <param name="rounded">Corner rounding in world units, where the shape has corners.</param>
+        /// <param name="a">Spare channel. Its meaning depends on <paramref name="shape"/> and on whether the shape is dashed.</param>
+        /// <param name="b">Spare channel, same as <paramref name="a"/>.</param>
+        /// <param name="c">Spare channel, same as <paramref name="a"/>.</param>
+        /// <param name="d">Spare channel, same as <paramref name="a"/>.</param>
+        /// <param name="colorSpace">Space the colors are interpolated in. Textures and strings force Rgb.</param>
+        /// <param name="dash">0 draws solid, 1 dashes with flat ends, 2 with round ones.</param>
+        /// <param name="blur">Standard deviation of the edge's Gaussian falloff in world units, or 0 for a hard edge.</param>
+        /// <param name="ramps">
+        /// The batch's ramp table, which is where a <see cref="Ramp"/> or <see cref="ColorRamp"/>
+        /// gets its row. Without one those fall away and the gradient uses its stop colors.
+        /// </param>
         public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab, int dash = 0, float blur = 0f, RampTable? ramps = null) {
             if (thickness <= 0f) {
                 border = fill;
@@ -163,28 +195,53 @@ namespace Apos.Shapes {
             dst.ClipDistances = clip.Distances;
         }
 
+        /// <summary>Where this corner sits, in world units. Shapes live on the z = 0 plane.</summary>
         public Vector3 Position;
+        /// <summary>
+        /// The corner in the shape's own frame in xy, the corner rounding in z, and the shape,
+        /// gradient styles, color space, dash and blur flags packed into w.
+        /// </summary>
         public Vector4 TextureCoordinate;
+        /// <summary>First half of the fill's packed color stops, or its palette.</summary>
         public ulong FillA;
+        /// <summary>Second half of the fill's packed color stops, or its palette and ramp rows.</summary>
         public ulong FillB;
+        /// <summary>First half of the border's packed color stops, or its palette.</summary>
         public ulong BorderA;
+        /// <summary>Second half of the border's packed color stops, or its palette and ramp rows.</summary>
         public ulong BorderB;
+        /// <summary>The fill gradient's two points, A in xy and B in zw, in world units.</summary>
         public Vector4 FillCoord;
+        /// <summary>The border gradient's two points, A in xy and B in zw, in world units.</summary>
         public Vector4 BorderCoord;
+        /// <summary>
+        /// Border thickness, then the anti-aliasing width in pixels or the blur's standard
+        /// deviation in world units, then the shape's two sizes.
+        /// </summary>
         public Vector4 Meta1;
+        /// <summary>The four spare channels, whose meaning depends on the shape.</summary>
         public Vector4 Meta2;
+        /// <summary>The fill's two gradient offsets, then the border's.</summary>
         public Vector4 Meta3;
+        /// <summary>Distances to the left, top, right, bottom clip edges. Positive inside.</summary>
         public Vector4 ClipDistances;
+        /// <summary>Corner radius of the clip rectangle.</summary>
         public float ClipRounding;
+        /// <summary>Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</summary>
         public float ClipAaSize;
+        /// <summary>Layout of this vertex, for the vertex buffer.</summary>
         public static readonly VertexDeclaration VertexDeclaration;
 
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
 
+        /// <summary>A hash over every packed field.</summary>
+        /// <returns>The hash code.</returns>
         public override readonly int GetHashCode() {
             return HashCode.Combine(Position, TextureCoordinate, HashCode.Combine(FillA, FillB, BorderA, BorderB), HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, ClipDistances, ClipRounding, ClipAaSize));
         }
 
+        /// <summary>The position, the packed color slots and a few of the meta channels, for debugging.</summary>
+        /// <returns>A readable dump of the vertex.</returns>
         public override readonly string ToString() {
             return
                 "{{Position:" + Position +
@@ -201,6 +258,10 @@ namespace Apos.Shapes {
                 "}}";
         }
 
+        /// <summary>Whether every packed field of the two vertices matches.</summary>
+        /// <param name="left">First vertex.</param>
+        /// <param name="right">Second vertex.</param>
+        /// <returns>True when the two are identical.</returns>
         public static bool operator ==(VertexShape left, VertexShape right) {
             return
                 left.Position == right.Position &&
@@ -219,10 +280,17 @@ namespace Apos.Shapes {
                 left.ClipAaSize == right.ClipAaSize;
         }
 
+        /// <summary>Whether any packed field of the two vertices differs.</summary>
+        /// <param name="left">First vertex.</param>
+        /// <param name="right">Second vertex.</param>
+        /// <returns>True when the two differ.</returns>
         public static bool operator !=(VertexShape left, VertexShape right) {
             return !(left == right);
         }
 
+        /// <summary>Whether the other object is a vertex with every packed field the same.</summary>
+        /// <param name="obj">The object to compare against.</param>
+        /// <returns>True when it is an identical vertex.</returns>
         public override readonly bool Equals(object? obj) {
             if (obj == null)
                 return false;
@@ -233,19 +301,33 @@ namespace Apos.Shapes {
             return this == ((VertexShape)obj);
         }
 
+        /// <summary>Which distance field the pixel shader runs for this quad.</summary>
         public enum Shape {
+            /// <summary>A circle.</summary>
             Circle = 0,
+            /// <summary>A rectangle, with a radius per corner.</summary>
             Rectangle = 1,
+            /// <summary>A capsule, which is what a line and a path segment both are.</summary>
             Line = 2,
+            /// <summary>A hexagon with flat top and bottom edges.</summary>
             Hexagon = 3,
+            /// <summary>An equilateral triangle pointing down.</summary>
             EquilateralTriangle = 4,
+            /// <summary>A triangle through three arbitrary points.</summary>
             Triangle = 5,
+            /// <summary>An ellipse.</summary>
             Ellipse = 6,
+            /// <summary>A stroke along a circle, with rounded ends.</summary>
             Arc = 7,
+            /// <summary>A stroke along a circle, with flat ends.</summary>
             Ring = 8,
+            /// <summary>A textured quad, masked in raw RGBA.</summary>
             Texture = 9,
+            /// <summary>A glyph from the font atlas, masked in raw RGBA.</summary>
             String = 10,
+            /// <summary>One quad of a path, which carries its own caps and joins.</summary>
             Path = 11,
+            /// <summary>A rectangle with its corners cut straight across.</summary>
             Chamfer = 12
         }
 

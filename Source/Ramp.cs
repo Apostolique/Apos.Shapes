@@ -15,6 +15,11 @@ namespace Apos.Shapes {
     /// makes the batch flush early to make room, which costs a draw call.
     /// </summary>
     public sealed class Ramp {
+        /// <param name="stops">
+        /// (position, value) pairs in [0, 1], in any order. Two stops on the same position make a
+        /// hard edge, and the order they are given in decides which side is which.
+        /// </param>
+        /// <exception cref="ArgumentException">No stops were given.</exception>
         public Ramp(params (float Position, float Value)[] stops) {
             if (stops == null || stops.Length == 0) {
                 throw new ArgumentException("A ramp needs at least one stop.", nameof(stops));

@@ -10,6 +10,11 @@ namespace Apos.Shapes {
     /// which is what makes it pair well with <see cref="Gradient.RepeatStyle.Sawtooth"/>.
     /// </summary>
     public struct Palette {
+        /// <param name="bias">Center of each channel's oscillation, in [0, 1].</param>
+        /// <param name="amplitude">How far each channel swings around its bias, in [0, 1].</param>
+        /// <param name="frequency">Cycles per gradient length. Snapped to whole numbers in [0, 15] when the shape is drawn.</param>
+        /// <param name="phase">Where in its cycle each channel starts, as a fraction of one cycle.</param>
+        /// <param name="alpha">Opacity of the whole palette, in [0, 1].</param>
         public Palette(Vector3 bias, Vector3 amplitude, Vector3 frequency, Vector3 phase, float alpha = 1f) {
             Bias = bias;
             Amplitude = amplitude;

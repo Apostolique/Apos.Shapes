@@ -197,8 +197,8 @@ namespace Apos.Shapes {
         }
 
         /// <summary>Bounds of FillEllipseBlurred and BorderEllipseBlurred.</summary>
-        public static RectangleF EllipseBlurred(Vector2 center, float width, float height, float blur, float rotation = 0f) {
-            return EllipseBounds(center, width, height, rotation, BlurReach(blur));
+        public static RectangleF EllipseBlurred(Vector2 center, float radius1, float radius2, float blur, float rotation = 0f) {
+            return EllipseBounds(center, radius1, radius2, rotation, BlurReach(blur));
         }
 
         /// <summary>Bounds of FillRectangleBlurred and BorderRectangleBlurred.</summary>
