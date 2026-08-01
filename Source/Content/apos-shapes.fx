@@ -17,13 +17,16 @@ float4x4 view_projection;
 float2 half_viewport;
 float dither_scale; // DitherStrength / 255, folded on the CPU so the shader adds ±half an 8-bit LSB directly.
 float dither_mode; // 0: interleaved gradient noise, 1: the blue noise tile.
+float2 ramp_texel; // 1 / the ramp table's texel counts: x across a row, y across the rows.
 // Sampler order is load bearing, and the register annotations alone do not settle it: the
 // OpenGL and Vulkan translator hands out texture units in the order the pixel shader first
 // SAMPLES from, not the order the samplers are declared or the registers they ask for, while
 // the KNI toolchain goes by the register. So the three have to agree, and that means listing
 // them in the order the pixel shader reaches them: the texture and font masks return early,
-// then the elliptical arc length table, then the dither noise at the very end. Getting this
-// wrong is silent - the shader simply reads a different texture and the picture goes to noise.
+// then the elliptical arc length table, then the dither noise, then the ramp table. The
+// dither sits before the ramp because the blur path returns early THROUGH a dither call,
+// ahead of the color section where the ramp reads. Getting this wrong is silent - the
+// shader simply reads a different texture and the picture goes to noise.
 #if SM6
 // DXC drops the legacy sampler syntax: declare texture/sampler pairs on matching
 // registers so the Vulkan reflection treats them as combined image-samplers.
@@ -31,19 +34,23 @@ Texture2D TextureTex : register(t0); SamplerState TextureSampler : register(s0);
 Texture2D FontTex : register(t1); SamplerState FontSampler : register(s1);
 Texture2D ArcTex : register(t2); SamplerState ArcSampler : register(s2); // Elliptical arc length table, bound with clamped point sampling.
 Texture2D BlueNoiseTex : register(t3); SamplerState BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
+Texture2D RampTex : register(t4); SamplerState RampSampler : register(s4); // Ramp weight curves, bound with clamped point sampling.
 float4 SampleTexture(float2 uv) { return TextureTex.Sample(TextureSampler, uv); }
 float4 SampleFont(float2 uv) { return FontTex.Sample(FontSampler, uv); }
 float4 SampleArc(float2 uv) { return ArcTex.Sample(ArcSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return BlueNoiseTex.Sample(BlueNoiseSampler, uv); }
+float4 SampleRamp(float2 uv) { return RampTex.Sample(RampSampler, uv); }
 #else
 sampler TextureSampler : register(s0);
 sampler FontSampler;
 sampler ArcSampler : register(s2); // Elliptical arc length table, bound with clamped point sampling.
 sampler BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
+sampler RampSampler : register(s4); // Ramp weight curves, bound with clamped point sampling.
 float4 SampleTexture(float2 uv) { return tex2D(TextureSampler, uv); }
 float4 SampleFont(float2 uv) { return tex2D(FontSampler, uv); }
 float4 SampleArc(float2 uv) { return tex2D(ArcSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return tex2D(BlueNoiseSampler, uv); }
+float4 SampleRamp(float2 uv) { return tex2D(RampSampler, uv); }
 #endif
 
 struct VertexInput {
@@ -1988,9 +1995,16 @@ float ShapeGradient(float a, float b, float c) {
 // box filter of a color that is linear in the gradient value, which two stops are and a
 // palette is not: pulling toward 0.5 paints the palette's midpoint color along the seam.
 // A palette's whole number frequencies make it periodic across the wrap instead, so for one
-// the seam is already continuous and the smoothing is what would draw a line there.
-float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float2 offset, bool pal) {
+// the seam is already continuous and the smoothing is what would draw a line there. A ramp
+// skips it the same way and filters its own jumps instead, seam included, so it needs two
+// things the smoothing never did: tAa, the AA band's width measured in gradient value at
+// this pixel, and wrapF, set when the value wraps 1 back to 0 so RampValue can run the row
+// periodic. An offset moves the wrap seam away from the row's ends, so it clears the flag;
+// the seam is then aliased, exactly as an offset palette's already is.
+float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float2 offset, bool pal, bool rampd, out float tAa, out float wrapF) {
     float result;
+    tAa = 0.0;
+    wrapF = 0.0;
     if (type.x < 0.5) {
         result = 1.0;
     } else {
@@ -2004,42 +2018,63 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
         float grad;
         if (type.x < 1.5) {
             grad = RadialGradient(posAB.xy, c, gl);
+            tAa = aaSize / gl;
         } else if (type.x < 2.5) {
             grad = LinearGradient(posAB.xy, posAB.zw, c, gl);
+            tAa = aaSize / gl;
         } else if (type.x < 3.5) {
             grad = BilinearGradient(posAB.xy, posAB.zw, c, gl);
+            tAa = aaSize / gl;
         } else if (type.x < 4.5) {
             grad = ConicalGradient(rc);
+            tAa = aaSize / (3.14159265 * max(length(posAB.xy - c.xy), 1e-6));
         } else if (type.x < 5.5) {
             grad = ConicalAsymGradient(rc);
-            if (!pal) {
+            tAa = aaSize / (6.283185307179586 * max(length(posAB.xy - c.xy), 1e-6));
+            wrapF = 1.0;
+            if (!pal && !rampd) {
                 grad = SmoothWrapDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
             }
         } else if (type.x < 6.5) {
             grad = SquareGradient(rc, gl);
+            tAa = aaSize / gl;
         } else if (type.x < 7.5) {
             grad = CrossGradient(rc, gl);
+            tAa = aaSize / gl;
         } else if (type.x < 9.5) {
             grad = SpiralGradient(rc, gl, type.x < 8.5 ? 1.0 : -1.0);
-            if (!pal) {
-                grad = SmoothWrapDiscontinuity(grad, aaSize * SpiralGradientSize(posAB.xy, c, gl));
+            tAa = aaSize * SpiralGradientSize(posAB.xy, c, gl);
+            wrapF = 1.0;
+            if (!pal && !rampd) {
+                grad = SmoothWrapDiscontinuity(grad, tAa);
             }
         } else if (type.x < 10.5) {
             grad = ShapeGradient(posAB.x, posAB.y, d);
+            tAa = aaSize / max(abs(posAB.y - posAB.x), 1e-6);
         }
 
         if (type.y < 0.5) {
         } else if (type.y < 1.5) {
             grad = SawtoothWave(grad);
-            if (!pal) {
+            wrapF = 1.0;
+            if (!pal && !rampd) {
                 grad = SmoothWrapDiscontinuity(grad, aaSize / gl);
             }
         } else if (type.y < 2.5) {
             grad = TriangularWave(grad);
+            wrapF = 0.0;
         } else if (type.y < 3.5) {
+            // Chain rule before the wave replaces the value: where the sine flattens, the
+            // value moves slowly through a stop and the filter rightly narrows.
+            tAa *= abs(cos(grad * 3.14159265 - 1.5)) * 1.5707963268;
             grad = SineWave(grad);
+            wrapF = 0.0;
         }
         grad = RemapOffset(grad, offset);
+        tAa /= max(abs((1.0 - offset.y) - offset.x), 1e-6);
+        if (offset.x != 0.0 || offset.y != 0.0) {
+            wrapF = 0.0;
+        }
 
         result = saturate(grad);
     }
@@ -2064,13 +2099,173 @@ float4 UnpackColor(float2 c) {
     return float4(Unpack11(c.x), Unpack11(c.y));
 }
 
+// One logical texel of the ramp table is two physical texels. The first is the curve's
+// value at the texel's two edges, unorm16 pairs split across bytes like the arc table's
+// values and for the same reason: hardware filtering would blend the bytes independently,
+// so the shader reads them apart by hand. The second is the curve's running integral at
+// the texel's start, a 24 bit fraction of the whole row.
+float2 RampSeg(float row, float col) {
+    float4 c = SampleRamp(float2((col * 2.0 + 0.5) * ramp_texel.x, (row + 0.5) * ramp_texel.y));
+    return float2(floor(c.g * 255.0 + 0.5) * 256.0 + floor(c.r * 255.0 + 0.5),
+                  floor(c.a * 255.0 + 0.5) * 256.0 + floor(c.b * 255.0 + 0.5)) / 65535.0;
+}
+// The integral from the row's start to col + u, in value times texel units: the stored
+// prefix plus the segment's own trapezoid. The prefix was accumulated from the same
+// quantized edge values the trapezoid reads, so the two agree exactly.
+float RampInt(float row, float col, float2 seg, float u) {
+    float4 c = SampleRamp(float2((col * 2.0 + 1.5) * ramp_texel.x, (row + 0.5) * ramp_texel.y));
+    float f = (floor(c.r * 255.0 + 0.5) + floor(c.g * 255.0 + 0.5) * 256.0 + floor(c.b * 255.0 + 0.5) * 65536.0) * (256.0 / 16777215.0);
+    return f + (seg.x + (seg.y - seg.x) * 0.5 * u) * u;
+}
+// The ramp curve box filtered over the AA band: x = va, y = vb, the curve's values at the
+// window's two edges; w = m, the window's exact mean; z = the blend that reproduces m from
+// va and vb, or -1 when no such blend exists. The window is aaT wide in gradient value
+// with no cap, so a hard stop antialiases over the same band a shape edge does however
+// short the gradient runs. Two stops read m outright, since their color is linear in the
+// value. A palette blends the colors AT va and vb by z instead - the mean position would
+// paint whatever color the palette keeps between the two sides along the edge, the trap
+// the wrap smoothing in Gradient falls into on a palette - which is exact wherever the
+// window holds one jump between two flat runs, the shape every band edge has. Everything
+// here is a continuous function of x: an earlier filter that picked the nearest texel
+// boundary turned the one ulp of noise in a GPU's t into a ragged line of flipped pixels
+// along every hard stop, because axis aligned pixel centers land exactly on that tie.
+// wrapped runs the row periodic for gradients whose value wraps, which carries a hard stop
+// cleanly across a sawtooth seam.
+float4 RampBox(float t, float row, float aaT, bool wrapped) {
+    float h = 0.5 * clamp(aaT * 256.0, 1e-5, 256.0);
+    float a = t * 256.0 - h;
+    float b = t * 256.0 + h;
+    if (!wrapped) {
+        // The window truncates at the row's ends rather than reaching past them.
+        a = clamp(a, 0.0, 256.0);
+        b = clamp(b, 0.0, 256.0);
+    }
+    float fa = floor(a);
+    float fb = floor(b);
+    float ja = wrapped ? Mod(fa, 256.0) : min(fa, 255.0);
+    float jb = wrapped ? Mod(fb, 256.0) : min(fb, 255.0);
+    // A clamped window whose top edge sits exactly on 256 is inside texel 255, not past a
+    // boundary: floor would call it one, the split formula below would then hand the right
+    // piece a full texel's width inside a sub texel window, and the inflated mean paints a
+    // bright line down the last half pixel of every clamped gradient. Wrapped keeps floor,
+    // since there the seam is a real boundary.
+    float fbe = wrapped ? fb : min(fb, 255.0);
+    float2 sa = RampSeg(row, ja);
+    float2 sb = RampSeg(row, jb);
+    float ua = a - (wrapped ? fa : ja);
+    float ub = b - (wrapped ? fb : jb);
+    float va = lerp(sa.x, sa.y, ua);
+    float vb = lerp(sb.x, sb.y, ub);
+
+    float w = max(b - a, 1e-5);
+    float m;
+    if (b - a <= 1.0) {
+        // At most one boundary inside the window: the mean reads straight off the segments,
+        // exact at any magnification, with none of the quantization the stored prefix has.
+        m = fbe - fa < 0.5
+            ? (va + vb) * 0.5
+            : ((1.0 - ua) * lerp(sa.x, sa.y, (1.0 + ua) * 0.5) + ub * lerp(sb.x, sb.y, ub * 0.5)) / w;
+    } else {
+        float intA = RampInt(row, ja, sa, ua);
+        float intB = RampInt(row, jb, sb, ub);
+        if (wrapped) {
+            // Each full revolution between the window's edges adds the whole row's integral.
+            float2 last = RampSeg(row, 255.0);
+            intB += (floor(b / 256.0) - floor(a / 256.0)) * RampInt(row, 255.0, last, 1.0);
+        }
+        m = (intB - intA) / w;
+    }
+
+    float dv = vb - va;
+    float al = (vb - m) / (abs(dv) > 1e-3 ? dv : 1e30);
+    if (al < 0.0 || al > 1.0 || abs(dv) <= 1e-3) {
+        al = -1.0;
+    }
+    return float4(va, vb, al, m);
+}
+
+// A color ramp is RampBox rebuilt for colors. One logical texel is two physical texels
+// holding the color at the texel's two edges as straight RGBA8 in the active space's
+// remapped frame, one-sided limits like the scalar row's, so a hard stop sits exactly
+// between two texels. A companion row keeps each channel's running integral at the texel's
+// start as unorm16 pairs, [R G] then [B A], read apart by hand for the same reason as
+// everywhere else.
+float4 LutTexel(float row, float col, float side) {
+    return SampleRamp(float2((col * 2.0 + 0.5 + side) * ramp_texel.x, (row + 0.5) * ramp_texel.y));
+}
+float4 LutPrefix(float introw, float col) {
+    float4 t0 = SampleRamp(float2((col * 2.0 + 0.5) * ramp_texel.x, (introw + 0.5) * ramp_texel.y));
+    float4 t1 = SampleRamp(float2((col * 2.0 + 1.5) * ramp_texel.x, (introw + 0.5) * ramp_texel.y));
+    return float4(
+        floor(t0.g * 255.0 + 0.5) * 256.0 + floor(t0.r * 255.0 + 0.5),
+        floor(t0.a * 255.0 + 0.5) * 256.0 + floor(t0.b * 255.0 + 0.5),
+        floor(t1.g * 255.0 + 0.5) * 256.0 + floor(t1.r * 255.0 + 0.5),
+        floor(t1.a * 255.0 + 0.5) * 256.0 + floor(t1.b * 255.0 + 0.5)) / 65535.0;
+}
+// The integral from the row's start to col + u per channel, in color times texel units: the
+// stored prefix plus the segment's own trapezoid, accumulated CPU-side from the same
+// quantized edge bytes these reads recover.
+float4 LutInt(float introw, float col, float4 e0, float4 e1, float u) {
+    return LutPrefix(introw, col) * 256.0 + (e0 + (e1 - e0) * 0.5 * u) * u;
+}
+// The row box filtered over the AA band, straight in the frame's channels: between stops
+// color is linear in the gradient value, so the box mean IS the filtered color, and across
+// a hard stop it is the two flats blended by coverage, the same shape a shape edge fades
+// with. The three cases mirror RampBox: no boundary in the window reads the segment's
+// middle, one boundary reads both segments exactly, more goes through the integrals. Like
+// RampBox, everything is a continuous function of t, and wrapped runs the row periodic so
+// a sawtooth seam carries a hard stop cleanly.
+float4 LutColor(float t, float row, float introw, float aaT, bool wrapped) {
+    float h = 0.5 * clamp(aaT * 256.0, 1e-5, 256.0);
+    float a = t * 256.0 - h;
+    float b = t * 256.0 + h;
+    if (!wrapped) {
+        a = clamp(a, 0.0, 256.0);
+        b = clamp(b, 0.0, 256.0);
+    }
+    float fa = floor(a);
+    float fb = floor(b);
+    float ja = wrapped ? Mod(fa, 256.0) : min(fa, 255.0);
+    float jb = wrapped ? Mod(fb, 256.0) : min(fb, 255.0);
+    // Same end guard as RampBox: a clamped top edge on exactly 256 is inside texel 255, not
+    // past a boundary, or the split formula inflates the mean into a bright end line.
+    float fbe = wrapped ? fb : min(fb, 255.0);
+    float ua = a - (wrapped ? fa : ja);
+    float ub = b - (wrapped ? fb : jb);
+    float4 a0 = LutTexel(row, ja, 0.0);
+    float4 a1 = LutTexel(row, ja, 1.0);
+    float4 b0 = LutTexel(row, jb, 0.0);
+    float4 b1 = LutTexel(row, jb, 1.0);
+
+    float w = max(b - a, 1e-5);
+    float4 m;
+    if (fbe - fa < 0.5) {
+        m = lerp(a0, a1, (ua + ub) * 0.5);
+    } else if (fbe - fa < 1.5) {
+        m = ((1.0 - ua) * lerp(a0, a1, (1.0 + ua) * 0.5) + ub * lerp(b0, b1, ub * 0.5)) / w;
+    } else {
+        float4 intA = LutInt(introw, ja, a0, a1, ua);
+        float4 intB = LutInt(introw, jb, b0, b1, ub);
+        if (wrapped) {
+            // Each full revolution between the window's edges adds the whole row's integral.
+            float4 l0 = LutTexel(row, 255.0, 0.0);
+            float4 l1 = LutTexel(row, 255.0, 1.0);
+            intB += (floor(b / 256.0) - floor(a / 256.0)) * LutInt(introw, 255.0, l0, l1, 1.0);
+        }
+        m = (intB - intA) / w;
+    }
+    return m;
+}
+
 // A packed color float driven negative by the vertex shader carries a cosine palette
 // instead of two stops: bias + amplitude * cos(tau * (frequency * t + phase)) per channel,
 // after https://iquilezles.org/articles/palettes/. The channels come out in the active
 // color space's remapped [0, 1] frame, exactly what ToRgb takes, so in Oklab the cosines
 // swing lightness and the two color axes. Bit layout lives with PackPalette in
 // ShapeVertex.cs; whole number frequencies are what let a palette tile with no seam.
-float4 PaletteColor(float4 data, float t) {
+// rampd marks a ramp row aboard: ch6 and ch7 reshape to carry it, and t runs through the
+// row's curve before the cosines see it.
+float4 PaletteColor(float4 data, float t, float tAa, float wrapF, bool rampd) {
     float m = -data.x - 1.0;
     float ch1 = DecodeDigit(m, 2048.0);
     float ch0 = m;
@@ -2090,13 +2285,50 @@ float4 PaletteColor(float4 data, float t) {
     float ax = DecodeDigit(ch3, 128.0);
     float ay = DecodeDigit(ch4, 128.0);
     float az = DecodeDigit(ch5, 128.0);
-    float dx = DecodeDigit(ch6, 32.0);
-    float dz = DecodeDigit(ch7, 32.0);
 
     float3 freq = float3(ch0, ch1, ch2);
-    float3 phase = (float3(ch3, ch4, ch5) * 32.0 + float3(dx, ch6, dz)) / 512.0;
-    float3 c = (float3(bx, by, bz) + float3(ax, ay, az) * cos(6.283185307179586 * (freq * t + phase))) / 127.0;
-    return float4(saturate(c), ch7 / 63.0);
+    float3 phase;
+    float alpha;
+    float4 rb = float4(t, t, -1.0, t);
+    if (rampd) {
+        float dx = DecodeDigit(ch6, 4.0);
+        float dy = DecodeDigit(ch6, 4.0);
+        float dz = DecodeDigit(ch6, 4.0);
+        alpha = DecodeDigit(ch7, 64.0);
+        phase = (float3(ch3, ch4, ch5) * 4.0 + float3(dx, dy, dz)) / 64.0;
+        rb = RampBox(t, ch6 + 32.0 * ch7, tAa, wrapF > 0.5);
+    } else {
+        float dx = DecodeDigit(ch6, 32.0);
+        float dz = DecodeDigit(ch7, 32.0);
+        alpha = ch7;
+        phase = (float3(ch3, ch4, ch5) * 32.0 + float3(dx, ch6, dz)) / 512.0;
+    }
+    float3 bias = float3(bx, by, bz);
+    float3 amp = float3(ax, ay, az);
+    float3 c;
+    if (rb.z >= 0.0) {
+        // One jump between two flat runs: blend the two edge colors, see RampBox.
+        float3 cA = saturate((bias + amp * cos(6.283185307179586 * (freq * rb.x + phase))) / 127.0);
+        float3 cB = saturate((bias + amp * cos(6.283185307179586 * (freq * rb.y + phase))) / 127.0);
+        c = lerp(cB, cA, rb.z);
+    } else {
+        c = saturate((bias + amp * cos(6.283185307179586 * (freq * rb.w + phase))) / 127.0);
+    }
+    return float4(c, alpha / 63.0);
+}
+
+// The row a ramped pair of stops carries: 3 bits above each alpha byte and 2 more as lane
+// signs (see EmbedRamp in ShapeVertex.cs). Puts the true alphas back while it is in there,
+// and they come back exact: an alpha is a byte at heart, so the byte rides untouched under
+// the row bits.
+float StopRampRow(float4 pk, bool zN, bool wN, inout float4 ca, inout float4 cb) {
+    float m = pk.y;
+    float chA = DecodeDigit(m, 2048.0);
+    ca.a = DecodeDigit(chA, 256.0) / 255.0;
+    m = pk.w;
+    float chB = DecodeDigit(m, 2048.0);
+    cb.a = DecodeDigit(chB, 256.0) / 255.0;
+    return chA + 8.0 * chB + (zN ? 64.0 : 0.0) + (wN ? 128.0 : 0.0);
 }
 
 #if VULKAN
@@ -2114,19 +2346,24 @@ PixelInput SpriteVertexShader(VertexInput v) {
 
     output.Position = mul(v.Position, view_projection);
     output.TexCoord = v.TexCoord;
-    // A negative first lane means the color slots carry a cosine palette (see PackPalette in
-    // ShapeVertex.cs). The payload repacks exactly like colors do; the sign moves onto the
-    // packed float, pushed past -1 so a payload of zero still keeps it.
+    // Negated lanes are flags (see PackPalette and EmbedRamp in ShapeVertex.cs): the first
+    // marks a cosine palette, the third a ramp, and the fifth and seventh carry a ramped
+    // stop pair's top row bits. The payloads repack exactly like colors do; each sign moves
+    // onto its packed float, pushed past -1 so a payload of zero still keeps it.
     float4 fillA = FixSnorm(v.FillA);
+    float4 fillB = FixSnorm(v.FillB);
     float4 borderA = FixSnorm(v.BorderA);
-    output.Fill = PackColors(abs(fillA), FixSnorm(v.FillB));
-    output.Border = PackColors(abs(borderA), FixSnorm(v.BorderB));
-    if (fillA.x < 0.0) {
-        output.Fill.x = -output.Fill.x - 1.0;
-    }
-    if (borderA.x < 0.0) {
-        output.Border.x = -output.Border.x - 1.0;
-    }
+    float4 borderB = FixSnorm(v.BorderB);
+    output.Fill = PackColors(abs(fillA), abs(fillB));
+    output.Border = PackColors(abs(borderA), abs(borderB));
+    if (fillA.x < 0.0) output.Fill.x = -output.Fill.x - 1.0;
+    if (fillA.z < 0.0) output.Fill.y = -output.Fill.y - 1.0;
+    if (fillB.x < 0.0) output.Fill.z = -output.Fill.z - 1.0;
+    if (fillB.z < 0.0) output.Fill.w = -output.Fill.w - 1.0;
+    if (borderA.x < 0.0) output.Border.x = -output.Border.x - 1.0;
+    if (borderA.z < 0.0) output.Border.y = -output.Border.y - 1.0;
+    if (borderB.x < 0.0) output.Border.z = -output.Border.z - 1.0;
+    if (borderB.z < 0.0) output.Border.w = -output.Border.w - 1.0;
     output.FillCoord = v.FillCoord;
     output.BorderCoord = v.BorderCoord;
     output.Meta1 = v.Meta1;
@@ -2538,8 +2775,29 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         discard;
     }
 
-    float4 fillA = UnpackColor(p.Fill.xy);
-    float4 fillB = UnpackColor(p.Fill.zw);
+    // The packed floats' signs are flags (see the vertex shader): y marks a ramp riding the
+    // gradient, z and w carry a ramped stop pair's top row bits. The payloads come back
+    // positive before anything unpacks them; x keeps its sign, PaletteColor reads it itself.
+    bool fillRamp = p.Fill.y < -0.5;
+    bool fillZN = p.Fill.z < -0.5;
+    bool fillWN = p.Fill.w < -0.5;
+    bool borderRamp = p.Border.y < -0.5;
+    bool borderZN = p.Border.z < -0.5;
+    bool borderWN = p.Border.w < -0.5;
+    // The third lane's sign without the ramp flag beside it marks a color ramp; a ramped
+    // stop pair only ever sets it with the ramp flag, so the pair can't collide.
+    bool fillLut = fillZN && !fillRamp;
+    bool borderLut = borderZN && !borderRamp;
+    float4 fillPk = float4(p.Fill.x,
+                           fillRamp ? -p.Fill.y - 1.0 : p.Fill.y,
+                           fillZN ? -p.Fill.z - 1.0 : p.Fill.z,
+                           fillWN ? -p.Fill.w - 1.0 : p.Fill.w);
+    float4 borderPk = float4(p.Border.x,
+                             borderRamp ? -p.Border.y - 1.0 : p.Border.y,
+                             borderZN ? -p.Border.z - 1.0 : p.Border.z,
+                             borderWN ? -p.Border.w - 1.0 : p.Border.w);
+    float4 fillA = UnpackColor(fillPk.xy);
+    float4 fillB = UnpackColor(fillPk.zw);
 
     float edgeFade = 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize + aaBias));
     float borderMix = smoothstep(0.0, 1.0, saturate((d + lineSize) / aaSize + 1.0 - aaBias));
@@ -2648,9 +2906,10 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // hand cost around a fifth of the shader on their own.
     bool sameGradient = all(p.Fill == p.Border) && all(p.FillCoord == p.BorderCoord) && all(fillStyles == borderStyles) && all(p.Meta3.xy == p.Meta3.zw);
     // A palette's unpacked stops are payload bits, not colors, so it never reads as a
-    // transparent fill here.
+    // transparent fill here, a ramped fill's alpha lanes carry row bits over the alpha, and
+    // a color ramp's lanes are all payload, so those skip the shortcut too.
     bool fillPal = p.Fill.x < -0.5;
-    bool borderOnly = !fillPal && fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
+    bool borderOnly = !fillPal && !fillRamp && !fillLut && fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
     if (borderOnly && borderMix <= 0.0) {
         // Transparent fill: everything inside the border band contributes nothing.
         discard;
@@ -2663,8 +2922,24 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float4 fr = float4(0.0, 0.0, 0.0, 0.0);
     float4 br = float4(0.0, 0.0, 0.0, 0.0);
     if (!borderOnly) {
-        float t = Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy, fillPal);
-        float4 c = fillPal ? PaletteColor(p.Fill, t) : LerpColorPremul(fillA, fillB, t, space);
+        float tAa, wrapF;
+        float t = Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy, fillPal, fillRamp || fillLut, tAa, wrapF);
+        float4 c;
+        if (fillPal) {
+            c = PaletteColor(fillPk, t, tAa, wrapF, fillRamp);
+        } else if (fillLut) {
+            float m = fillPk.z;
+            float introw = DecodeDigit(m, 2048.0);
+            c = LutColor(t, m, introw, tAa, wrapF > 0.5);
+        } else {
+            if (fillRamp) {
+                float row = StopRampRow(fillPk, fillZN, fillWN, fillA, fillB);
+                // Two stops are linear in the gradient value, so the window's mean value IS
+                // the filtered color; only a palette has to blend colors instead.
+                t = RampBox(t, row, tAa, wrapF > 0.5).w;
+            }
+            c = LerpColorPremul(fillA, fillB, t, space);
+        }
         fr = ToRgb(c, space);
         fr.rgb *= fr.a;
         // A shared gradient leaves the border reading exactly this, so it never runs its own.
@@ -2672,8 +2947,24 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     }
     if (!sameGradient) {
         bool borderPal = p.Border.x < -0.5;
-        float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal);
-        float4 c = borderPal ? PaletteColor(p.Border, t) : LerpColorPremul(UnpackColor(p.Border.xy), UnpackColor(p.Border.zw), t, space);
+        float tAa, wrapF;
+        float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
+        float4 c;
+        if (borderPal) {
+            c = PaletteColor(borderPk, t, tAa, wrapF, borderRamp);
+        } else if (borderLut) {
+            float m = borderPk.z;
+            float introw = DecodeDigit(m, 2048.0);
+            c = LutColor(t, m, introw, tAa, wrapF > 0.5);
+        } else {
+            float4 bA = UnpackColor(borderPk.xy);
+            float4 bB = UnpackColor(borderPk.zw);
+            if (borderRamp) {
+                float row = StopRampRow(borderPk, borderZN, borderWN, bA, bB);
+                t = RampBox(t, row, tAa, wrapF > 0.5).w;
+            }
+            c = LerpColorPremul(bA, bB, t, space);
+        }
         br = ToRgb(c, space);
         br.rgb *= br.a;
     }

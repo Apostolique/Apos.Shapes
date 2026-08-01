@@ -25,10 +25,29 @@ namespace Apos.Shapes {
             IsLocal = isLocal;
         }
 
+        public Gradient(Vector2 aXY, Color aC, Vector2 bXY, Color bC, Ramp ramp, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f, bool isLocal = false)
+            : this(aXY, aC, bXY, bC, s, rs, aOffset, bOffset, isLocal) {
+            R = ramp;
+        }
+
         public Gradient(Vector2 aXY, Vector2 bXY, Palette palette, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f, bool isLocal = false)
             : this(aXY, Color.White, bXY, Color.White, s, rs, aOffset, bOffset, isLocal) {
-            (PalA, PalB) = VertexShape.PackPalette(palette);
+            (PalA, PalB) = VertexShape.PackPalette(palette, -1);
             IsPalette = true;
+        }
+
+        public Gradient(Vector2 aXY, Vector2 bXY, Palette palette, Ramp ramp, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f, bool isLocal = false)
+            : this(aXY, Color.White, bXY, Color.White, s, rs, aOffset, bOffset, isLocal) {
+            // Row 0 stands in: rows live per batch table, so packing resolves the real one and
+            // patches it over. What matters here is the ramped layout and its flag.
+            (PalA, PalB) = VertexShape.PackPalette(palette, ramp != null ? 0 : -1);
+            IsPalette = true;
+            R = ramp;
+        }
+
+        public Gradient(Vector2 aXY, Vector2 bXY, ColorRamp colors, Shape s = Shape.Linear, RepeatStyle rs = RepeatStyle.None, float aOffset = 0f, float bOffset = 0f, bool isLocal = false)
+            : this(aXY, Color.White, bXY, Color.White, s, rs, aOffset, bOffset, isLocal) {
+            Colors = colors;
         }
 
         public Vector2 AXY;
@@ -41,6 +60,8 @@ namespace Apos.Shapes {
         public RepeatStyle RS;
         public bool IsLocal;
         public bool IsPalette;
+        public Ramp? R;
+        public ColorRamp? Colors;
         internal ulong PalA;
         internal ulong PalB;
 

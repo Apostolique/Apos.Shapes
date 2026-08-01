@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using FontStashSharp;
 using FontStashSharp.Interfaces;
@@ -29,6 +30,7 @@ namespace Apos.Shapes {
             _halfViewportParam = _effect.Parameters["half_viewport"];
             _ditherScale = _effect.Parameters["dither_scale"];
             _ditherMode = _effect.Parameters["dither_mode"];
+            _rampTexel = _effect.Parameters["ramp_texel"];
 
             _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
 
@@ -164,7 +166,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             float radius1 = radius + aaOffset; // Account for AA.
 
@@ -179,7 +181,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius1, -radius1), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius1, radius1), GetClipSpace(bottomRight));
@@ -197,7 +199,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, CornerRadii cornerRadii, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             float maxR = MathF.Min(size.X, size.Y) / 2f;
             float rTL = MathHelper.Clamp(cornerRadii.TopLeft,     0f, maxR);
@@ -275,7 +277,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -336,7 +338,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             var radius1 = radius + aaOffset; // Account for AA.
 
@@ -358,7 +360,7 @@ namespace Apos.Shapes {
 
             if (IsLocal(fill, border)) GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: Aa(aaSize), rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: Aa(aaSize), rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(width1, -radius1), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(width1, radius1), GetClipSpace(bottomRight));
@@ -977,7 +979,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             rounded = MathF.Min(rounded, radius);
 
@@ -1021,7 +1023,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(size.X, -size.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), GetClipSpace(bottomRight));
@@ -1039,7 +1041,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             rounded = MathF.Min(rounded, radius);
 
@@ -1093,7 +1095,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), GetClipSpace(bottomRight));
@@ -1111,7 +1113,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             if (IsLocal(fill, border)) GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
@@ -1218,7 +1220,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), topLeft - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(topLeft), height: sdfB, aaSize: Aa(aaSize), rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), topLeft - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(topLeft), height: sdfB, aaSize: Aa(aaSize), rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), topRight - shift, GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), bottomRight - shift, GetClipSpace(bottomRight));
@@ -1260,7 +1262,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             float radius3 = radius1 + aaOffset; // Account for AA.
             float radius4 = radius2 + aaOffset; // Account for AA.
@@ -1276,7 +1278,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: Aa(aaSize), a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: Aa(aaSize), a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius4), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius4), GetClipSpace(bottomRight));
@@ -1300,7 +1302,7 @@ namespace Apos.Shapes {
         /// clamped to half the rectangle's smaller side, the same bound corner radii get.
         /// </summary>
         public void DrawChamfer(Vector2 xy, Vector2 size, CornerChamfers chamfers, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             float maxC = MathF.Min(size.X, size.Y) / 2f;
             float cTL = MathHelper.Clamp(chamfers.TopLeft,     0f, maxC);
@@ -1382,7 +1384,7 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -1450,7 +1452,7 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(reach);
             var bottomLeft = center + new Vector2(-reach, reach);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reach, -reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(topLeft), colorSpace: ColorSpace, blur: sigma);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reach, -reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(topLeft), colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(reach, -reach), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(reach, reach), GetClipSpace(bottomRight));
@@ -1493,7 +1495,7 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(topLeft), height, colorSpace: ColorSpace, blur: sigma);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, width, GetClipSpace(topLeft), height, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(reachX, -reachY), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(reachX, reachY), GetClipSpace(bottomRight));
@@ -1547,7 +1549,7 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, blur: sigma);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -1600,7 +1602,7 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: cTR, b: cBR, c: cTL, d: cBL, colorSpace: ColorSpace, blur: sigma);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: cTR, b: cBR, c: cTL, d: cBL, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -1673,7 +1675,7 @@ namespace Apos.Shapes {
             // Same channels a plain line uses, with the far end's half width in the third spare
             // slot. Matching radii there is what asks for the capsule, and the shader answers a
             // taper with the two circles' hull instead, dropping the rounding it has folded in.
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(back, -half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(topLeft), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, blur: sigma);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(back, -half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(topLeft), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(front, -half), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(front, half), GetClipSpace(bottomRight));
@@ -1685,7 +1687,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawArc(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             float angleSize = MathF.Abs(Mod((angle2 - angle1) * 0.5f + MathF.PI, MathF.PI * 2f) - MathF.PI);
             float sin = MathF.Sin(angleSize);
@@ -1723,7 +1725,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: Aa(aaSize), a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: Aa(aaSize), a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius3), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius3), GetClipSpace(bottomRight));
@@ -1741,7 +1743,7 @@ namespace Apos.Shapes {
         }
 
         public void DrawRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
             float angleSize = MathF.Abs(Mod((angle2 - angle1) * 0.5f + MathF.PI, MathF.PI * 2f) - MathF.PI);
 
@@ -1784,7 +1786,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: Aa(aaSize), a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: Aa(aaSize), a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius3), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius3), GetClipSpace(bottomRight));
@@ -2001,6 +2003,7 @@ namespace Apos.Shapes {
                 _indexBuffer.Dispose();
                 _blueNoise.Dispose();
                 _ellipseArc?.Dispose();
+                _rampAtlas?.Dispose();
             }
             _disposed = true;
         }
@@ -2012,6 +2015,8 @@ namespace Apos.Shapes {
             _halfViewportParam?.SetValue(_halfViewport);
             _ditherScale?.SetValue(DitherStrength / 255f);
             _ditherMode?.SetValue(DitherNoiseSource == DitherNoise.BlueNoise ? 1f : 0f);
+            UploadRamps();
+            _rampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -2049,6 +2054,10 @@ namespace Apos.Shapes {
                 }
                 _graphicsDevice.Textures[3] = _blueNoise;
                 _graphicsDevice.SamplerStates[3] = SamplerState.PointWrap;
+                // The ramp unit stays bound to something valid even with no atlas: the shader
+                // only samples it under a ramp flag no quad sets in that case.
+                _graphicsDevice.Textures[4] = _rampAtlas ?? _blueNoise;
+                _graphicsDevice.SamplerStates[4] = SamplerState.PointClamp;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -2056,6 +2065,39 @@ namespace Apos.Shapes {
             _triangleCount = 0;
             _vertexCount = 0;
             _indexCount = 0;
+            // Everything packed so far is drawn, so the rows it referenced are free to recycle.
+            _ramps.Flushed();
+        }
+
+        // Brings the atlas up to date with the global registry by generation: rows the atlas
+        // has never seen and rows recycled since it last looked both come back dirty, and
+        // adjacent dirty rows coalesce into one SetData. Growth reallocates then refills, which
+        // keeps every already packed row index valid. A row is two physical texels per curve
+        // texel, values then integral.
+        private void UploadRamps() {
+            int count = _ramps.Count;
+            if (count == 0) return;
+            if (_rampAtlas == null || _rampAtlas.Height < count) {
+                _rampAtlas?.Dispose();
+                int rows = 16;
+                while (rows < count) rows *= 2;
+                _rampAtlas = new Texture2D(_graphicsDevice, Ramp.Width * 2, rows, false, SurfaceFormat.Color);
+                Array.Clear(_rampGenUploaded);
+            }
+            _ramps.CollectDirty(_rampGenUploaded, _rampDirty, ref _rampBuffer);
+            for (int k = 0; k < _rampDirty.Count;) {
+                if (_rampDirty[k] >= _rampAtlas.Height) {
+                    // Added between the size check and the collect. Only quads packed after this
+                    // flush can reference it, so it waits for the next one, unstamped.
+                    _rampGenUploaded[_rampDirty[k]] = 0;
+                    k++;
+                    continue;
+                }
+                int run = 1;
+                while (k + run < _rampDirty.Count && _rampDirty[k + run] == _rampDirty[k] + run && _rampDirty[k + run] < _rampAtlas.Height) run++;
+                _rampAtlas.SetData(0, new Rectangle(0, _rampDirty[k], Ramp.Width * 2, run), _rampBuffer, k * Ramp.Width * 8, run * Ramp.Width * 8);
+                k += run;
+            }
         }
         // World units per pixel at a point on the z = 0 plane: the largest singular value
         // of the screen→world Jacobian of the view, projection and viewport chain. It is a
@@ -2179,6 +2221,26 @@ namespace Apos.Shapes {
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
         }
 
+        // The gradient-taking form also seats the rows the quad's ramps and color ramps need,
+        // before anything packs. Rows pin from first pack to flush, so a table refusing means
+        // this batch referenced 256 distinct curves since its last flush, and drawing them is
+        // what makes room; after the flush nothing is pinned and the repin can't fail.
+        private void PrepareQuad(in Gradient fill, in Gradient border) {
+            PrepareQuad();
+            if (fill.R != null || fill.Colors != null || border.R != null || border.Colors != null) {
+                if (!PinRamps(fill, border)) {
+                    Flush();
+                    PinRamps(fill, border);
+                }
+            }
+        }
+        private bool PinRamps(in Gradient fill, in Gradient border) {
+            return (fill.Colors == null || fill.Colors.TryPin(_ramps, ColorSpace))
+                && (fill.R == null || fill.R.TryPin(_ramps))
+                && (border.Colors == null || border.Colors.TryPin(_ramps, ColorSpace))
+                && (border.R == null || border.R.TryPin(_ramps));
+        }
+
         // Hollow shapes (rings, arcs, transparent fills with a border) only shade a thin band, so they
         // get a mesh that skips the interior instead of one big quad. The pixel shader reads the SDF
         // from linearly interpolated local coordinates, so any mesh renders identically as long as each
@@ -2197,9 +2259,9 @@ namespace Apos.Shapes {
         }
 
         private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
-            PrepareQuad();
+            PrepareQuad(fill, border);
 
-            VertexShape v = new(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, GetClipSpace(w0), height, aaSize: Aa(aaSize), rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, dash: dash);
+            VertexShape v = new(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, GetClipSpace(w0), height, aaSize: Aa(aaSize), rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: dash);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(w1, 0), l1, GetClipSpace(w1));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(w2, 0), l2, GetClipSpace(w2));
@@ -2493,9 +2555,19 @@ namespace Apos.Shapes {
         private readonly EffectParameter? _halfViewportParam;
         private readonly EffectParameter? _ditherScale;
         private readonly EffectParameter? _ditherMode;
+        private readonly EffectParameter? _rampTexel;
         private readonly Texture2D _blueNoise;
         // Built the first time an ellipse is dashed, since nothing else reads it.
         private Texture2D? _ellipseArc;
+        // This batch's own ramp table and the atlas that mirrors it lazily by row generation,
+        // so recycled rows reupload exactly like new ones. Rows referenced since the last
+        // flush stay pinned, so they can't be recycled out from under the quads that packed
+        // them; PrepareQuad's pre-pin flushes early when all 256 are.
+        private Texture2D? _rampAtlas;
+        private readonly RampTable _ramps = new();
+        private readonly int[] _rampGenUploaded = new int[256];
+        private readonly List<int> _rampDirty = new();
+        private byte[] _rampBuffer = Array.Empty<byte>();
 
         private float _pixelSize = 1f;
         private Matrix _worldToClip = Matrix.Identity;

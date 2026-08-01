@@ -88,6 +88,8 @@ namespace GameProject {
                 case Scene.Arc: DrawArcScene(font); break;
                 case Scene.Gradient: DrawGradientScene(font); break;
                 case Scene.Palette: DrawPaletteScene(font); break;
+                case Scene.Ramp: DrawRampScene(font); break;
+                case Scene.ColorRamp: DrawColorRampScene(font); break;
                 case Scene.ColorSpace: DrawColorSpaceScene(font); break;
                 case Scene.Clip: DrawClipScene(font); break;
                 case Scene.Text: DrawTextScene(font, titleFont); break;
@@ -138,6 +140,8 @@ namespace GameProject {
             Scene.Arc => "Arc and ring",
             Scene.Gradient => "Gradients",
             Scene.Palette => "Palettes",
+            Scene.Ramp => "Ramps",
+            Scene.ColorRamp => "Color ramps",
             Scene.ColorSpace => "Color spaces",
             Scene.Clip => "Clipping",
             Scene.Text => "Text",
@@ -732,6 +736,173 @@ namespace GameProject {
             _sb.End();
         }
 
+        // Built once and reused on purpose: each distinct curve takes a row of a shared table.
+        private static readonly Ramp _rampEase = new((0f, 0f), (0.35f, 0.04f), (0.65f, 0.96f), (1f, 1f));
+        private static readonly Ramp _rampPulse = new((0f, 0f), (0.5f, 1f), (1f, 0f));
+        private static readonly Ramp _rampSteps = new((0f, 0f), (0.25f, 0f), (0.25f, 1f / 3f), (0.5f, 1f / 3f), (0.5f, 2f / 3f), (0.75f, 2f / 3f), (0.75f, 1f), (1f, 1f));
+        private static readonly Ramp _rampQuarters = new((0f, 0f), (0.25f, 0f), (0.25f, 0.25f), (0.5f, 0.25f), (0.5f, 0.5f), (0.75f, 0.5f), (0.75f, 0.75f), (1f, 0.75f));
+        private static readonly Ramp _rampSplit = new((0f, 0f), (0.6f, 0f), (0.6f, 1f), (1f, 1f));
+        private static readonly Ramp _rampStripe = new((0f, 0f), (0.35f, 0f), (0.35f, 1f), (0.5f, 1f), (0.5f, 0f), (1f, 0f));
+        private static readonly Ramp _rampMixed = new((0f, 0f), (0.3f, 0f), (0.3f, 1f), (0.55f, 1f), (0.55f, 0.15f), (1f, 0.9f));
+
+        private void DrawRampScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+
+            // The rainbow rows are tuned for raw RGB channels, same as the palette scene.
+            _sb.ColorSpace = ColorSpace.Rgb;
+
+            L(-348, "A Ramp reshapes t before the colors apply. Stops are (position, value) pairs, straight lines between");
+            (string Name, Ramp R)[] curves = [
+                ("no ramp", null),
+                ("ease", _rampEase),
+                ("up and back", _rampPulse),
+                ("four steps", _rampSteps),
+            ];
+            for (int i = 0; i < curves.Length; i++) {
+                float y = _rowA - 42 + i * 28;
+                var g = curves[i].R == null
+                    ? new Gradient(new Vector2(-600, y), TWColor.Amber300, new Vector2(300, y), TWColor.Indigo600)
+                    : new Gradient(new Vector2(-600, y), TWColor.Amber300, new Vector2(300, y), TWColor.Indigo600, curves[i].R);
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22), g, 4f);
+                Under(320, y - 2, curves[i].Name);
+            }
+
+            L(-180, "Two stops on one position make a hard edge, wherever it is asked for");
+            (string Name, Ramp R)[] hard = [
+                ("hard stop at 0.6", _rampSplit),
+                ("stripe 0.35 to 0.5", _rampStripe),
+                ("band, then a fade", _rampMixed),
+            ];
+            for (int i = 0; i < hard.Length; i++) {
+                float y = _rowB - 28 + i * 28;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), TWColor.Amber300, new Vector2(300, y), TWColor.Indigo600, hard[i].R), 4f);
+                Under(320, y - 2, hard[i].Name);
+            }
+
+            L(-30, "The curve rides the gradient value, so every shape takes one");
+            (string Name, Gradient.Shape Shape, Ramp R)[] shaped = [
+                ("Radial", Gradient.Shape.Radial, _rampSplit),
+                ("Conical", Gradient.Shape.Conical, _rampStripe),
+                ("SpiralCW", Gradient.Shape.SpiralCW, _rampSplit),
+                ("Square", Gradient.Shape.Square, _rampSteps),
+            ];
+            for (int i = 0; i < shaped.Length; i++) {
+                float x = -560 + i * 152;
+                _sb.FillCircle(new Vector2(x, _rowC), 46,
+                    new Gradient(new Vector2(x, _rowC), TWColor.Amber300, new Vector2(x + 46, _rowC), TWColor.Indigo600, shaped[i].R, shaped[i].Shape));
+                Under(x - 44, _rowC + 52, shaped[i].Name);
+            }
+            _sb.FillRectangle(new Vector2(-10, _rowC - 11), new Vector2(610, 22),
+                new Gradient(new Vector2(-10, _rowC), TWColor.Amber300, new Vector2(142.5f, _rowC), TWColor.Indigo600, _rampSplit, Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 4f);
+            Under(-10, _rowC + 52, "Sawtooth carries the stop across the seam");
+
+            L(128, "A palette colors what the curve picks, so hard stops cut bands through many colors");
+            var half = new Vector3(0.5f);
+            var rainbow = new Palette(half, half, new Vector3(1f), new Vector3(0f, 0.33f, 0.67f));
+            _sb.FillRectangle(new Vector2(-600, _rowD - 42), new Vector2(900, 22),
+                new Gradient(new Vector2(-600, _rowD - 42), new Vector2(300, _rowD - 42), rainbow, _rampQuarters), 4f);
+            Under(320, _rowD - 44, "rainbow in quarters");
+            _sb.DrawRectangle(new Vector2(-600, _rowD - 14), new Vector2(900, 22), TWColor.Gray800,
+                new Gradient(new Vector2(-600, _rowD - 14), TWColor.Amber300, new Vector2(300, _rowD - 14), TWColor.Indigo600, _rampStripe), 6f, default);
+            Under(320, _rowD - 16, "a border takes one");
+            float slide = _dashOffset * 0.2f;
+            _sb.FillRectangle(new Vector2(-600, _rowD + 14), new Vector2(900, 22),
+                new Gradient(new Vector2(-600, _rowD + 14), new Vector2(300, _rowD + 14), new Palette(half, half, new Vector3(1f), new Vector3(slide, 0.33f + slide, 0.67f + slide)), _rampQuarters), 4f);
+            Under(320, _rowD + 12, "animated phase");
+            _sb.ColorSpace = ColorSpace.Oklab;
+
+            Footer(font, "Each curve bakes into a row of a shared 256 row table, and rows that stop drawing recycle when it fills");
+            _sb.End();
+        }
+
+        // Static because the stops only bake once per instance and color space. Rebuilding one
+        // every frame works too, which is what the last bar of the scene does.
+        private static readonly ColorRamp _colorsSmooth = new((0f, TWColor.Amber300), (0.5f, TWColor.Rose500), (1f, TWColor.Indigo600));
+        private static readonly ColorRamp _colorsFive = new((0f, TWColor.Red600), (0.25f, TWColor.Amber300), (0.5f, TWColor.Emerald500), (0.75f, TWColor.Sky400), (1f, TWColor.Indigo600));
+        private static readonly ColorRamp _colorsSpectrum = new((0f, TWColor.Red600), (0.15f, TWColor.Orange400), (0.3f, TWColor.Amber300), (0.45f, TWColor.Emerald500), (0.6f, TWColor.Teal400), (0.75f, TWColor.Sky400), (0.9f, TWColor.Indigo600), (1f, TWColor.Purple700));
+        private static readonly ColorRamp _colorsHeld = new((0f, TWColor.Amber300), (0.35f, TWColor.Amber300), (0.65f, TWColor.Indigo600), (1f, TWColor.Indigo600));
+        private static readonly ColorRamp _colorsBands = new((0f, TWColor.Emerald500), (1f / 3f, TWColor.Emerald500), (1f / 3f, TWColor.Amber300), (2f / 3f, TWColor.Amber300), (2f / 3f, TWColor.Rose500), (1f, TWColor.Rose500));
+        private static readonly ColorRamp _colorsCut = new((0f, TWColor.Sky400), (0.6f, TWColor.Indigo600), (0.6f, TWColor.Amber300), (1f, TWColor.Amber300));
+        private static readonly ColorRamp _colorsAlpha = new((0f, new Color(TWColor.Cyan400, 0f)), (0.5f, TWColor.Cyan400), (0.5f, TWColor.Fuchsia500), (1f, new Color(TWColor.Fuchsia500, 0.15f)));
+        private static readonly ColorRamp _colorsSpaces = new((0f, TWColor.Yellow300), (0.5f, TWColor.Emerald500), (1f, TWColor.Blue700));
+
+        private void DrawColorRampScene(FontStashSharp.SpriteFontBase font) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+
+            L(-348, "A ColorRamp colors a gradient from (position, color) stops, as many as you want");
+            (string Name, ColorRamp C)[] basics = [
+                ("3 stops", _colorsSmooth),
+                ("5 stops", _colorsFive),
+                ("8 stops", _colorsSpectrum),
+                ("held ends", _colorsHeld),
+            ];
+            for (int i = 0; i < basics.Length; i++) {
+                float y = _rowA - 42 + i * 28;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), new Vector2(300, y), basics[i].C), 4f);
+                Under(320, y - 2, basics[i].Name);
+            }
+
+            L(-180, "Two stops on one position make a hard edge, and every stop pins its color to its own position");
+            (string Name, ColorRamp C)[] hard = [
+                ("three bands", _colorsBands),
+                ("a fade, then a cut", _colorsCut),
+                ("alpha in the stops", _colorsAlpha),
+            ];
+            for (int i = 0; i < hard.Length; i++) {
+                float y = _rowB - 28 + i * 28;
+                // The last bar goes over a gray one, so where its stops thin out you see through it.
+                if (hard[i].C == _colorsAlpha) {
+                    _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22), TWColor.Gray400, 4f);
+                }
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), new Vector2(300, y), hard[i].C), 4f);
+                Under(320, y - 2, hard[i].Name);
+            }
+
+            L(-30, "The stops ride the gradient value, so every shape takes one");
+            (string Name, Gradient.Shape Shape)[] shaped = [
+                ("Radial", Gradient.Shape.Radial),
+                ("Conical", Gradient.Shape.Conical),
+                ("Square", Gradient.Shape.Square),
+                ("SpiralCW", Gradient.Shape.SpiralCW),
+            ];
+            for (int i = 0; i < shaped.Length; i++) {
+                float x = -560 + i * 152;
+                _sb.FillCircle(new Vector2(x, _rowC), 46,
+                    new Gradient(new Vector2(x, _rowC), new Vector2(x + 46, _rowC), _colorsBands, shaped[i].Shape));
+                Under(x - 44, _rowC + 52, shaped[i].Name);
+            }
+            _sb.FillRectangle(new Vector2(-10, _rowC - 11), new Vector2(610, 22),
+                new Gradient(new Vector2(-10, _rowC), new Vector2(142.5f, _rowC), _colorsBands, Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 4f);
+            Under(-10, _rowC + 52, "Sawtooth carries the edge across the seam");
+
+            L(128, "The stops blend in the batch's ColorSpace. Moving one rebakes, where a Palette slides a float");
+            (string Name, ColorSpace Space)[] spaced = [("Rgb", ColorSpace.Rgb), ("Oklab", ColorSpace.Oklab), ("Oklch", ColorSpace.Oklch)];
+            for (int i = 0; i < spaced.Length; i++) {
+                float y = _rowD - 42 + i * 28;
+                _sb.ColorSpace = spaced[i].Space;
+                _sb.FillRectangle(new Vector2(-600, y), new Vector2(900, 22),
+                    new Gradient(new Vector2(-600, y), new Vector2(300, y), _colorsSpaces), 4f);
+                Under(320, y - 2, spaced[i].Name);
+            }
+            // Rebuilt every frame: the rows it takes recycle once it stops asking for them.
+            _sb.ColorSpace = ColorSpace.Oklab;
+            float mid = 0.5f + 0.35f * MathF.Sin(_dashOffset * 0.1f);
+            var moving = new ColorRamp((0f, TWColor.Sky400), (mid, TWColor.Fuchsia500), (mid, TWColor.Amber300), (1f, TWColor.Emerald500));
+            _sb.FillRectangle(new Vector2(-600, _rowD + 42), new Vector2(900, 22),
+                new Gradient(new Vector2(-600, _rowD + 42), new Vector2(300, _rowD + 42), moving), 4f);
+            Under(320, _rowD + 40, "animated stops");
+
+            Footer(font, "Every space bakes two rows of the shared table, and undrawn rows recycle, so stops can move each frame");
+            _sb.End();
+        }
+
         private void DrawColorSpaceScene(FontStashSharp.SpriteFontBase font) {
             _sb.Begin(_camera.View);
             void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
@@ -1133,6 +1304,8 @@ namespace GameProject {
             Arc,
             Gradient,
             Palette,
+            Ramp,
+            ColorRamp,
             ColorSpace,
             Clip,
             Text,

@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Chamfers. `DrawChamfer`, `FillChamfer`, and `BorderChamfer` draw a rectangle whose corners are cut straight across. A `CornerChamfers` sets how far back each corner is cut. They take gradients, dashes, clipping, and rotation like every other shape.
 - Palettes. A `Gradient` takes a `Palette` in place of its two stop colors: `bias + amplitude * cos(tau * (frequency * t + phase))` per channel, so one gradient runs through many colors. Takes every gradient shape, repeat style, offset, local space, and color space, and tiles with no seam on `Sawtooth`.
+- `Palette.FromStops`, which fits a palette through color stops instead of cosine parameters.
+- Ramps. A `Gradient` takes a `Ramp`, a curve of `(position, value)` stops that reshapes how it travels between its colors. Two stops on one position make a hard edge, antialiased like a shape edge, so a two stop gradient or a palette cuts into bands at arbitrary positions.
+- Color ramps. A `Gradient` takes a `ColorRamp`, `(position, color)` stops in place of its two stop colors, so one gradient runs through as many colors as you want. Two stops on one position make a hard edge, antialiased like a shape edge. Takes every gradient shape, repeat style, offset, local space, and color space, and the fill and border each take their own.
+- Ramps and color ramps can be rebuilt every frame, so their stops animate. Past 256 distinct ones in a batch, the batch flushes early to make room.
 - `FillChamferBlurred` and `BorderChamferBlurred`.
 - `Measure.Chamfer` and `Measure.ChamferBlurred`.
 

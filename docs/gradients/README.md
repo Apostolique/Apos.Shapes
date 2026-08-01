@@ -146,11 +146,11 @@ The local origin follows the shape:
 A `Palette` colors a gradient from cosines instead of two stops. Each channel is `bias + amplitude * cos(tau * (frequency * t + phase))`, the construction from [Inigo Quilez's palette article](https://iquilezles.org/articles/palettes/), so one gradient can run through many colors:
 
 ```csharp
+var rainbow = new Palette(
+    new Vector3(0.5f), new Vector3(0.5f),
+    new Vector3(1f), new Vector3(0f, 0.33f, 0.67f));
 _sb.FillRectangle(new Vector2(20, 20), new Vector2(400, 40), new Gradient(
-    new Vector2(20, 0), new Vector2(420, 0),
-    new Palette(
-        new Vector3(0.5f), new Vector3(0.5f),
-        new Vector3(1f), new Vector3(0f, 0.33f, 0.67f))));
+    new Vector2(20, 0), new Vector2(420, 0), rainbow));
 ```
 
 ![A rainbow cosine palette](palette.png)
@@ -164,6 +164,72 @@ Frequencies snap to whole numbers, which is what lets a palette wrap onto itself
 Only the colors change, so a palette takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. The channels follow the `ColorSpace`: in `Rgb` they are the raw sRGB channels like the article, in `Oklab` the cosines swing lightness and the two color axes instead. Animating the phase slides every color along the palette for the cost of passing a different float.
 
 The parameters quantize when the shape is drawn: bias and amplitude in steps of 1/127, phase in steps of 1/512 of a cycle, alpha in steps of 1/63, and frequencies to whole numbers from 0 to 15. Texture and string masks don't take palettes, and blurred shapes keep taking a flat color.
+
+`Palette.FromStops` fits a palette through color stops when you'd rather pick colors than cosine parameters:
+
+```csharp
+var fitted = Palette.FromStops(ColorSpace.Oklab,
+    (0f, new Color(251, 191, 36)), (0.5f, new Color(147, 51, 234)), (1f, new Color(8, 145, 178)));
+```
+
+Each channel picks the whole number frequency and the cosine that pass nearest the stops, weighted so the stops themselves count most. The fit is an approximation: one cosine can hit three stops exactly and runs close past more, but it can't hold flat or make a hard edge. A palette also always ends where it started, so stops whose two ends differ can't both land. Passing `mirrored: true` fits the stops into the front half of the palette and their reflection into the back half: aim the gradient across twice the distance you want and the shape runs through the stops once. Fit in the space you draw with, since the cosines run in the batch's `ColorSpace`. For exact colors at exact positions there's `ColorRamp` below; the fitted palette is the one that can animate.
+
+## Ramps
+
+A `Ramp` reshapes how a gradient travels between its colors. The gradient value runs through the curve first, so the stops land where the curve puts them instead of evenly. Stops are `(position, value)` pairs in [0, 1] with straight lines between them:
+
+```csharp
+_sb.FillRectangle(new Vector2(20, 20), new Vector2(400, 40), new Gradient(
+    new Vector2(20, 0), new Color(96, 165, 250),
+    new Vector2(420, 0), new Color(220, 38, 38),
+    new Ramp((0f, 0f), (0.3f, 0f), (0.7f, 1f), (1f, 1f))));
+```
+
+![A gradient held solid on both ends by a ramp](ramp.png)
+
+This holds the first color for 30% of the run, fades across the middle, and holds the second color for the rest.
+
+Two stops on the same position make a hard edge. The curve only ever lands on blends of the two stop colors though, so bands of many colors come from a `ColorRamp` below when you want exact colors at exact positions, or from a `Palette`, which colors whatever the curve picks. Here the `rainbow` from the last section, cut into quarters:
+
+```csharp
+_sb.FillRectangle(new Vector2(20, 20), new Vector2(400, 40), new Gradient(
+    new Vector2(20, 0), new Vector2(420, 0), rainbow, new Ramp(
+        (0f, 0f), (0.25f, 0f), (0.25f, 0.25f), (0.5f, 0.25f),
+        (0.5f, 0.5f), (0.75f, 0.5f), (0.75f, 0.75f), (1f, 0.75f))));
+```
+
+![A rainbow palette cut into four hard bands](ramp-bands.png)
+
+The curve rides the gradient value, so a ramp takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. Hard edges are antialiased like shape edges, and a `Sawtooth` repeat carries them cleanly across the seam.
+
+Positions snap to a 256 step grid when the curve bakes, so a stop lands within 1/512 of where it was asked for. Each distinct curve takes a row of the batch's 256 row table, and when the table fills, the row that has gone longest undrawn recycles. Build ramps once where you can, though rebuilding one every frame works: going past 256 distinct curves in one batch makes the batch flush early to make room, which costs a draw call. Texture and string masks don't take ramps. On a ramped palette the phase quantizes in steps of 1/64 of a cycle instead of 1/512.
+
+## Color ramps
+
+A `ColorRamp` colors a gradient from `(position, color)` stops instead of two colors. Positions are in [0, 1] and the colors blend between them:
+
+```csharp
+var sunset = new ColorRamp(
+    (0f, new Color(251, 191, 36)),
+    (0.45f, new Color(236, 72, 153)),
+    (0.7f, new Color(147, 51, 234)),
+    (0.7f, new Color(45, 212, 191)),
+    (1f, new Color(8, 145, 178)));
+_sb.FillRectangle(new Vector2(20, 20), new Vector2(400, 40), new Gradient(
+    new Vector2(20, 0), new Vector2(420, 0), sunset));
+```
+
+![A gradient from amber through pink to purple, cutting to teal](color-ramp.png)
+
+This blends amber through pink into purple, then cuts straight to teal at 70%.
+
+Stops blend the way the two stop colors do: alpha weighted, in the batch's `ColorSpace`, with `Oklch` taking the short way around the hue wheel. Two stops on the same position make a hard edge, antialiased like a shape edge and exact at any zoom.
+
+Only the colors change, so a color ramp takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. A `Sawtooth` repeat carries the hard edges cleanly across the seam.
+
+Positions snap to the same 256 step grid ramps use. Colors quantize to 8 bits per channel in the color space's own frame, and the batch's dither covers those steps like it covers the display's. Each color space you actually draw with bakes two rows of the batch's table. Texture and string masks don't take color ramps, and blurred shapes keep taking a flat color.
+
+Rows recycle, so rebuilding the stops every frame animates a color ramp. That costs a bake per frame though, so sliding a palette's phase is still the cheaper animation.
 
 ## Banding
 
