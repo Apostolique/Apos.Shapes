@@ -2185,11 +2185,13 @@ float4 RampBox(float t, float row, float aaT, bool wrapped) {
 }
 
 // A color ramp is RampBox rebuilt for colors. One logical texel is two physical texels
-// holding the color at the texel's two edges as straight RGBA8 in the active space's
-// remapped frame, one-sided limits like the scalar row's, so a hard stop sits exactly
-// between two texels. A companion row keeps each channel's running integral at the texel's
-// start as unorm16 pairs, [R G] then [B A], read apart by hand for the same reason as
-// everywhere else.
+// holding the color at the texel's two edges as straight RGBA8, one-sided limits like the
+// scalar row's, so a hard stop sits exactly between two texels. A companion row keeps each
+// channel's running integral at the texel's start as unorm16 pairs, [R G] then [B A], read
+// apart by hand for the same reason as everywhere else. The row is in the batch's remapped
+// frame, except that Oklch bakes into Oklab's axes so none of the filters below average a
+// hue angle across the wheel (see Bake in ColorRamp.cs), which is why the call sites read
+// what comes back through Oklab.
 float4 LutTexel(float row, float col, float side) {
     return SampleRamp(float2((col * 2.0 + 0.5 + side) * ramp_texel.x, (row + 0.5) * ramp_texel.y));
 }
@@ -2925,12 +2927,16 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         float tAa, wrapF;
         float t = Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy, fillPal, fillRamp || fillLut, tAa, wrapF);
         float4 c;
+        float cSpace = space;
         if (fillPal) {
             c = PaletteColor(fillPk, t, tAa, wrapF, fillRamp);
         } else if (fillLut) {
             float m = fillPk.z;
             float introw = DecodeDigit(m, 2048.0);
             c = LutColor(t, m, introw, tAa, wrapF > 0.5);
+            // The row carries Oklch on Oklab's axes, so Oklch reads back as Oklab. Oklab and
+            // Rgb stay themselves, which is what max leaves them as.
+            cSpace = max(space, 1.0);
         } else {
             if (fillRamp) {
                 float row = StopRampRow(fillPk, fillZN, fillWN, fillA, fillB);
@@ -2940,7 +2946,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             }
             c = LerpColorPremul(fillA, fillB, t, space);
         }
-        fr = ToRgb(c, space);
+        fr = ToRgb(c, cSpace);
         fr.rgb *= fr.a;
         // A shared gradient leaves the border reading exactly this, so it never runs its own.
         br = fr;
@@ -2950,12 +2956,14 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         float tAa, wrapF;
         float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
         float4 c;
+        float cSpace = space;
         if (borderPal) {
             c = PaletteColor(borderPk, t, tAa, wrapF, borderRamp);
         } else if (borderLut) {
             float m = borderPk.z;
             float introw = DecodeDigit(m, 2048.0);
             c = LutColor(t, m, introw, tAa, wrapF > 0.5);
+            cSpace = max(space, 1.0);
         } else {
             float4 bA = UnpackColor(borderPk.xy);
             float4 bB = UnpackColor(borderPk.zw);
@@ -2965,7 +2973,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             }
             c = LerpColorPremul(bA, bB, t, space);
         }
-        br = ToRgb(c, space);
+        br = ToRgb(c, cSpace);
         br.rgb *= br.a;
     }
 

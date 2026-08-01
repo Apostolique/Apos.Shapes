@@ -200,7 +200,7 @@ namespace Apos.Shapes {
         // hue after the first takes the branch within half a turn of the one before it so the
         // fit follows the short way around the wheel. An unwrapped hue can leave [0, 1]; the
         // channel clamps when it evaluates, so a track that winds past a full turn frays there.
-        // ColorRamp's bake shares this and recenters per texel instead, so it doesn't fray.
+        // ColorRamp's bake shares this and lands its row in Oklab's axes, so it doesn't fray.
         internal static void UnwrapHues(float[] pos, Vector4[] val) {
             const float achromatic = 1e-4f * 2.5f;
             int first = -1;

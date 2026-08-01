@@ -10,8 +10,8 @@ namespace Apos.Shapes {
     /// grid when the stops bake, so a stop lands within 1/512 of where it was asked for.
     /// Each color space actually drawn bakes two rows of the batch's 256 row ramp table, so
     /// build color ramps once and reuse them where possible, the same as ramps. Colors
-    /// quantize to 8 bits per channel in the space's own frame; the batch's dither covers the
-    /// difference the same way it covers the display's.
+    /// quantize to 8 bits per channel, and the batch's dither covers the difference the same
+    /// way it covers the display's.
     /// </summary>
     public sealed class ColorRamp {
         /// <param name="stops">
@@ -98,12 +98,19 @@ namespace Apos.Shapes {
             return slot;
         }
 
-        // Each color texel takes two RGBA8 slots holding the color at the texel's two edges in
-        // the space's remapped frame, with one-sided limits so a jump sits exactly between two
-        // texels and stays a jump. The companion row keeps each channel's running integral at
-        // the texel's start as unorm16 pairs, accumulated from the quantized edge bytes so the
-        // shader's own trapezoids land on exactly the same numbers. The integral is what lets
-        // the shader box filter the row over an AA band wider than a texel in two reads.
+        // Each color texel takes two RGBA8 slots holding the color at the texel's two edges,
+        // with one-sided limits so a jump sits exactly between two texels and stays a jump. The
+        // companion row keeps each channel's running integral at the texel's start as unorm16
+        // pairs, accumulated from the quantized edge bytes so the shader's own trapezoids land
+        // on exactly the same numbers. The integral is what lets the shader box filter the row
+        // over an AA band wider than a texel in two reads.
+        //
+        // Rgb and Oklab bake in their own remapped frame. Oklch blends in its own so the stops
+        // still hold chroma and take the short way around the wheel, then the result lands on
+        // Oklab's axes. Every filter the shader runs over the row is a plain average and a hue
+        // is an angle, so a crossing of the wheel would bake as a jump from a full turn back to
+        // none and average through the opposite color over the pixel that straddles it. The
+        // shader reads a color ramp's row through Oklab in either space.
         private Slot Bake(ColorSpace space) {
             int n = _pos.Length;
             var val = new Vector4[n];
@@ -121,12 +128,8 @@ namespace Apos.Shapes {
                 Vector4 c0 = Eval(val, i / (float)Ramp.Width, fromLeft: false);
                 Vector4 c1 = Eval(val, (i + 1) / (float)Ramp.Width, fromLeft: true);
                 if (space == ColorSpace.Oklch) {
-                    // Hue is periodic, so each texel recenters its pair on its own turn: a
-                    // crossing of the wheel bakes as a jump from 1 to 0 between two texels,
-                    // which is the same angle and costs nothing.
-                    float k = MathF.Floor((c0.Z + c1.Z) * 0.5f);
-                    c0.Z -= k;
-                    c1.Z -= k;
+                    c0 = ToOklabFrame(c0);
+                    c1 = ToOklabFrame(c1);
                 }
                 for (int ch = 0; ch < 4; ch++) {
                     int q0 = Q8(Get(c0, ch));
@@ -171,6 +174,14 @@ namespace Apos.Shapes {
                 a.Y + (b.Y - a.Y) * tc,
                 a.Z + (b.Z - a.Z) * tc,
                 oa);
+        }
+
+        // The same color on Oklab's two axes, straight off the chroma and hue Oklch's frame
+        // carries. Chroma is the Y channel over 2.5 and an axis remaps by 1.25, so the two
+        // constants multiply out to the 0.5 below.
+        private static Vector4 ToOklabFrame(Vector4 c) {
+            float hue = (c.Z - 0.5f) * MathF.Tau;
+            return new Vector4(c.X, c.Y * 0.5f * MathF.Cos(hue) + 0.5f, c.Y * 0.5f * MathF.Sin(hue) + 0.5f, c.W);
         }
 
         private static int Q8(float v) {

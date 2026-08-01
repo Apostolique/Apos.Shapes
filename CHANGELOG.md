@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.7.14] - 2026-08-01
+
+### Fixed
+
+- A `ColorRamp` drawn in `Oklch` painted a one pixel line of the opposite color wherever its hue crossed the wheel.
+
 ## [0.7.13] - 2026-08-01
 
 ### Added
@@ -362,7 +368,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.13...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.14...HEAD
+[0.7.14]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.13...v0.7.14
 [0.7.13]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...v0.7.13
 [0.7.12]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...v0.7.12
 [0.7.11]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.10...v0.7.11
