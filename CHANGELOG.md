@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.7.13] - 2026-08-01
+
 ### Added
 
 - Chamfers. `DrawChamfer`, `FillChamfer`, and `BorderChamfer` draw a rectangle whose corners are cut straight across. A `CornerChamfers` sets how far back each corner is cut. They take gradients, dashes, clipping, and rotation like every other shape.
@@ -359,8 +363,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Everything!
 
 [Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...HEAD
-[0.7.11]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...v0.7.12
-[0.7.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.10...v0.7.11
+[0.7.12]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...v0.7.12
+[0.7.11]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.10...v0.7.11
 [0.7.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.9...v0.7.10
 [0.7.9]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.8...v0.7.9
 [0.7.8]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.7...v0.7.8
