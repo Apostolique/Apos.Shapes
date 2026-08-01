@@ -362,7 +362,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.13...HEAD
+[0.7.13]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...v0.7.13
 [0.7.12]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...v0.7.12
 [0.7.11]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.10...v0.7.11
 [0.7.10]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.9...v0.7.10
