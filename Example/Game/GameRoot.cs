@@ -5,7 +5,6 @@ using Microsoft.Xna.Framework.Input;
 using Apos.Input;
 using Apos.Shapes;
 using Apos.Camera;
-using FontStashSharp;
 using MonoGame.Extended;
 
 namespace GameProject {
@@ -37,8 +36,9 @@ namespace GameProject {
             IVirtualViewport defaultViewport = new DefaultViewport(GraphicsDevice, Window);
             _camera = new Camera(defaultViewport);
 
-            _fontSystem = new FontSystem();
-            _fontSystem.AddFont(TitleContainer.OpenStream($"{Content.RootDirectory}/source-code-pro-medium.ttf"));
+            using (var ttf = TitleContainer.OpenStream($"{Content.RootDirectory}/source-code-pro-medium.ttf")) {
+                _font = new ShapeFont(ttf);
+            }
         }
 
         protected override void Update(GameTime gameTime) {
@@ -72,39 +72,39 @@ namespace GameProject {
             _fps.Draw(gameTime);
             GraphicsDevice.Clear(TWColor.Gray950);
 
-            var font = _fontSystem.GetFont(24);
-            var titleFont = _fontSystem.GetFont(48);
+            const float fontSize = 24f;
+            const float titleSize = 36f;
 
             _sb.DitherStrength = _ditherMode == 2 ? 0f : _demoStrength;
             _sb.DitherNoiseSource = _ditherMode == 1 ? DitherNoise.InterleavedGradient : DitherNoise.BlueNoise;
 
             switch (_currentScene) {
-                case Scene.Circle: DrawCircleScene(font); break;
-                case Scene.Rectangle: DrawRectangleScene(font); break;
-                case Scene.Chamfer: DrawChamferScene(font); break;
-                case Scene.Polygon: DrawPolygonScene(font); break;
-                case Scene.Line: DrawLineScene(font); break;
-                case Scene.Path: DrawPathScene(font); break;
-                case Scene.Arc: DrawArcScene(font); break;
-                case Scene.Gradient: DrawGradientScene(font); break;
-                case Scene.Palette: DrawPaletteScene(font); break;
-                case Scene.Ramp: DrawRampScene(font); break;
-                case Scene.ColorRamp: DrawColorRampScene(font); break;
-                case Scene.ColorSpace: DrawColorSpaceScene(font); break;
-                case Scene.Clip: DrawClipScene(font); break;
-                case Scene.Text: DrawTextScene(font, titleFont); break;
+                case Scene.Circle: DrawCircleScene(fontSize); break;
+                case Scene.Rectangle: DrawRectangleScene(fontSize); break;
+                case Scene.Chamfer: DrawChamferScene(fontSize); break;
+                case Scene.Polygon: DrawPolygonScene(fontSize); break;
+                case Scene.Line: DrawLineScene(fontSize); break;
+                case Scene.Path: DrawPathScene(fontSize); break;
+                case Scene.Arc: DrawArcScene(fontSize); break;
+                case Scene.Gradient: DrawGradientScene(fontSize); break;
+                case Scene.Palette: DrawPaletteScene(fontSize); break;
+                case Scene.Ramp: DrawRampScene(fontSize); break;
+                case Scene.ColorRamp: DrawColorRampScene(fontSize); break;
+                case Scene.ColorSpace: DrawColorSpaceScene(fontSize); break;
+                case Scene.Clip: DrawClipScene(fontSize); break;
+                case Scene.Text: DrawTextScene(fontSize); break;
                 case Scene.Dash: DrawDashScene(); break;
                 case Scene.Closed: DrawClosedScene(); break;
-                case Scene.Blur: DrawBlurScene(font); break;
-                case Scene.Banding: DrawBandingScene(font); break;
-                default: DrawMainScene(font, titleFont); break;
+                case Scene.Blur: DrawBlurScene(fontSize); break;
+                case Scene.Banding: DrawBandingScene(fontSize); break;
+                default: DrawMainScene(fontSize, titleSize); break;
             }
 
-            DrawSceneHeader(font);
+            DrawSceneHeader(fontSize);
 
             if (_showDebug) {
                 _sb.Begin();
-                _sb.DrawString(font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 40), Color.White);
+                _sb.DrawString(_font, $"fps: {_fps.FramesPerSecond} - Dropped Frames: {_fps.DroppedFrames} - Draw ms: {_fps.TimePerFrame} - Update ms: {_fps.TimePerUpdate}", new Vector2(10, 40), fontSize, Color.White);
                 _sb.End();
             }
 
@@ -116,16 +116,16 @@ namespace GameProject {
         // to each scene's first label and the bottom left to the scenes' own footers. Main fills
         // its bottom row edge to edge but leaves the top strip clear, so it alone keeps the
         // header up top.
-        private void DrawSceneHeader(FontStashSharp.SpriteFontBase font) {
+        private void DrawSceneHeader(float fontSize) {
             int count = Enum.GetNames<Scene>().Length;
             string text = $"{(int)_currentScene + 1}/{count}  {SceneTitle(_currentScene)}    [Tab] next  [Shift+Tab] back";
-            Vector2 size = font.MeasureString(text);
+            Vector2 size = _font.MeasureString(text, fontSize);
             var vp = GraphicsDevice.Viewport;
             Vector2 at = _currentScene == Scene.Main
                 ? new Vector2(10f, 4f)
                 : new Vector2(vp.Width - size.X - 10f, vp.Height - size.Y - 8f);
             _sb.Begin();
-            _sb.DrawString(font, text, at, TWColor.Gray500);
+            _sb.DrawString(_font, text, at, fontSize, TWColor.Gray500);
             _sb.End();
         }
 
@@ -153,7 +153,7 @@ namespace GameProject {
 
         // Everything the library draws, in one frame. It is also what the README banner is
         // rendered from, so it stays a catalog; the scenes after it take one feature each.
-        private void DrawMainScene(FontStashSharp.SpriteFontBase font, FontStashSharp.SpriteFontBase titleFont) {
+        private void DrawMainScene(float fontSize, float titleSize) {
             _sb.Begin(_camera.View);
 
             float offset = _dashOffset;
@@ -169,15 +169,15 @@ namespace GameProject {
             // fourth bar.
             _sb.ColorSpace = ColorSpace.Oklch;
             _sb.FillRectangle(new Vector2(-620, -324), new Vector2(400, 44), new Gradient(new Vector2(-620, -302), TWColor.Blue600, new Vector2(-220, -302), TWColor.Red600), 8f);
-            _sb.DrawString(font, "Oklch", new Vector2(-204, -316), TWColor.Gray300);
+            _sb.DrawString(_font, "Oklch", new Vector2(-204, -316), fontSize, TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Oklab;
             _sb.FillRectangle(new Vector2(-620, -268), new Vector2(400, 44), new Gradient(new Vector2(-620, -246), TWColor.Blue600, new Vector2(-220, -246), TWColor.Red600), 8f);
-            _sb.DrawString(font, "Oklab", new Vector2(-204, -260), TWColor.Gray300);
+            _sb.DrawString(_font, "Oklab", new Vector2(-204, -260), fontSize, TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Rgb;
             _sb.FillRectangle(new Vector2(-620, -212), new Vector2(400, 44), new Gradient(new Vector2(-620, -190), TWColor.Blue600, new Vector2(-220, -190), TWColor.Red600), 8f);
-            _sb.DrawString(font, "Rgb", new Vector2(-204, -204), TWColor.Gray300);
+            _sb.DrawString(_font, "Rgb", new Vector2(-204, -204), fontSize, TWColor.Gray300);
             _sb.FillRectangle(new Vector2(-620, -156), new Vector2(400, 44), new Gradient(new Vector2(-620, -134), new Vector2(-220, -134), muted), 8f);
-            _sb.DrawString(font, "Palette", new Vector2(-204, -148), TWColor.Gray300);
+            _sb.DrawString(_font, "Palette", new Vector2(-204, -148), fontSize, TWColor.Gray300);
             _sb.ColorSpace = ColorSpace.Oklab;
 
             // Gradient shapes in a 4x2 grid that shares its top and bottom edges with the bars.
@@ -227,7 +227,7 @@ namespace GameProject {
             _sb.FillLine(new Vector2(280, 166), new Vector2(620, 166), 9, new Gradient(new Vector2(280, 166), TWColor.Purple500, new Vector2(620, 166), TWColor.Orange400), dash: new DashStyle(26f, 18f, offset, cap: DashCap.Round));
             _sb.BorderLine(new Vector2(280, 212), new Vector2(620, 212), 10, new Gradient(new Vector2(280, 212), TWColor.Teal400, new Vector2(620, 212), TWColor.Pink500), 3f);
             _sb.FillEllipseBlurred(new Vector2(450, 268), 150, 26, new Color(TWColor.Indigo500, 0.45f), 16f);
-            _sb.DrawString(titleFont, "Apos.Shapes", new Vector2(325, 240), TWColor.Gray100);
+            _sb.DrawString(_font, "Apos.Shapes", new Vector2(335, 240), titleSize, TWColor.Gray100);
             _sb.FillPath([new Vector2(280, 330), new Vector2(365, 302), new Vector2(450, 330), new Vector2(535, 302), new Vector2(620, 330)], 9, new Gradient(new Vector2(280, 316), new Color(TWColor.Sky400, 0.6f), new Vector2(620, 316), new Color(TWColor.Fuchsia500, 0.6f)));
 
             _sb.End();
@@ -270,13 +270,13 @@ namespace GameProject {
         // Chamfers, which are rectangles with their corners cut straight across. The cut runs from
         // a square corner all the way to a diamond, one per corner if you want, and it takes
         // gradients, dashes, blur, rotation and clipping like every other shape. Tab cycles to it.
-        private void DrawChamferScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawChamferScene(float fontSize) {
             _sb.Begin(_camera.View);
 
             float offset = _dashOffset;
             Vector2 card = new(150, 104);
 
-            _sb.DrawString(font, "Fill, Border, Draw, per corner, the largest cut, and rotated", new Vector2(-620, -348), TWColor.Gray400);
+            _sb.DrawString(_font, "Fill, Border, Draw, per corner, the largest cut, and rotated", new Vector2(-620, -348), fontSize, TWColor.Gray400);
             _sb.FillChamfer(new Vector2(-620, -320), card, 24f,
                 new Gradient(new Vector2(0, 0), TWColor.Sky400, new Vector2(150, 104), TWColor.Indigo700, isLocal: true));
             _sb.BorderChamfer(new Vector2(-452, -320), card, 24f, TWColor.Emerald300, 5f);
@@ -293,7 +293,7 @@ namespace GameProject {
 
             // The whole range of the cut at one size, so the two ends read as the rectangle and the
             // diamond they are.
-            _sb.DrawString(font, "The cut, from 0 up to half the smaller side", new Vector2(-620, -184), TWColor.Gray400);
+            _sb.DrawString(_font, "The cut, from 0 up to half the smaller side", new Vector2(-620, -184), fontSize, TWColor.Gray400);
             float[] cuts = [0f, 5f, 11f, 17f, 23f, 29f, 33f, 35f];
             for (int i = 0; i < cuts.Length; i++) {
                 _sb.DrawChamfer(new Vector2(-620 + i * 155, -156), new Vector2(100, 70), cuts[i], TWColor.Gray800, TWColor.Slate200, 3f);
@@ -301,7 +301,7 @@ namespace GameProject {
 
             // Dashes walk eight vertices instead of four, and every cut size hands the corner over
             // differently, so this is the row to scrub with Left and Right.
-            _sb.DrawString(font, "Dashed: caps, per corner, a diamond, a fixed count, dots, a gradient", new Vector2(-620, -60), TWColor.Gray400);
+            _sb.DrawString(_font, "Dashed: caps, per corner, a diamond, a fixed count, dots, a gradient", new Vector2(-620, -60), fontSize, TWColor.Gray400);
             _sb.BorderChamfer(new Vector2(-620, -32), card, 26f, TWColor.Sky300, 6f, dash: new DashStyle(24f, 16f, offset));
             _sb.DrawChamfer(new Vector2(-452, -32), card, 26f, TWColor.Gray800, TWColor.Lime300, 8f, dash: new DashStyle(24f, 20f, offset, cap: DashCap.Round));
             _sb.BorderChamfer(new Vector2(-284, -32), card, new CornerChamfers(0f, 46f, 16f, 30f), TWColor.Amber300, 6f, dash: new DashStyle(22f, 16f, offset));
@@ -312,7 +312,7 @@ namespace GameProject {
             _sb.BorderChamfer(new Vector2(430, -32), card, 26f,
                 new Gradient(new Vector2(430, -32), TWColor.Orange400, new Vector2(580, 72), TWColor.Red600), 6f, dash: new DashStyle(24f, 16f, offset));
 
-            _sb.DrawString(font, "Blurred, then clipped, and the box Measure hands back", new Vector2(-620, 100), TWColor.Gray400);
+            _sb.DrawString(_font, "Blurred, then clipped, and the box Measure hands back", new Vector2(-620, 100), fontSize, TWColor.Gray400);
             // A drop shadow: an opaque card over a blurred copy of its own silhouette. The lighter
             // surface under it is what makes a black shadow visible at all on a dark background.
             _sb.FillRectangle(new Vector2(-636, 128), new Vector2(182, 140), TWColor.Gray700, new CornerRadii(10));
@@ -340,7 +340,7 @@ namespace GameProject {
             RectangleF mb = Measure.Chamfer(mAt, mSize, mCut, 0.5f);
             _sb.BorderRectangle(new Vector2(mb.X, mb.Y), new Vector2(mb.Width, mb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
 
-            _sb.DrawString(font, "[Tab] next scene   [Left/Right] scrub the dash phase   [P] play/pause", new Vector2(-620, 300), TWColor.Gray300);
+            _sb.DrawString(_font, "[Tab] next scene   [Left/Right] scrub the dash phase   [P] play/pause", new Vector2(-620, 300), fontSize, TWColor.Gray300);
 
             _sb.End();
         }
@@ -350,9 +350,9 @@ namespace GameProject {
         // row draws should reach more than 54 either side of its own center.
         private const float _rowA = -262f, _rowB = -104f, _rowC = 52f, _rowD = 210f;
 
-        private void DrawCircleScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawCircleScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
             L(-348, "Fill, Border at rising thickness, Draw, and gradients");
             _sb.FillCircle(new Vector2(-560, _rowA), 50, TWColor.Sky400);
@@ -392,13 +392,13 @@ namespace GameProject {
             RectangleF eb = Measure.Ellipse(new Vector2(280, _rowD), 70, 40, 0.5f);
             _sb.BorderRectangle(new Vector2(eb.X, eb.Y), new Vector2(eb.Width, eb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
 
-            Footer(font, "Scroll to zoom, right drag to pan");
+            Footer(fontSize, "Scroll to zoom, right drag to pan");
             _sb.End();
         }
 
-        private void DrawRectangleScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawRectangleScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
             Vector2 size = new(140, 96);
             Vector2 At(float x, float cy) => new(x, cy - size.Y * 0.5f);
 
@@ -434,13 +434,13 @@ namespace GameProject {
             RectangleF rb = Measure.Rectangle(At(80, _rowD), size, new CornerRadii(20), 0.5f);
             _sb.BorderRectangle(new Vector2(rb.X, rb.Y), new Vector2(rb.Width, rb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
 
-            Footer(font, "The radii are clamped to half the smaller side");
+            Footer(fontSize, "The radii are clamped to half the smaller side");
             _sb.End();
         }
 
-        private void DrawPolygonScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawPolygonScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
             L(-348, "Hexagon: the radius runs to the flat edges, and rounded takes the corners off");
             _sb.FillHexagon(new Vector2(-540, _rowA), 50, TWColor.Sky400);
@@ -479,13 +479,13 @@ namespace GameProject {
             RectangleF hb = Measure.Hexagon(new Vector2(160, _rowD), 50, 12f, 0.4f);
             _sb.BorderRectangle(new Vector2(hb.X, hb.Y), new Vector2(hb.Width, hb.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
 
-            Footer(font, "Rotation turns every one of them about its own center");
+            Footer(fontSize, "Rotation turns every one of them about its own center");
             _sb.End();
         }
 
-        private void DrawLineScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawLineScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
             L(-348, "Two points and a radius, which is half the thickness. The caps are round");
             // Stacked by their own radius, so a thick one never runs into its neighbour.
@@ -520,14 +520,14 @@ namespace GameProject {
             RectangleF lbx = Measure.Line(la, lb, 22);
             _sb.BorderRectangle(new Vector2(lbx.X, lbx.Y), new Vector2(lbx.Width, lbx.Height), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
 
-            Footer(font, "For more than two points, use a path");
+            Footer(fontSize, "For more than two points, use a path");
             _sb.End();
         }
 
-        private void DrawPathScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawPathScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
-            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(_font, t, new Vector2(x, y), fontSize, TWColor.Gray500);
 
             L(-348, "Joins: round, miter, and bevel");
             PathJoin[] joins = [PathJoin.Round, PathJoin.Miter, PathJoin.Bevel];
@@ -572,13 +572,13 @@ namespace GameProject {
                 new Vector2(400, _rowD + 40)
             ], 13, TWColor.Fuchsia400, cap: PathCap.Butt, capEnd: PathCap.Square);
 
-            Footer(font, "A translucent path blends once even where its segments meet");
+            Footer(fontSize, "A translucent path blends once even where its segments meet");
             _sb.End();
         }
 
-        private void DrawArcScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawArcScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
             L(-348, "Arc: a stroke along a circle, with round caps. 0 points right, angles grow clockwise");
             float[] spans = [0.4f, 1f, 1.6f, 2.2f, 2.8f, MathF.PI];
@@ -608,14 +608,14 @@ namespace GameProject {
             _sb.FillArc(new Vector2(120, _rowD), MathF.PI * 0.6f, MathF.PI * 2.4f, 46, 12,
                         new Gradient(new Vector2(120, _rowD), TWColor.Red500, new Vector2(120, _rowD - 58), TWColor.Amber300, Gradient.Shape.Conical));
 
-            Footer(font, "Only the swept part is measured, so a small arc of a big circle has a small box");
+            Footer(fontSize, "Only the swept part is measured, so a small arc of a big circle has a small box");
             _sb.End();
         }
 
-        private void DrawGradientScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawGradientScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
-            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(_font, t, new Vector2(x, y), fontSize, TWColor.Gray500);
 
             L(-348, "Gradient.Shape, on a circle so the shape of the gradient is the only thing changing");
             (string Name, Gradient.Shape Shape)[] shapes = [
@@ -658,14 +658,14 @@ namespace GameProject {
             _sb.FillCircle(new Vector2(180, _rowD), 48, new Gradient(new Vector2(180, _rowD), TWColor.Lime300, new Vector2(180, _rowD - 48), TWColor.Green800, Gradient.Shape.SpiralCCW));
             _sb.FillHexagon(new Vector2(300, _rowD), 46, new Gradient(new Vector2(0, 0), TWColor.Teal300, new Vector2(0, 46), TWColor.Sky800, Gradient.Shape.Radial, isLocal: true));
 
-            Footer(font, "Any shape takes a gradient wherever it takes a Color");
+            Footer(fontSize, "Any shape takes a gradient wherever it takes a Color");
             _sb.End();
         }
 
-        private void DrawPaletteScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawPaletteScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
-            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(_font, t, new Vector2(x, y), fontSize, TWColor.Gray500);
 
             // The classic parameter sets from iquilezles.org/articles/palettes, which are tuned
             // for raw RGB channels. The last row goes back to Oklab.
@@ -732,7 +732,7 @@ namespace GameProject {
             Under(320, _rowD + 40, "animated phase");
             _sb.ColorSpace = ColorSpace.Oklab;
 
-            Footer(font, "A palette packs into the two color slots a pair of stops uses, so it batches like everything else");
+            Footer(fontSize, "A palette packs into the two color slots a pair of stops uses, so it batches like everything else");
             _sb.End();
         }
 
@@ -745,10 +745,10 @@ namespace GameProject {
         private static readonly Ramp _rampStripe = new((0f, 0f), (0.35f, 0f), (0.35f, 1f), (0.5f, 1f), (0.5f, 0f), (1f, 0f));
         private static readonly Ramp _rampMixed = new((0f, 0f), (0.3f, 0f), (0.3f, 1f), (0.55f, 1f), (0.55f, 0.15f), (1f, 0.9f));
 
-        private void DrawRampScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawRampScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
-            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(_font, t, new Vector2(x, y), fontSize, TWColor.Gray500);
 
             // The rainbow rows are tuned for raw RGB channels, same as the palette scene.
             _sb.ColorSpace = ColorSpace.Rgb;
@@ -814,7 +814,7 @@ namespace GameProject {
             Under(320, _rowD + 12, "animated phase");
             _sb.ColorSpace = ColorSpace.Oklab;
 
-            Footer(font, "Each curve bakes into a row of a shared 256 row table, and rows that stop drawing recycle when it fills");
+            Footer(fontSize, "Each curve bakes into a row of a shared 256 row table, and rows that stop drawing recycle when it fills");
             _sb.End();
         }
 
@@ -829,10 +829,10 @@ namespace GameProject {
         private static readonly ColorRamp _colorsAlpha = new((0f, new Color(TWColor.Cyan400, 0f)), (0.5f, TWColor.Cyan400), (0.5f, TWColor.Fuchsia500), (1f, new Color(TWColor.Fuchsia500, 0.15f)));
         private static readonly ColorRamp _colorsSpaces = new((0f, TWColor.Yellow300), (0.5f, TWColor.Emerald500), (1f, TWColor.Blue700));
 
-        private void DrawColorRampScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawColorRampScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
-            void Under(float x, float y, string t) => _sb.DrawString(font, t, new Vector2(x, y), TWColor.Gray500);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(_font, t, new Vector2(x, y), fontSize, TWColor.Gray500);
 
             L(-348, "A ColorRamp colors a gradient from (position, color) stops, as many as you want");
             (string Name, ColorRamp C)[] basics = [
@@ -899,13 +899,13 @@ namespace GameProject {
                 new Gradient(new Vector2(-600, _rowD + 42), new Vector2(300, _rowD + 42), moving), 4f);
             Under(320, _rowD + 40, "animated stops");
 
-            Footer(font, "Every space bakes two rows of the shared table, and undrawn rows recycle, so stops can move each frame");
+            Footer(fontSize, "Every space bakes two rows of the shared table, and undrawn rows recycle, so stops can move each frame");
             _sb.End();
         }
 
-        private void DrawColorSpaceScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawColorSpaceScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
             L(-348, "The same two stops interpolated in each space. ColorSpace is read per shape");
             (string Name, ColorSpace Space)[] spaces = [("Oklch", ColorSpace.Oklch), ("Oklab", ColorSpace.Oklab), ("Rgb", ColorSpace.Rgb)];
@@ -914,7 +914,7 @@ namespace GameProject {
                 _sb.ColorSpace = spaces[i].Space;
                 _sb.FillRectangle(new Vector2(-600, y), new Vector2(820, 30),
                     new Gradient(new Vector2(-600, y), TWColor.Blue600, new Vector2(220, y), TWColor.Red600), 8f);
-                _sb.DrawString(font, spaces[i].Name, new Vector2(240, y + 2), TWColor.Gray300);
+                _sb.DrawString(_font, spaces[i].Name, new Vector2(240, y + 2), fontSize, TWColor.Gray300);
             }
 
             L(-186, "Gray has no hue of its own, so Oklch borrows the other stop's");
@@ -923,7 +923,7 @@ namespace GameProject {
                 _sb.ColorSpace = spaces[i].Space;
                 _sb.FillRectangle(new Vector2(-600, y), new Vector2(820, 30),
                     new Gradient(new Vector2(-600, y), TWColor.Gray500, new Vector2(220, y), TWColor.Blue600), 8f);
-                _sb.DrawString(font, spaces[i].Name, new Vector2(240, y + 2), TWColor.Gray300);
+                _sb.DrawString(_font, spaces[i].Name, new Vector2(240, y + 2), fontSize, TWColor.Gray300);
             }
 
             L(-30, "Yellow to blue, the pair that separates them most");
@@ -932,7 +932,7 @@ namespace GameProject {
                 _sb.ColorSpace = spaces[i].Space;
                 _sb.FillRectangle(new Vector2(-600, y), new Vector2(820, 30),
                     new Gradient(new Vector2(-600, y), TWColor.Yellow300, new Vector2(220, y), TWColor.Blue700), 8f);
-                _sb.DrawString(font, spaces[i].Name, new Vector2(240, y + 2), TWColor.Gray300);
+                _sb.DrawString(_font, spaces[i].Name, new Vector2(240, y + 2), fontSize, TWColor.Gray300);
             }
 
             _sb.ColorSpace = ColorSpace.Oklab;
@@ -940,13 +940,13 @@ namespace GameProject {
             _sb.FillRectangle(new Vector2(-600, _rowD - 30), new Vector2(500, 60),
                 new Gradient(new Vector2(-600, _rowD), TWColor.Emerald300, new Vector2(-100, _rowD), TWColor.Fuchsia600), 12f);
 
-            Footer(font, "Mixing spaces inside one frame never breaks the batch");
+            Footer(fontSize, "Mixing spaces inside one frame never breaks the batch");
             _sb.End();
         }
 
-        private void DrawClipScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawClipScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
             L(-348, "A clip rectangle, with and without rounding");
             for (int i = 0; i < 2; i++) {
@@ -970,7 +970,7 @@ namespace GameProject {
             _sb.BorderRectangle(new Vector2(-600, _rowB - 28), new Vector2(220, 56), TWColor.Gray600, 2f, new CornerRadii(14), 0.22f);
             _sb.SetClipRect(new RectangleF(-300, _rowB - 40, 420, 80), 20f);
             _sb.FillRectangle(new Vector2(-320, _rowB - 52), new Vector2(460, 104), TWColor.Indigo700);
-            _sb.DrawString(font, "clipped text runs off the edge", new Vector2(-280, _rowB - 12), TWColor.Amber200);
+            _sb.DrawString(_font, "clipped text runs off the edge", new Vector2(-280, _rowB - 12), fontSize, TWColor.Amber200);
             _sb.SetClipRect(null);
             _sb.BorderRectangle(new Vector2(-300, _rowB - 40), new Vector2(420, 80), TWColor.Gray600, 2f, new CornerRadii(20));
 
@@ -992,57 +992,83 @@ namespace GameProject {
             _sb.SetClipRect(null);
             _sb.BorderRectangle(new Vector2(-600, _rowD - 54), new Vector2(520, 108), TWColor.Gray600, 2f, new CornerRadii(24));
 
-            Footer(font, "The clip has its own anti-aliased edge, so it never comes out jagged");
+            Footer(fontSize, "The clip has its own anti-aliased edge, so it never comes out jagged");
             _sb.End();
         }
 
-        private void DrawTextScene(FontStashSharp.SpriteFontBase font, FontStashSharp.SpriteFontBase titleFont) {
+        // Text, solved curve by curve in the pixel shader out of the font's own outlines. There is
+        // no atlas behind it, so no size is picked up front, every size costs the same, and a glyph
+        // stays exact however far the camera zooms into it.
+        private void DrawTextScene(float fontSize) {
             _sb.Begin(_camera.View);
-            void L(float y, string t) => _sb.DrawString(font, t, new Vector2(-620, y), TWColor.Gray400);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
 
-            L(-348, "Text goes through the FontStashSharp API, into the same batch as the shapes");
-            _sb.DrawString(titleFont, "Apos.Shapes", new Vector2(-600, _rowA - 40), TWColor.Gray100);
-            _sb.DrawString(font, "Shape rendering in MonoGame", new Vector2(-600, _rowA + 16), TWColor.Gray400);
-
-            L(-186, "Any color, and it composites with whatever is under it");
-            _sb.FillRectangle(new Vector2(-600, _rowB - 40), new Vector2(560, 80),
-                new Gradient(new Vector2(-600, _rowB), TWColor.Indigo700, new Vector2(-40, _rowB), TWColor.Fuchsia800), 14f);
-            _sb.DrawString(font, "over a gradient", new Vector2(-560, _rowB - 12), TWColor.White);
-            _sb.DrawString(font, "translucent", new Vector2(-260, _rowB - 12), new Color(TWColor.White, 0.5f));
-            _sb.DrawString(font, "colored", new Vector2(60, _rowB - 12), TWColor.Amber300);
-
-            L(-30, "Mixed with shapes, one draw call for the lot");
-            for (int i = 0; i < 4; i++) {
-                float x = -600 + i * 190;
-                _sb.DrawRectangle(new Vector2(x, _rowC - 40), new Vector2(160, 80), TWColor.Gray800, TWColor.Slate300, 2f, new CornerRadii(14));
-                _sb.FillCircle(new Vector2(x + 34, _rowC), 18, TWColor.Sky400);
-                _sb.DrawString(font, $"item {i + 1}", new Vector2(x + 62, _rowC - 12), TWColor.Gray200);
+            // One word at eight sizes, sitting on one baseline. Nothing was baked at any of them:
+            // the 8 px copy and the 74 px copy read the same curves out of the same table.
+            L(-348, "Size is an em in world units. The same word from 8 up to 74, on one baseline");
+            float[] sizes = [8f, 11f, 15f, 21f, 29f, 40f, 56f, 74f];
+            float sx = -620f;
+            foreach (float s in sizes) {
+                // Ascent puts every one of them on the same baseline, since the position given is
+                // the top of the line rather than the baseline.
+                _sb.DrawString(_font, "Shapes", new Vector2(sx, _rowA + 30f - _font.Ascent * s), s, TWColor.Gray100);
+                sx += _font.MeasureString("Shapes", s).X + 22f;
             }
 
-            L(128, "Clipped, so a label can be cut to its own box");
-            _sb.SetClipRect(new RectangleF(-600, _rowD - 30, 300, 60), 12f);
-            _sb.FillRectangle(new Vector2(-600, _rowD - 30), new Vector2(300, 60), TWColor.Slate800, new CornerRadii(12));
-            _sb.DrawString(font, "a label too long for its box", new Vector2(-580, _rowD - 12), TWColor.Gray100);
-            _sb.SetClipRect(null);
-            _sb.BorderRectangle(new Vector2(-600, _rowD - 30), new Vector2(300, 60), TWColor.Gray600, 2f, new CornerRadii(12));
+            // Rotation is per call and costs one sine and one cosine for the whole line, so a
+            // turned label is the same price as a straight one.
+            L(-186, "Rotation turns a whole line at once, around any point you name");
+            Vector2 turn = _font.MeasureString("turn", 22f);
+            for (int i = 0; i < 8; i++) {
+                _sb.DrawString(_font, "turn", new Vector2(-600 + i * 92, _rowB), 22f, TWColor.Sky300, MathF.Tau * i / 8f, turn * 0.5f);
+            }
+            const string spin = "one sine for the whole line";
+            _sb.DrawString(_font, spin, new Vector2(420, _rowB), 22f, TWColor.Amber300, 0.12f, _font.MeasureString(spin, 22f) * 0.5f);
 
-            Footer(font, "The font is loaded once and drawn straight into the ShapeBatch");
+            // A newline is the only layout this does. Wrapping, alignment and ellipsis are
+            // decisions, and this draws what it is handed.
+            L(-30, "Newlines step down by the font's line height, and any code point it has works");
+            float top = _rowC - _font.LineHeight * fontSize * 1.5f;
+            _sb.DrawString(_font, "A newline starts a line.\nThere is no wrapping and no\nalignment here.", new Vector2(-620, top), fontSize, TWColor.Gray200);
+            _sb.DrawString(_font, "Ελληνικά\nКириллица\n→ ↔ ← ±≠≤≥", new Vector2(-180, top), fontSize, TWColor.Emerald200);
+            _sb.DrawString(_font, "┌───────┐\n│ ÀÉÎÕÜ │\n└───────┘", new Vector2(80, top), fontSize, TWColor.Violet200);
+            // Every glyph above came out of the file the first time it drew. Nothing was declared.
+            _sb.DrawString(_font, "read from\nthe file on\nfirst use", new Vector2(400, top), fontSize, TWColor.Gray500);
+
+            // Text is a shape like the others: same batch, same clip, same one draw call.
+            L(128, "In the batch with the shapes: over a ramp, translucent, and clipped to a box");
+            _sb.FillRectangle(new Vector2(-620, _rowD - 32), new Vector2(400, 64),
+                new Gradient(new Vector2(-620, _rowD), new Vector2(-220, _rowD), _colorsSpectrum), 12f);
+            _sb.DrawString(_font, "over a ramp", new Vector2(-540, _rowD - 15), fontSize, TWColor.Gray950);
+            _sb.FillRectangle(new Vector2(-180, _rowD - 32), new Vector2(280, 64), TWColor.Indigo700, 12f);
+            _sb.DrawString(_font, "translucent", new Vector2(-140, _rowD - 15), fontSize, new Color(TWColor.White, 0.45f));
+            // The clip cuts the glyph's own coverage, so the letter it lands on comes out half drawn
+            // rather than dropped.
+            _sb.SetClipRect(new RectangleF(140, _rowD - 32, 300, 64), 12f);
+            _sb.FillRectangle(new Vector2(140, _rowD - 32), new Vector2(300, 64), TWColor.Slate800, new CornerRadii(12));
+            _sb.DrawString(_font, "a label too long for its box", new Vector2(160, _rowD - 15), fontSize, TWColor.Gray100);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(140, _rowD - 32), new Vector2(300, 64), TWColor.Gray600, 2f, new CornerRadii(12));
+            _sb.FillCircle(new Vector2(520, _rowD), 32, TWColor.Sky400);
+            _sb.DrawString(_font, "1", new Vector2(520 - _font.MeasureString("1", 36f).X * 0.5f, _rowD - _font.LineHeight * 36f * 0.5f), 36f, TWColor.Gray950);
+
+            Footer(fontSize, "Scroll to zoom: the curves are solved again every frame, so the letters never go soft");
             _sb.End();
         }
 
-        private void Footer(FontStashSharp.SpriteFontBase font, string text) {
-            _sb.DrawString(font, text, new Vector2(-620, 300), TWColor.Gray500);
+        private void Footer(float fontSize, string text) {
+            _sb.DrawString(_font, text, new Vector2(-620, 300), fontSize, TWColor.Gray500);
         }
 
         // Blurred shapes. The falloff is a world space Gaussian rather than a screen space AA
         // width, so zooming in on this scene grows every blur along with the shape it belongs to,
         // where the anti-aliasing on the other scenes stays the same thickness at any zoom.
-        private void DrawBlurScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawBlurScene(float fontSize) {
             _sb.Begin(_camera.View);
 
             // Drop shadows, which is the case the flat color assumption is built around: an opaque
             // card over a blurred copy of its own silhouette, offset down and to the right.
-            _sb.DrawString(font, "Drop shadows, rising blur", new Vector2(-620, -336), TWColor.Gray400);
+            _sb.DrawString(_font, "Drop shadows, rising blur", new Vector2(-620, -336), fontSize, TWColor.Gray400);
             for (int i = 0; i < 4; i++) {
                 float blur = 3f + i * 7f;
                 var at = new Vector2(-600 + i * 170, -300);
@@ -1053,7 +1079,7 @@ namespace GameProject {
 
             // The falloff is symmetric about the contour, so a shape softens without growing. The
             // hairline ring sits on the unblurred radius: every circle's 50% edge stays under it.
-            _sb.DrawString(font, "Symmetric falloff: the 50% edge never leaves the hairline", new Vector2(-620, -180), TWColor.Gray400);
+            _sb.DrawString(_font, "Symmetric falloff: the 50% edge never leaves the hairline", new Vector2(-620, -180), fontSize, TWColor.Gray400);
             for (int i = 0; i < 5; i++) {
                 float blur = 1f + i * 8f;
                 var at = new Vector2(-540 + i * 150, -80);
@@ -1063,7 +1089,7 @@ namespace GameProject {
 
             // Blurred outlines carry one color and no fill. A band thinner than the blur smears
             // into itself and dims, the way a real blur of a thin ring does.
-            _sb.DrawString(font, "Blurred borders, thinning band at a fixed blur", new Vector2(-620, 10), TWColor.Gray400);
+            _sb.DrawString(_font, "Blurred borders, thinning band at a fixed blur", new Vector2(-620, 10), fontSize, TWColor.Gray400);
             for (int i = 0; i < 5; i++) {
                 float thickness = 40f - i * 8f;
                 _sb.BorderCircleBlurred(new Vector2(-540 + i * 150, 110), 52f, TWColor.Emerald400, 6f, thickness);
@@ -1074,7 +1100,7 @@ namespace GameProject {
             _sb.FillEllipse(new Vector2(330, 110), 96f, 26f, TWColor.Fuchsia200);
             _sb.BorderRectangleBlurred(new Vector2(450, 50), new Vector2(150, 120), TWColor.Cyan300, 5f, 10f, new CornerRadii(28));
 
-            _sb.DrawString(font, "[Tab] example scene   scroll to zoom: the blur scales, the AA does not", new Vector2(-620, 300), TWColor.Gray300);
+            _sb.DrawString(_font, "[Tab] example scene   scroll to zoom: the blur scales, the AA does not", new Vector2(-620, 300), fontSize, TWColor.Gray300);
 
             _sb.End();
         }
@@ -1136,7 +1162,7 @@ namespace GameProject {
 
         // Night scene built from slow dark gradients, the worst case for 8-bit banding.
         // Space toggles the dither so the bands snap in and out; zoom and drag still work.
-        private void DrawBandingScene(FontStashSharp.SpriteFontBase font) {
+        private void DrawBandingScene(float fontSize) {
             _sb.Begin(_camera.View);
             _sb.ColorSpace = ColorSpace.Rgb;
 
@@ -1152,7 +1178,7 @@ namespace GameProject {
 
             _sb.ColorSpace = ColorSpace.Oklab;
             string mode = _ditherMode == 0 ? "Blue noise" : _ditherMode == 1 ? "IGN" : "Off";
-            _sb.DrawString(font, $"Dither: {mode}  strength: {_demoStrength}  [Space] mode  [Up/Down] strength  [Tab] example scene", new Vector2(-620, -344), TWColor.Gray300);
+            _sb.DrawString(_font, $"Dither: {mode}  strength: {_demoStrength}  [Space] mode  [Up/Down] strength  [Tab] example scene", new Vector2(-620, -344), fontSize, TWColor.Gray300);
             _sb.End();
         }
 
@@ -1248,7 +1274,7 @@ namespace GameProject {
         GraphicsDeviceManager _graphics;
         ShapeBatch _sb;
 
-        FontSystem _fontSystem;
+        ShapeFont _font = null!;
         FPSCounter _fps = new FPSCounter();
 
         ICondition _quit =

@@ -24,6 +24,8 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <Nullable>enable</Nullable>
     <DefineConstants>$(DefineConstants);KNI</DefineConstants>
+    <!-- The glyph baker reads outlines through stb_truetype, whose interface is pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,11 +33,20 @@
     <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001" />
     <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001" />
     <PackageReference Include="KNI.Extended" Version="5.3.1" />
-    <PackageReference Include="FontStashSharp.KNI" Version="1.5.2" />
+    <!-- Reads the glyph outlines the shader solves. -->
+    <PackageReference Include="StbTrueTypeSharp" Version="1.26.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The GPU smoke test drives the internal glyph path directly; nothing else sees inside. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SlugSmoke</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
+    <None Include="../THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="" />
     <None Include="$(BaseIntermediateOutputPath)README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 

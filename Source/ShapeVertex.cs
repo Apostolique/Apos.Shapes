@@ -32,7 +32,7 @@ namespace Apos.Shapes {
         /// <param name="b">Spare channel, same as <paramref name="a"/>.</param>
         /// <param name="c">Spare channel, same as <paramref name="a"/>.</param>
         /// <param name="d">Spare channel, same as <paramref name="a"/>.</param>
-        /// <param name="colorSpace">Space the colors are interpolated in. Textures and strings force Rgb.</param>
+        /// <param name="colorSpace">Space the colors are interpolated in. Textures and glyphs force Rgb.</param>
         /// <param name="dash">0 draws solid, 1 dashes with flat ends, 2 with round ones.</param>
         /// <param name="blur">Standard deviation of the edge's Gaussian falloff in world units, or 0 for a hard edge.</param>
         /// <param name="ramps">
@@ -45,7 +45,7 @@ namespace Apos.Shapes {
                 thickness = 0f;
             }
 
-            if (shape == Shape.Texture || shape == Shape.String) {
+            if (shape == Shape.Texture || shape == Shape.Glyph) {
                 // Texture masks are multiplied in RGBA space, everything else is blended in the chosen color space.
                 colorSpace = ColorSpace.Rgb;
                 // A palette, a ramp, or a color ramp can't mask a texture, so all three fall
@@ -323,12 +323,12 @@ namespace Apos.Shapes {
             Ring = 8,
             /// <summary>A textured quad, masked in raw RGBA.</summary>
             Texture = 9,
-            /// <summary>A glyph from the font atlas, masked in raw RGBA.</summary>
-            String = 10,
             /// <summary>One quad of a path, which carries its own caps and joins.</summary>
             Path = 11,
             /// <summary>A rectangle with its corners cut straight across.</summary>
-            Chamfer = 12
+            Chamfer = 12,
+            /// <summary>A glyph outline, solved from its curves on the GPU.</summary>
+            Glyph = 13
         }
 
         static VertexShape() {

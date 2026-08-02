@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.8.0] - 2026-08-01
+
+### Added
+
+- Text drawn from a font's own outlines. `DrawString(font, text, position, size, color, rotation, origin, aaSize)` takes a `string` or a `ReadOnlySpan<char>` and solves each glyph's curves in the pixel shader, so text is exact at any size, rotation, and zoom, and stays in the batch's one draw call. `position` is the top left of the first line and `size` is an em in world units. Newlines and kerning are handled, wrapping and alignment aren't.
+- `ShapeFont`, a TrueType font loaded from a `byte[]` or a `Stream`, with a `TryLoad` that returns false instead of throwing. It's `IDisposable` and thread safe, and one font can back any number of batches. Every code point it covers draws, with no character set to declare up front and no atlas size to pick.
+- Font metrics in em units: `UnitsPerEm`, `Ascent`, `Descent`, `LineGap`, `LineHeight`, `Advance`, `Kerning`, and `MeasureString`.
+
+### Removed
+
+- The FontStashSharp API and the dependency on it. The six `DrawString` overloads that took its types are gone, and so are `TextStyle` and `FontSystemEffect`, which have no replacement.
+
 ## [0.7.14] - 2026-08-01
 
 ### Fixed
@@ -368,7 +380,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.14...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.14...v0.8.0
 [0.7.14]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.13...v0.7.14
 [0.7.13]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...v0.7.13
 [0.7.12]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.11...v0.7.12

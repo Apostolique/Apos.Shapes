@@ -5,9 +5,9 @@ Shape rendering library for MonoGame and KNI.
 
 ## Description
 
-This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text with the [FontStashSharp](https://github.com/FontStashSharp/FontStashSharp) API and textures with the `SpriteBatch` API. Shapes, text, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
+This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text straight from a font's outlines and textures with the `SpriteBatch` API. Shapes, text, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
 
-Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions.
+Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions. The text follows Eric Lengyel's [Slug](https://sluglibrary.com) algorithm, by way of [Forme](https://github.com/AristurtleDev/Forme).
 
 ![Shapes drawn with Apos.Shapes](./Images/example.png)
 
@@ -22,7 +22,7 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * Blurred shapes with a Gaussian edge, for drop shadows and glows
 * `Measure` for every shape, giving the bounds it covers so a camera can cull it. No batch and no view needed
 * Blue noise dithering so slow gradients don't band on 8-bit displays
-* Text (FontStashSharp API)
+* Text solved from the font's own outlines in the shader. No atlas, so nothing picks a size up front and a glyph stays exact at any size, rotation, and zoom
 * Textures (`SpriteBatch` API)
 * Clipping to a rectangle
 * One batch for everything. Mixing shapes, text, and textures never breaks the batch

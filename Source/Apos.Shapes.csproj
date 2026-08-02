@@ -23,17 +23,28 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <Nullable>enable</Nullable>
+    <!-- The glyph baker reads outlines through stb_truetype, whose interface is pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" PrivateAssets="All" Version="3.8.2.1105" />
     <PackageReference Include="MonoGame.Extended" Version="5.3.1" />
-    <PackageReference Include="FontStashSharp.MonoGame" Version="1.5.2" />
+    <!-- Reads the glyph outlines the shader solves. -->
+    <PackageReference Include="StbTrueTypeSharp" Version="1.26.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The GPU smoke test drives the internal glyph path directly; nothing else sees inside. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SlugSmoke</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
+    <None Include="../THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="" />
     <None Include="$(BaseIntermediateOutputPath)README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 

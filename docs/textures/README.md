@@ -53,4 +53,4 @@ _sb.Draw(_texture, Matrix3x2.CreateScale(_texture.Width, _texture.Height) * Matr
 
 The `ShapeBatch` draws with a single texture slot. Switching to a different texture flushes the batch. Group your draw calls by texture when possible, or pack your images into a texture atlas and use the source rectangle overloads.
 
-Text is not affected since the font texture uses its own separate slot.
+Text is not affected. It's drawn from the font's outlines, which sit in their own texture slots.

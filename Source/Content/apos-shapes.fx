@@ -18,36 +18,44 @@ float2 half_viewport;
 float dither_scale; // DitherStrength / 255, folded on the CPU so the shader adds ±half an 8-bit LSB directly.
 float dither_mode; // 0: interleaved gradient noise, 1: the blue noise tile.
 float2 ramp_texel; // 1 / the ramp table's texel counts: x across a row, y across the rows.
+float2 band_tex_size; // (width, rows) of the glyph band texture in texels.
+float2 band_texel; // 1 / band_tex_size.
+float2 curve_texel; // 1 / the glyph curve texture's texel counts.
 // Sampler order is load bearing, and the register annotations alone do not settle it: the
 // OpenGL and Vulkan translator hands out texture units in the order the pixel shader first
 // SAMPLES from, not the order the samplers are declared or the registers they ask for, while
 // the KNI toolchain goes by the register. So the three have to agree, and that means listing
-// them in the order the pixel shader reaches them: the texture and font masks return early,
-// then the elliptical arc length table, then the dither noise, then the ramp table. The
-// dither sits before the ramp because the blur path returns early THROUGH a dither call,
-// ahead of the color section where the ramp reads. Getting this wrong is silent - the
-// shader simply reads a different texture and the picture goes to noise.
+// them in the order the pixel shader reaches them: the texture mask returns early, then a
+// glyph reads its band headers and then its curve control points and returns early too, then
+// the elliptical arc length table, then the dither noise, then the ramp table. The dither
+// sits before the ramp because the blur path returns early THROUGH a dither call, ahead of
+// the color section where the ramp reads. Getting this wrong is silent - the shader simply
+// reads a different texture and the picture goes to noise.
 #if SM6
 // DXC drops the legacy sampler syntax: declare texture/sampler pairs on matching
 // registers so the Vulkan reflection treats them as combined image-samplers.
 Texture2D TextureTex : register(t0); SamplerState TextureSampler : register(s0);
-Texture2D FontTex : register(t1); SamplerState FontSampler : register(s1);
-Texture2D ArcTex : register(t2); SamplerState ArcSampler : register(s2); // Elliptical arc length table, bound with clamped point sampling.
-Texture2D BlueNoiseTex : register(t3); SamplerState BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
-Texture2D RampTex : register(t4); SamplerState RampSampler : register(s4); // Ramp weight curves, bound with clamped point sampling.
+Texture2D BandTex : register(t1); SamplerState BandSampler : register(s1); // Glyph band headers and curve lists, bound with clamped point sampling.
+Texture2D CurveTex : register(t2); SamplerState CurveSampler : register(s2); // Glyph curve control points, bound with clamped point sampling.
+Texture2D ArcTex : register(t3); SamplerState ArcSampler : register(s3); // Elliptical arc length table, bound with clamped point sampling.
+Texture2D BlueNoiseTex : register(t4); SamplerState BlueNoiseSampler : register(s4); // 64x64 tile, bound with wrapped point sampling.
+Texture2D RampTex : register(t5); SamplerState RampSampler : register(s5); // Ramp weight curves, bound with clamped point sampling.
 float4 SampleTexture(float2 uv) { return TextureTex.Sample(TextureSampler, uv); }
-float4 SampleFont(float2 uv) { return FontTex.Sample(FontSampler, uv); }
+float4 SampleBand(float2 uv) { return BandTex.Sample(BandSampler, uv); }
+float4 SampleCurve(float2 uv) { return CurveTex.Sample(CurveSampler, uv); }
 float4 SampleArc(float2 uv) { return ArcTex.Sample(ArcSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return BlueNoiseTex.Sample(BlueNoiseSampler, uv); }
 float4 SampleRamp(float2 uv) { return RampTex.Sample(RampSampler, uv); }
 #else
 sampler TextureSampler : register(s0);
-sampler FontSampler;
-sampler ArcSampler : register(s2); // Elliptical arc length table, bound with clamped point sampling.
-sampler BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
-sampler RampSampler : register(s4); // Ramp weight curves, bound with clamped point sampling.
+sampler BandSampler : register(s1); // Glyph band headers and curve lists, bound with clamped point sampling.
+sampler CurveSampler : register(s2); // Glyph curve control points, bound with clamped point sampling.
+sampler ArcSampler : register(s3); // Elliptical arc length table, bound with clamped point sampling.
+sampler BlueNoiseSampler : register(s4); // 64x64 tile, bound with wrapped point sampling.
+sampler RampSampler : register(s5); // Ramp weight curves, bound with clamped point sampling.
 float4 SampleTexture(float2 uv) { return tex2D(TextureSampler, uv); }
-float4 SampleFont(float2 uv) { return tex2D(FontSampler, uv); }
+float4 SampleBand(float2 uv) { return tex2D(BandSampler, uv); }
+float4 SampleCurve(float2 uv) { return tex2D(CurveSampler, uv); }
 float4 SampleArc(float2 uv) { return tex2D(ArcSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return tex2D(BlueNoiseSampler, uv); }
 float4 SampleRamp(float2 uv) { return tex2D(RampSampler, uv); }
@@ -68,6 +76,12 @@ struct VertexInput {
     float4 ClipDist : POSITION1;
     float2 ClipRoundAA : NORMAL0;
 };
+// A glyph quad carries no gradient, so it reuses the two gradient coordinate slots and
+// nothing else: TexCoord.xy is the corner in em units, FillCoord is (band texel base, band
+// count, pixels per em x, pixels per em y) and BorderCoord is the em to band index transform,
+// scale in xy and offset in zw. The band texel base is an integer that reaches six figures, so
+// it keeps a channel to itself rather than sharing one - see the note on the packed meta in
+// SpritePixelShader for the budget an interpolator carries exactly.
 struct PixelInput {
     float4 Position : SV_Position0;
     float4 TexCoord : TEXCOORD0; // xy: uv or local position, z: rounded, w: packed shape, gradient styles and color space.
@@ -2455,6 +2469,110 @@ float DitherNoise(float2 worldPos) {
     return dither_mode < 0.5 ? ign : blue;
 }
 
+// Glyph coverage, from the Slug algorithm by way of Forme (see THIRD_PARTY_NOTICES.md). A
+// glyph is a list of quadratic curves per band rather than a distance field, so it runs its
+// own loops here instead of joining the SDF ladder below, and everything the loops touch is
+// held to what GLSL ES 1.00 Appendix A admits: a fixed count, a branchless single block body,
+// and carried state limited to independent accumulators. A carried latch, a break, or a
+// non-constant bound each degrade the emitted for header into something ANGLE rejects.
+//
+// The baker pads every band's curve list out to exactly this, so all sixteen lanes fetch real
+// texels and the count guard is a stateless step of the loop index rather than an early out.
+#define MAX_BAND_CURVES 16
+
+// Positive operands only, which is what keeps it apart from the Mod above: that one folds a
+// negative back around through HLSL's %, and % lowers to an fmod whose GLSL spelling has
+// broken macOS before. A texel index is never negative and this runs sixteen times a pixel.
+float BandMod(float x, float y) {
+    return x - y * floor(x / y);
+}
+
+#if __KNIFX__
+// WebGL1 through KNI cannot take a float texture at all - the interop wraps every upload in a
+// Uint8Array and WebGL answers a FLOAT texImage2D with INVALID_OPERATION - so both glyph
+// textures arrive as RGBA8 and the two fetches decode them. Everything the loops below do with
+// what comes back is the same on every target. See GlyphRepack.cs for the encodings.
+//
+// A sampled RGBA8 channel is exactly k / 255, so k comes back with one multiply and a round,
+// and every field boundary is a power of two, which keeps the divisions exact.
+float4 Byte4(float4 t) {
+    return floor(t * 255.0 + 0.5);
+}
+
+// One texel is two integers, 12 bits then 20. The low nibble of g holds the first value's high
+// four bits and the high nibble holds the second value's low four.
+float2 FetchBandTexel(float texelIndex) {
+    float tx = BandMod(texelIndex, band_tex_size.x);
+    float ty = floor(texelIndex * band_texel.x);
+    float4 t = Byte4(SampleBand((float2(tx, ty) + 0.5) * band_texel));
+    float hi = floor(t.g * 0.0625);
+    float lo = t.g - hi * 16.0;
+    return float2(t.r + lo * 256.0, hi + t.b * 16.0 + t.a * 4096.0);
+}
+
+// One logical texel is two physical ones stacked: the four values' low bytes in row 2y and
+// their high bytes in row 2y + 1, each 16 bit value fixed point over [-2, 2].
+float4 FetchCurveTexel(float2 curveLoc) {
+    float2 at = float2(curveLoc.x, curveLoc.y * 2.0) + 0.5;
+    float4 lo = Byte4(SampleCurve(at * curve_texel));
+    float4 hi = Byte4(SampleCurve((at + float2(0.0, 1.0)) * curve_texel));
+    return (lo + hi * 256.0) * (4.0 / 65535.0) - 2.0;
+}
+#else
+float2 FetchBandTexel(float texelIndex) {
+    float tx = BandMod(texelIndex, band_tex_size.x);
+    float ty = floor(texelIndex * band_texel.x);
+    return SampleBand((float2(tx, ty) + 0.5) * band_texel).rg;
+}
+
+float4 FetchCurveTexel(float2 curveLoc) {
+    return SampleCurve((curveLoc + 0.5) * curve_texel);
+}
+#endif
+
+// Slug root eligibility from the signs of the three control point y coordinates.
+// 1 - step(y, 0) keeps the reference's strict y > 0 convention, which is what makes a
+// scanline through a shared endpoint count exactly one of the two adjoining curves.
+float2 RootEligibility(float y1, float y2, float y3) {
+    float s0 = 1.0 - step(y1, 0.0);
+    float s1 = 1.0 - step(y2, 0.0);
+    float s2 = 1.0 - step(y3, 0.0);
+    float n0 = 1.0 - s0;
+    float n1 = 1.0 - s1;
+    float n2 = 1.0 - s2;
+    float root1 = saturate(s0 * n1 * n2 + n0 * s1 * n2 + s0 * s1 * n2 + s0 * n1 * s2);
+    float root2 = saturate(n0 * s1 * n2 + n0 * n1 * s2 + s0 * n1 * s2 + n0 * s1 * s2);
+    return float2(root1, root2);
+}
+
+// Sign-preserving nudge away from zero: |x| stays >= eps without a branch, so 1/x is
+// always finite. step(0, x) * 2 - 1 maps x >= 0 to +1 and x < 0 to -1. A dead lane has to
+// produce large-but-finite garbage rather than a NaN, which a multiply mask cannot kill.
+float FixDenom(float x, float eps) {
+    float s = step(0.0, x) * 2.0 - 1.0;
+    return x + s * max(eps - abs(x), 0.0);
+}
+
+// x coordinates where the sample-relative quadratic crosses y = 0, blended between the
+// quadratic and near-linear forms by mask instead of the reference's branch. Forme widened
+// the near-linear threshold from Slug's 1/65536 to 1e-4 for transpiled GLSL precision.
+// The lerp stays spelled this way: under D3D's x + s * (y - x) lowering a huge first
+// argument at s = 1 gives 0 rather than tl, and that lane never reaches an eligible root.
+float2 SolveHorizPoly(float4 p12, float2 p3) {
+    float2 a = p12.xy - p12.zw * 2.0 + p3;
+    float2 b = p12.xy - p12.zw;
+    float ra = 1.0 / FixDenom(a.y, 1e-9);
+    float rb = 0.5 / FixDenom(b.y, 1e-9);
+    float d = sqrt(max(b.y * b.y - a.y * p12.y, 0.0));
+    float lin = step(abs(a.y), 0.0001);
+    float tl = p12.y * rb;
+    float t1 = lerp((b.y - d) * ra, tl, lin);
+    float t2 = lerp((b.y + d) * ra, tl, lin);
+    return float2(
+        (a.x * t1 - b.x * 2.0) * t1 + p12.x,
+        (a.x * t2 - b.x * 2.0) * t2 + p12.x);
+}
+
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float lineSize = p.Meta1.x;
     // A negative width asks for the fade to straddle the true edge instead of sitting outside
@@ -2494,11 +2612,79 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     }
     float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / clipAa + aaBias));
 
-    if (shape >= 8.5 && shape < 10.5) {
-        if (shape < 9.5) {
-            return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+    if (shape >= 8.5 && shape < 9.5) {
+        return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+    }
+
+    if (shape >= 12.5 && shape < 13.5) {
+        float2 emCoord = p.TexCoord.xy;
+        float bandBase = p.FillCoord.x;
+        float bandCount = p.FillCoord.y;
+        float bandMax = bandCount - 1.0;
+        // Per axis rather than one number: an anisotropic transform stretches the two scans by
+        // different amounts, and each loop only ever measures along its own axis.
+        float2 pixelsPerEm = p.FillCoord.zw;
+
+        float2 bandPos = emCoord * p.BorderCoord.xy + p.BorderCoord.zw;
+        float bandIndexY = clamp(floor(bandPos.y), 0.0, bandMax);
+        float bandIndexX = clamp(floor(bandPos.x), 0.0, bandMax);
+
+        float xcov = 0.0;
+        float xwgt = 0.0;
+        float2 hHeader = FetchBandTexel(bandBase + bandIndexY);
+        float hCurveCount = hHeader.x;
+        float hCurveOffset = hHeader.y;
+
+        for (int i = 0; i < MAX_BAND_CURVES; i++) {
+            float2 curveLoc = FetchBandTexel(hCurveOffset + float(i));
+            // Sample relative before anything else: the solver's near-linear threshold is a
+            // test on the second difference of these, and forming a.y any other way moves it.
+            float4 p12 = FetchCurveTexel(curveLoc) - float4(emCoord, emCoord);
+            float2 p3 = FetchCurveTexel(float2(curveLoc.x + 1.0, curveLoc.y)).xy - emCoord;
+
+            // The count guard is stateless. There is no early-out mask: curves past the
+            // sorted cut lie entirely left of the sample, where both the coverage and weight
+            // terms already clamp to zero.
+            float mask = step(float(i) + 0.5, hCurveCount);
+
+            float2 elig = RootEligibility(p12.y, p12.w, p3.y) * mask;
+            float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.x;
+            xcov += elig.x * saturate(r.x + 0.5) - elig.y * saturate(r.y + 0.5);
+            xwgt = max(xwgt, elig.x * saturate(1.0 - abs(r.x) * 2.0));
+            xwgt = max(xwgt, elig.y * saturate(1.0 - abs(r.y) * 2.0));
         }
-        return SampleFont(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+
+        float ycov = 0.0;
+        float ywgt = 0.0;
+        float2 vHeader = FetchBandTexel(bandBase + bandCount + bandIndexX);
+        float vCurveCount = vHeader.x;
+        float vCurveOffset = vHeader.y;
+
+        for (int j = 0; j < MAX_BAND_CURVES; j++) {
+            float2 curveLoc = FetchBandTexel(vCurveOffset + float(j));
+            float4 raw12 = FetchCurveTexel(curveLoc);
+            float2 raw3 = FetchCurveTexel(float2(curveLoc.x + 1.0, curveLoc.y)).xy;
+
+            // Swap x and y so the horizontal solver and eligibility logic can be reused.
+            float4 p12 = float4(raw12.y, raw12.x, raw12.w, raw12.z) - float4(emCoord.yx, emCoord.yx);
+            float2 p3 = raw3.yx - emCoord.yx;
+
+            // Same stateless guard as the horizontal loop.
+            float mask = step(float(j) + 0.5, vCurveCount);
+
+            float2 elig = RootEligibility(p12.y, p12.w, p3.y) * mask;
+            float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.y;
+            ycov += elig.x * saturate(r.x + 0.5) - elig.y * saturate(r.y + 0.5);
+            ywgt = max(ywgt, elig.x * saturate(1.0 - abs(r.x) * 2.0));
+            ywgt = max(ywgt, elig.y * saturate(1.0 - abs(r.y) * 2.0));
+        }
+
+        float coverage = max(
+            abs(xcov * xwgt + ycov * ywgt) / max(xwgt + ywgt, 0.0001),
+            min(abs(xcov), abs(ycov)));
+        float4 glyphColor = UnpackColor(p.Fill.xy);
+        float alpha = sqrt(saturate(coverage)) * glyphColor.a * clipAlpha;
+        return float4(glyphColor.rgb * alpha, alpha);
     }
 
     // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the

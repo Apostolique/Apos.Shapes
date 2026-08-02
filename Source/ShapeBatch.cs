@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
-using FontStashSharp;
-using FontStashSharp.Interfaces;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
@@ -46,10 +43,11 @@ namespace Apos.Shapes {
             _ditherScale = _effect.Parameters["dither_scale"];
             _ditherMode = _effect.Parameters["dither_mode"];
             _rampTexel = _effect.Parameters["ramp_texel"];
+            _bandTexSize = _effect.Parameters["band_tex_size"];
+            _bandTexel = _effect.Parameters["band_texel"];
+            _curveTexel = _effect.Parameters["curve_texel"];
 
             _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
-
-            _fsr = new FontStashRenderer(graphicsDevice, this);
         }
 
         /// <summary>
@@ -112,7 +110,7 @@ namespace Apos.Shapes {
 
         /// <summary>
         /// Color space that gradient and border colors are interpolated in. Defaults to Oklab. Captured per shape
-        /// at draw time so it can change mid batch without breaking it. Textures and strings always use raw RGBA masks.
+        /// at draw time so it can change mid batch without breaking it. Textures and text always use raw RGBA masks.
         /// </summary>
         public ColorSpace ColorSpace { get; set; } = ColorSpace.Oklab;
 
@@ -2475,133 +2473,95 @@ namespace Apos.Shapes {
         }
 
         /// <summary>
-        /// Draws text with FontStashSharp. The font texture has its own texture slot, so text mixed
-        /// in with shapes never breaks the batch.
+        /// Draws text from the font's own outlines, into the same batch as the shapes. Every glyph
+        /// is solved curve by curve in the pixel shader rather than sampled out of an atlas, so it
+        /// stays exact at any size and at any zoom, and mixing text with shapes still comes out as
+        /// one draw call.
+        ///
+        /// Text lays out from its top left corner: <paramref name="position"/> is the top of the
+        /// first line and the first baseline sits <see cref="ShapeFont.Ascent"/> below it, which is
+        /// the box <see cref="ShapeFont.MeasureString(string, float)"/> hands back. So you can
+        /// measure a string and place it without having drawn it first.
+        ///
+        /// A newline starts a line <see cref="ShapeFont.LineHeight"/> further down, back at the
+        /// left edge, and kerning comes from the font. There is no wrapping, no alignment and no
+        /// ellipsis. Those are layout decisions, and this draws what it is handed.
+        ///
+        /// A code point the font has no glyph for draws the font's own missing glyph box and
+        /// advances by its width, so a hole in the text shows up instead of quietly closing.
         /// </summary>
-        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
-        /// <param name="text">The text to draw.</param>
-        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <param name="font">The font to draw with.</param>
+        /// <param name="text">The text to draw. A newline starts a line, a carriage return is skipped.</param>
+        /// <param name="position">Top left of the first line, before the origin is taken off.</param>
+        /// <param name="size">Em size in world units, which is the size the text comes out at.</param>
         /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
-        /// <param name="rotation">Angle in radians.</param>
-        /// <param name="origin">The point rotation and scaling turn around.</param>
-        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
-        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
-        /// <param name="characterSpacing">Extra space between characters.</param>
-        /// <param name="lineSpacing">Extra space between lines.</param>
-        /// <param name="textStyle">Underline or strikethrough.</param>
-        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
-        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
-        /// <returns>
-        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
-        /// the font's MeasureString for layout.
-        /// </returns>
-        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
-            return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        /// <param name="rotation">Angle in radians, turned around <paramref name="position"/>.</param>
+        /// <param name="origin">
+        /// The point rotation turns around, in world units out from the top left corner. Half of
+        /// what <see cref="ShapeFont.MeasureString(string, float)"/> hands back turns the text
+        /// around its middle.
+        /// </param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="font"/> is null.</exception>
+        /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
+        public void DrawString(ShapeFont font, ReadOnlySpan<char> text, Vector2 position, float size, Color color, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
+            ArgumentNullException.ThrowIfNull(font);
+            if (text.IsEmpty) return;
+
+            GlyphFont f = font.Font;
+            // World units per design unit, which is what the font's own advances and kerning are
+            // measured in.
+            float scale = size / font.UnitsPerEm;
+            float lineHeight = font.LineHeight * size;
+
+            float sin = 0f;
+            float cos = 1f;
+            if (rotation != 0f) {
+                (sin, cos) = SinCos(rotation);
+            }
+
+            // The pen rides in the text's own frame, y down from the top left corner with the
+            // origin already taken off, and every glyph turns that frame into the world the same
+            // way. So rotation costs one sine and one cosine for the whole string.
+            float penX = -origin.X;
+            float penY = font.Ascent * size - origin.Y;
+            float lineStart = penX;
+            var glyphScale = new Vector2(size, size);
+            int prev = -1;
+            for (int i = 0; i < text.Length;) {
+                int codePoint = ShapeFont.CodePointAt(text, i, out int step);
+                i += step;
+                if (codePoint == '\r') continue;
+                if (codePoint == '\n') {
+                    penX = lineStart;
+                    penY += lineHeight;
+                    prev = -1;
+                    continue;
+                }
+                BakedGlyph g = f.Lookup(codePoint);
+                if (prev >= 0) penX += f.Kerning(prev, g.Glyph) * scale;
+                if (g.HasOutline) {
+                    var at = new Vector2(position.X + penX * cos - penY * sin,
+                                         position.Y + penX * sin + penY * cos);
+                    DrawGlyphQuad(g, at, glyphScale, color, sin, cos, aaSize);
+                }
+                penX += g.Advance * scale;
+                prev = g.Glyph;
+            }
         }
-        /// <summary>Draws text with a color per character. See the single color overload.</summary>
-        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
-        /// <param name="text">The text to draw.</param>
-        /// <param name="position">Where the text starts, before the origin is taken off.</param>
-        /// <param name="colors">One color per character, applied as raw RGBA masks.</param>
-        /// <param name="rotation">Angle in radians.</param>
-        /// <param name="origin">The point rotation and scaling turn around.</param>
-        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
-        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
-        /// <param name="characterSpacing">Extra space between characters.</param>
-        /// <param name="lineSpacing">Extra space between lines.</param>
-        /// <param name="textStyle">Underline or strikethrough.</param>
-        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
-        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
-        /// <returns>
-        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
-        /// the font's MeasureString for layout.
-        /// </returns>
-        public float DrawString(SpriteFontBase font, string text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
-            return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
-        }
-        /// <summary>Draws a slice of a string without copying it. See the string overload.</summary>
-        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
-        /// <param name="text">The text to draw.</param>
-        /// <param name="position">Where the text starts, before the origin is taken off.</param>
+        /// <summary>Draws a string. See the span overload.</summary>
+        /// <param name="font">The font to draw with.</param>
+        /// <param name="text">The text to draw. A newline starts a line, a carriage return is skipped.</param>
+        /// <param name="position">Top left of the first line, before the origin is taken off.</param>
+        /// <param name="size">Em size in world units, which is the size the text comes out at.</param>
         /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
-        /// <param name="rotation">Angle in radians.</param>
-        /// <param name="origin">The point rotation and scaling turn around.</param>
-        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
-        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
-        /// <param name="characterSpacing">Extra space between characters.</param>
-        /// <param name="lineSpacing">Extra space between lines.</param>
-        /// <param name="textStyle">Underline or strikethrough.</param>
-        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
-        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
-        /// <returns>
-        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
-        /// the font's MeasureString for layout.
-        /// </returns>
-        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
-            return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
-        }
-        /// <summary>Draws a slice of a string with a color per character. See the string overload.</summary>
-        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
-        /// <param name="text">The text to draw.</param>
-        /// <param name="position">Where the text starts, before the origin is taken off.</param>
-        /// <param name="colors">One color per character, applied as raw RGBA masks.</param>
-        /// <param name="rotation">Angle in radians.</param>
-        /// <param name="origin">The point rotation and scaling turn around.</param>
-        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
-        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
-        /// <param name="characterSpacing">Extra space between characters.</param>
-        /// <param name="lineSpacing">Extra space between lines.</param>
-        /// <param name="textStyle">Underline or strikethrough.</param>
-        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
-        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
-        /// <returns>
-        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
-        /// the font's MeasureString for layout.
-        /// </returns>
-        public float DrawString(SpriteFontBase font, StringSegment text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
-            return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
-        }
-        /// <summary>Draws a StringBuilder's text without building the string. See the string overload.</summary>
-        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
-        /// <param name="text">The text to draw.</param>
-        /// <param name="position">Where the text starts, before the origin is taken off.</param>
-        /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
-        /// <param name="rotation">Angle in radians.</param>
-        /// <param name="origin">The point rotation and scaling turn around.</param>
-        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
-        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
-        /// <param name="characterSpacing">Extra space between characters.</param>
-        /// <param name="lineSpacing">Extra space between lines.</param>
-        /// <param name="textStyle">Underline or strikethrough.</param>
-        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
-        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
-        /// <returns>
-        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
-        /// the font's MeasureString for layout.
-        /// </returns>
-        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color color, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
-            return font.DrawText(_fsr, text, position, color, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
-        }
-        /// <summary>Draws a StringBuilder's text with a color per character. See the string overload.</summary>
-        /// <param name="font">Font to draw with, from a FontSystem at the size you want.</param>
-        /// <param name="text">The text to draw.</param>
-        /// <param name="position">Where the text starts, before the origin is taken off.</param>
-        /// <param name="colors">One color per character, applied as raw RGBA masks.</param>
-        /// <param name="rotation">Angle in radians.</param>
-        /// <param name="origin">The point rotation and scaling turn around.</param>
-        /// <param name="scale">Scale on each axis. Null draws at the font's own size.</param>
-        /// <param name="layerDepth">Passed through to FontStashSharp. This batch draws in call order and ignores it.</param>
-        /// <param name="characterSpacing">Extra space between characters.</param>
-        /// <param name="lineSpacing">Extra space between lines.</param>
-        /// <param name="textStyle">Underline or strikethrough.</param>
-        /// <param name="effect">Blur or stroke effect around the glyphs.</param>
-        /// <param name="effectAmount">How strong <paramref name="effect"/> is.</param>
-        /// <returns>
-        /// Whatever FontStashSharp's own DrawText returns. It isn't the width of the text, so use
-        /// the font's MeasureString for layout.
-        /// </returns>
-        public float DrawString(SpriteFontBase font, StringBuilder text, Vector2 position, Color[] colors, float rotation = 0, Vector2 origin = default, Vector2? scale = null, float layerDepth = 0.0f, float characterSpacing = 0.0f, float lineSpacing = 0.0f, TextStyle textStyle = TextStyle.None, FontSystemEffect effect = FontSystemEffect.None, int effectAmount = 0) {
-            return font.DrawText(_fsr, text, position, colors, rotation, origin, scale, layerDepth, characterSpacing, lineSpacing, textStyle, effect, effectAmount);
+        /// <param name="rotation">Angle in radians, turned around <paramref name="position"/>.</param>
+        /// <param name="origin">The point rotation turns around, in world units out from the top left corner.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="font"/> is null.</exception>
+        /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
+        public void DrawString(ShapeFont font, string text, Vector2 position, float size, Color color, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
+            DrawString(font, text.AsSpan(), position, size, color, rotation, origin, aaSize);
         }
 
         /// <summary>
@@ -2625,39 +2585,101 @@ namespace Apos.Shapes {
             _clipAaSize = MathF.Max(aaSize, 0f);
         }
 
-        private void DrawStringTexture(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
-            if (_fontTexture == null) {
-                _fontTexture = texture;
-            } else if (_fontTexture != texture) {
-                Flush();
-                _fontTexture = texture;
-            }
+        // Where this batch's glyphs are seated, which is what the GPU smoke test rebuilds its
+        // expectations from: the same arenas, the same texel bases, the same numbers the quads
+        // carried. Nothing outside the assembly can reach it.
+        internal GlyphTable Glyphs => _glyphs;
 
+        // Draws one glyph from its outline rather than from an atlas of pixels: the quad carries
+        // the curves' addresses and the pixel shader solves the coverage, so the glyph stays
+        // exact at any size and interleaves with the shapes in the same draw call.
+        //
+        // The origin is the glyph's own, so position is the pen on the baseline and the outline
+        // grows up and to the right of it. Scale is world units per em on each axis, positive on
+        // both; keeping them apart is what makes an anisotropic size come out right, since each
+        // of the shader's two scans measures along its own axis and they never mix. Rotation
+        // turns the quad around the pen.
+        //
+        // Nothing here throws on the draw path. A glyph with no outline - whitespace, a code
+        // point the font has no glyph for, an outline the baker cannot express - draws nothing,
+        // and so does one the table has no room for.
+        internal void DrawGlyph(GlyphFont font, int codePoint, Vector2 position, Vector2 scale, Color color, float rotation = 0f, float aaSize = 1.5f) {
+            BakedGlyph g = font.Lookup(codePoint);
+            if (!g.HasOutline) return;
+            float sin = 0f;
+            float cos = 1f;
+            if (rotation != 0f) {
+                (sin, cos) = SinCos(rotation);
+            }
+            DrawGlyphQuad(g, position, scale, color, sin, cos, aaSize);
+        }
+
+        // The quad itself, once the glyph is in hand and the rotation is resolved. A line of text
+        // shares one sine and one cosine across every glyph in it.
+        private void DrawGlyphQuad(BakedGlyph g, Vector2 position, Vector2 scale, Color color, float sin, float cos, float aaSize) {
             PrepareQuad();
-
-            Gradient gTopLeft = new(Vector2.Zero, topLeft.Color, Vector2.Zero, topLeft.Color, Gradient.Shape.None);
-
-            VertexShape v = new(topLeft.Position, topLeft.TextureCoordinate, VertexShape.Shape.String, gTopLeft, gTopLeft, 0f, 1f, GetClipSpace(new Vector2(topLeft.Position.X, topLeft.Position.Y)));
-            _vertices[_vertexCount + 0] = v;
-            // A glyph is one color unless the caller asked for a per corner tint, which is what
-            // the Color[] overloads do; the common single color string stamps one packed vertex.
-            if (topRight.Color == topLeft.Color && bottomRight.Color == topLeft.Color && bottomLeft.Color == topLeft.Color) {
-                v.CopyTo(ref _vertices[_vertexCount + 1], topRight.Position, topRight.TextureCoordinate, GetClipSpace(new Vector2(topRight.Position.X, topRight.Position.Y)));
-                v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight.Position, bottomRight.TextureCoordinate, GetClipSpace(new Vector2(bottomRight.Position.X, bottomRight.Position.Y)));
-                v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft.Position, bottomLeft.TextureCoordinate, GetClipSpace(new Vector2(bottomLeft.Position.X, bottomLeft.Position.Y)));
-            } else {
-                Gradient gTopRight = new(Vector2.Zero, topRight.Color, Vector2.Zero, topRight.Color, Gradient.Shape.None);
-                Gradient gBottomRight = new(Vector2.Zero, bottomRight.Color, Vector2.Zero, bottomRight.Color, Gradient.Shape.None);
-                Gradient gBottomLeft = new(Vector2.Zero, bottomLeft.Color, Vector2.Zero, bottomLeft.Color, Gradient.Shape.None);
-
-                _vertices[_vertexCount + 1] = new VertexShape(topRight.Position, topRight.TextureCoordinate, VertexShape.Shape.String, gTopRight, gTopRight, 0f, 1f, GetClipSpace(new Vector2(topRight.Position.X, topRight.Position.Y)));
-                _vertices[_vertexCount + 2] = new VertexShape(bottomRight.Position, bottomRight.TextureCoordinate, VertexShape.Shape.String, gBottomRight, gBottomRight, 0f, 1f, GetClipSpace(new Vector2(bottomRight.Position.X, bottomRight.Position.Y)));
-                _vertices[_vertexCount + 3] = new VertexShape(bottomLeft.Position, bottomLeft.TextureCoordinate, VertexShape.Shape.String, gBottomLeft, gBottomLeft, 0f, 1f, GetClipSpace(new Vector2(bottomLeft.Position.X, bottomLeft.Position.Y)));
+            int at = g.Seat(_glyphs);
+            if (at < 0) {
+                // Every resident glyph is pinned by a quad this batch hasn't drawn yet, so
+                // drawing them is what makes room. A flush unpins everything, so the reseat
+                // only fails when one glyph alone is larger than both arenas hold.
+                Flush();
+                at = g.Seat(_glyphs);
+                if (at < 0) return;
             }
+
+            // A rotation is orthonormal, so how far a unit of em reaches on screen along each
+            // axis is the scale over the world size of a pixel whether the glyph is turned or
+            // not - the same quantity aaSize is measured in, arrived at the same way.
+            Vector2 worldPerEm = new(MathF.Abs(scale.X), MathF.Abs(scale.Y));
+            Vector2 center = new(position.X + (g.Min.X + g.Max.X) * 0.5f * scale.X,
+                                 position.Y - (g.Min.Y + g.Max.Y) * 0.5f * scale.Y);
+            UpdatePixelSize(center, (g.Max - g.Min).Length() * MathF.Max(worldPerEm.X, worldPerEm.Y) * 0.5f);
+            Vector2 pixelsPerEm = new(worldPerEm.X / _pixelSize, worldPerEm.Y / _pixelSize);
+
+            // Coverage only reaches half a pixel past the outline, and outside the outline's own
+            // box the two scans cancel to exactly zero however far out the sample sits, so the
+            // margin is free to be generous: it costs fill rate and cannot change a pixel.
+            Vector2 pad = new(MathF.Abs(aaSize) / MathF.Max(pixelsPerEm.X, 1e-6f), MathF.Abs(aaSize) / MathF.Max(pixelsPerEm.Y, 1e-6f));
+            Vector2 emMin = g.Min - pad;
+            Vector2 emMax = g.Max + pad;
+
+            // Font space has y up and the world has it down, so the top of the glyph is its
+            // largest em y. The corners still go round the way every other quad's do.
+            var emTopLeft = new Vector2(emMin.X, emMax.Y);
+            var emTopRight = new Vector2(emMax.X, emMax.Y);
+            var emBottomRight = new Vector2(emMax.X, emMin.Y);
+            var emBottomLeft = new Vector2(emMin.X, emMin.Y);
+
+            Vector2 topLeft = GlyphCorner(emTopLeft, position, scale, sin, cos);
+            Vector2 topRight = GlyphCorner(emTopRight, position, scale, sin, cos);
+            Vector2 bottomRight = GlyphCorner(emBottomRight, position, scale, sin, cos);
+            Vector2 bottomLeft = GlyphCorner(emBottomLeft, position, scale, sin, cos);
+
+            Gradient gc = new(Vector2.Zero, color, Vector2.Zero, color, Gradient.Shape.None);
+
+            VertexShape v = new(new Vector3(topLeft, 0), emTopLeft, VertexShape.Shape.Glyph, gc, gc, 0f, 1f, GetClipSpace(topLeft), aaSize: Aa(aaSize));
+            // A glyph carries no gradient, so the two gradient coordinate slots carry the band
+            // block's address and the shape of the two scans instead. See the channel map above
+            // PixelInput in apos-shapes.fx.
+            v.FillCoord = new Vector4(_glyphs.BandBase(at), g.Bands, pixelsPerEm.X, pixelsPerEm.Y);
+            v.BorderCoord = g.Transform;
+            _vertices[_vertexCount + 0] = v;
+            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), emTopRight, GetClipSpace(topRight));
+            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), emBottomRight, GetClipSpace(bottomRight));
+            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), emBottomLeft, GetClipSpace(bottomLeft));
 
             _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
+        }
+
+        // One corner of a glyph quad, from em units to the world: scaled, flipped onto y down,
+        // turned around the pen and moved to it.
+        private static Vector2 GlyphCorner(Vector2 em, Vector2 position, Vector2 scale, float sin, float cos) {
+            float x = em.X * scale.X;
+            float y = -em.Y * scale.Y;
+            return new Vector2(position.X + x * cos - y * sin, position.Y + x * sin + y * cos);
         }
 
         /// <summary>
@@ -2693,6 +2715,7 @@ namespace Apos.Shapes {
                 _blueNoise.Dispose();
                 _ellipseArc?.Dispose();
                 _rampAtlas?.Dispose();
+                _glyphAtlas?.Dispose();
             }
             _disposed = true;
         }
@@ -2706,6 +2729,7 @@ namespace Apos.Shapes {
             _ditherMode?.SetValue(DitherNoiseSource == DitherNoise.BlueNoise ? 1f : 0f);
             UploadRamps();
             _rampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
+            UploadGlyphs();
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -2733,20 +2757,30 @@ namespace Apos.Shapes {
 
             foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
                 pass.Apply();
+                // Six units, in the order the pixel shader first samples them. See the note on
+                // the sampler declarations in apos-shapes.fx: these numbers and that order have
+                // to agree, and nothing warns when they don't.
                 if (_texture != null) _graphicsDevice.Textures[0] = _texture;
-                if (_fontTexture != null) _graphicsDevice.Textures[1] = _fontTexture;
+                if (_glyphAtlas?.Band != null && _glyphAtlas.Curve != null) {
+                    // Both glyph tables are read texel by texel as data, so they must arrive
+                    // unfiltered; clamped because a padded lane's fetch is free to land anywhere.
+                    _graphicsDevice.Textures[1] = _glyphAtlas.Band;
+                    _graphicsDevice.SamplerStates[1] = SamplerState.PointClamp;
+                    _graphicsDevice.Textures[2] = _glyphAtlas.Curve;
+                    _graphicsDevice.SamplerStates[2] = SamplerState.PointClamp;
+                }
                 if (_ellipseArc != null) {
                     // The shader reads the table's 16 bit values apart by hand, so it must arrive
                     // unfiltered; clamped because the walk runs to both ends of the quadrant.
-                    _graphicsDevice.Textures[2] = _ellipseArc;
-                    _graphicsDevice.SamplerStates[2] = SamplerState.PointClamp;
+                    _graphicsDevice.Textures[3] = _ellipseArc;
+                    _graphicsDevice.SamplerStates[3] = SamplerState.PointClamp;
                 }
-                _graphicsDevice.Textures[3] = _blueNoise;
-                _graphicsDevice.SamplerStates[3] = SamplerState.PointWrap;
+                _graphicsDevice.Textures[4] = _blueNoise;
+                _graphicsDevice.SamplerStates[4] = SamplerState.PointWrap;
                 // The ramp unit stays bound to something valid even with no atlas: the shader
                 // only samples it under a ramp flag no quad sets in that case.
-                _graphicsDevice.Textures[4] = _rampAtlas ?? _blueNoise;
-                _graphicsDevice.SamplerStates[4] = SamplerState.PointClamp;
+                _graphicsDevice.Textures[5] = _rampAtlas ?? _blueNoise;
+                _graphicsDevice.SamplerStates[5] = SamplerState.PointClamp;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -2756,6 +2790,24 @@ namespace Apos.Shapes {
             _indexCount = 0;
             // Everything packed so far is drawn, so the rows it referenced are free to recycle.
             _ramps.Flushed();
+            _glyphs.Flushed();
+        }
+
+        // Brings the two glyph textures up to date with the table's arenas, then hands the
+        // shader the sizes its linear texel addressing divides by. The shader only reaches this
+        // addressing under the glyph shape, so a batch that never drew one leaves the three
+        // parameters alone.
+        private void UploadGlyphs() {
+            if (_glyphs.Count == 0) return;
+            _glyphAtlas ??= new GlyphAtlas();
+            _glyphAtlas.Upload(_graphicsDevice, _glyphs);
+            if (_glyphAtlas.Band != null) {
+                _bandTexSize?.SetValue(new Vector2(_glyphAtlas.Band.Width, _glyphAtlas.Band.Height));
+                _bandTexel?.SetValue(new Vector2(1f / _glyphAtlas.Band.Width, 1f / _glyphAtlas.Band.Height));
+            }
+            if (_glyphAtlas.Curve != null) {
+                _curveTexel?.SetValue(new Vector2(1f / _glyphAtlas.Curve.Width, 1f / _glyphAtlas.Curve.Height));
+            }
         }
 
         // Brings the atlas up to date with the global registry by generation: rows the atlas
@@ -3205,19 +3257,15 @@ namespace Apos.Shapes {
             _fromVertex = (uint)_vertices.Length;
         }
 
-        private class FontStashRenderer(GraphicsDevice gd, ShapeBatch sb) : IFontStashRenderer2 {
-            public GraphicsDevice GraphicsDevice => _graphicsDevice;
-
-            public void DrawQuad(Texture2D texture, ref VertexPositionColorTexture topLeft, ref VertexPositionColorTexture topRight, ref VertexPositionColorTexture bottomLeft, ref VertexPositionColorTexture bottomRight) {
-                _sb.DrawStringTexture(texture, ref topLeft, ref topRight, ref bottomLeft, ref bottomRight);
-            }
-
-            readonly GraphicsDevice _graphicsDevice = gd;
-            readonly ShapeBatch _sb = sb;
-        }
-
         private Texture2D? _texture = null;
-        private Texture2D? _fontTexture = null;
+
+        // This batch's own glyph table and the two textures that mirror its arenas, built the
+        // first time a glyph is drawn. Per batch for the same reason the ramp table is: two
+        // batches never contend for room, and a seat stays valid until the quad holding it
+        // draws. Glyphs seated since the last flush are pinned, so an eviction can't pull one
+        // out from under an undrawn quad; DrawGlyph flushes early when every one of them is.
+        private readonly GlyphTable _glyphs = new();
+        private GlyphAtlas? _glyphAtlas;
 
         private const int _initialVertices = 2048 * 4;
         private const int _initialIndices = 2048 * 6;
@@ -3245,6 +3293,9 @@ namespace Apos.Shapes {
         private readonly EffectParameter? _ditherScale;
         private readonly EffectParameter? _ditherMode;
         private readonly EffectParameter? _rampTexel;
+        private readonly EffectParameter? _bandTexSize;
+        private readonly EffectParameter? _bandTexel;
+        private readonly EffectParameter? _curveTexel;
         private readonly Texture2D _blueNoise;
         // Built the first time an ellipse is dashed, since nothing else reads it.
         private Texture2D? _ellipseArc;
@@ -3270,7 +3321,6 @@ namespace Apos.Shapes {
         private uint _fromIndex = 0;
         private uint _fromVertex = 0;
 
-        private readonly FontStashRenderer _fsr;
 
         private bool _hasClip = false;
         private Vector2 _clipCenter;
