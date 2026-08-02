@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.8.1] - 2026-08-02
+
 ### Added
 
 - SVG drawings. `DrawSvg(svg, position, size, rotation, origin, aaSize)` solves every filled element from its own curves in the pixel shader and draws its strokes through the path renderer, so a drawing is exact at any size, rotation, and zoom, and stays in the batch's one draw call. Elements draw in the order the file lists them. `position` is the top left of the viewBox and `size` is the viewBox's height in world units. There's no viewport clipping, so a file that draws past its own viewBox draws past it here too.
@@ -389,7 +393,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.14...v0.8.0
 [0.7.14]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.13...v0.7.14
 [0.7.13]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.12...v0.7.13
