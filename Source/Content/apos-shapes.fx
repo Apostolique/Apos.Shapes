@@ -25,12 +25,12 @@ float2 curve_texel; // 1 / the glyph curve texture's texel counts.
 // OpenGL and Vulkan translator hands out texture units in the order the pixel shader first
 // SAMPLES from, not the order the samplers are declared or the registers they ask for, while
 // the KNI toolchain goes by the register. So the three have to agree, and that means listing
-// them in the order the pixel shader reaches them: the texture mask returns early, then a
-// glyph reads its band headers and then its curve control points and returns early too, then
-// the elliptical arc length table, then the dither noise, then the ramp table. The dither
-// sits before the ramp because the blur path returns early THROUGH a dither call, ahead of
-// the color section where the ramp reads. Getting this wrong is silent - the shader simply
-// reads a different texture and the picture goes to noise.
+// them in the order the pixel shader reaches them: the texture mask returns early, then the
+// first arm of the shape ladder reads a glyph's band headers and then its curve control
+// points, then the elliptical arc length table further down that ladder, then the dither
+// noise, then the ramp table. The dither sits before the ramp because the blur path returns
+// early THROUGH a dither call, ahead of the color section where the ramp reads. Getting this
+// wrong is silent - the shader simply reads a different texture and the picture goes to noise.
 #if SM6
 // DXC drops the legacy sampler syntax: declare texture/sampler pairs on matching
 // registers so the Vulkan reflection treats them as combined image-samplers.
@@ -76,12 +76,18 @@ struct VertexInput {
     float4 ClipDist : POSITION1;
     float2 ClipRoundAA : NORMAL0;
 };
-// A glyph quad carries no gradient, so it reuses the two gradient coordinate slots and
-// nothing else: TexCoord.xy is the corner in em units, FillCoord is (band texel base, band
-// count, pixels per em x, pixels per em y) and BorderCoord is the em to band index transform,
-// scale in xy and offset in zw. The band texel base is an integer that reaches six figures, so
-// it keeps a channel to itself rather than sharing one - see the note on the packed meta in
-// SpritePixelShader for the budget an interpolator carries exactly.
+// A glyph quad reads its fill gradient exactly like every other shape, so FillCoord means what
+// it always means and the glyph's own data takes the channels a glyph has no use for:
+// TexCoord.xy is the corner in em units, Meta2 is (band texel base, band count, pixels per em x,
+// pixels per em y) - four dash channels no glyph dashes with - and BorderCoord is the em to band
+// index transform, scale in xy and offset in zw, since a glyph has no border band to place a
+// second gradient on. TexCoord.z, the corner rounding, stays 0 because the tail takes it off
+// the distance for every shape alike. The band texel base is an integer that reaches six
+// figures, so it keeps a channel to itself rather than sharing one - see the note on the packed
+// meta in SpritePixelShader for the budget an interpolator carries exactly.
+//
+// An SVG element's quad is a glyph quad in every one of those channels. All that sets it apart
+// is its shape id, which picks the even-odd fill rule at the end of the same arm.
 struct PixelInput {
     float4 Position : SV_Position0;
     float4 TexCoord : TEXCOORD0; // xy: uv or local position, z: rounded, w: packed shape, gradient styles and color space.
@@ -2470,11 +2476,11 @@ float DitherNoise(float2 worldPos) {
 }
 
 // Glyph coverage, from the Slug algorithm by way of Forme (see THIRD_PARTY_NOTICES.md). A
-// glyph is a list of quadratic curves per band rather than a distance field, so it runs its
-// own loops here instead of joining the SDF ladder below, and everything the loops touch is
-// held to what GLSL ES 1.00 Appendix A admits: a fixed count, a branchless single block body,
-// and carried state limited to independent accumulators. A carried latch, a break, or a
-// non-constant bound each degrade the emitted for header into something ANGLE rejects.
+// glyph is a list of quadratic curves per band rather than a distance field, so its arm of the
+// shape ladder below runs two loops where the others evaluate an SDF, and everything the loops
+// touch is held to what GLSL ES 1.00 Appendix A admits: a fixed count, a branchless single
+// block body, and carried state limited to independent accumulators. A carried latch, a break,
+// or a non-constant bound each degrade the emitted for header into something ANGLE rejects.
 //
 // The baker pads every band's curve list out to exactly this, so all sixteen lanes fetch real
 // texels and the count guard is a stateless step of the loop index rather than an early out.
@@ -2543,6 +2549,21 @@ float2 RootEligibility(float y1, float y2, float y3) {
     float root1 = saturate(s0 * n1 * n2 + n0 * s1 * n2 + s0 * s1 * n2 + s0 * n1 * s2);
     float root2 = saturate(n0 * s1 * n2 + n0 * n1 * s2 + s0 * n1 * s2 + n0 * s1 * s2);
     return float2(root1, root2);
+}
+
+// abs() generalized to a parity: a triangle wave peaking at every odd integer and zero at every
+// even one, which is what turns a crossing count into an even-odd fill. Symmetric about every
+// integer and continuous everywhere, so an accumulator drifting across an edge fades rather than
+// snapping. Folding to the nearest even integer rather than through a mod is what keeps it abs to
+// the last bit on [-1, 1]: the floor is 0 there and nothing is subtracted.
+float Tri(float x) {
+    float a = abs(x);
+    return abs(a - 2.0 * floor((a + 1.0) * 0.5));
+}
+// Tri with the accumulator's own sign put back, which makes it the identity on [-1, 1]. The sign
+// is the same branchless one FixDenom uses.
+float TriSigned(float x) {
+    return (step(0.0, x) * 2.0 - 1.0) * Tri(x);
 }
 
 // Sign-preserving nudge away from zero: |x| stays >= eps without a branch, so 1/x is
@@ -2616,14 +2637,54 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
     }
 
-    if (shape >= 12.5 && shape < 13.5) {
-        float2 emCoord = p.TexCoord.xy;
-        float bandBase = p.FillCoord.x;
-        float bandCount = p.FillCoord.y;
+    // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the
+    // contour, dashV across it, and dashData, the (period, packed fraction and phase) pair
+    // from the shape's spare channels. Closed outlines instead mask their border band with
+    // dashCut, the world distance to the nearest dash edge. The defaults keep the flattened
+    // out dash arithmetic finite when a shape isn't dashed.
+    float2 q = p.TexCoord.xy;
+    float rounded = p.TexCoord.z;
+    float dashU = 0.0;
+    float dashCut = 1.0;   // Closed outlines: world distance to the dash edge, negative inside.
+    float2 dashCapA = float2(0.0, 0.0); // Where the band's centerline crosses each of the two
+    float2 dashCapB = float2(0.0, 0.0); // bounding edges: a rounded dash's cap centers.
+    float2 dashDirA = float2(1.0, 0.0); // The centerline's own direction at each of those, which
+    float2 dashDirB = float2(1.0, 0.0); // is what squares the cap across the band.
+    float dashCapSpan = 0.0;  // How far from its cap a cut still binds; see the round cap below.
+    float4 dashFarA = float4(0.0, 0.0, 1.0, 0.0); // Where the corner beyond each cut hands the
+    float4 dashFarB = float4(0.0, 0.0, 1.0, 0.0); // dash on, when one does; see CornerCenter.
+    float2 dashFarS = float2(0.0, 0.0);           // Which side of each cut that corner sits on.
+    float4 dashArcA = float4(0.0, 0.0, 0.0, 0.0); // And the centerline arc that corner rounds the
+    float4 dashArcB = float4(0.0, 0.0, 0.0, 0.0); // band on, which the walk between them follows.
+    float dashPat = 1.0;      // Signed pattern distance to the nearest edge, negative in a dash.
+    bool dashCapDone = false; // Set when the cut already IS the rounded capsule, see below.
+    float dashV = 0.0;
+    float dashR = 0.0;
+    float2 dashData = float2(1.0, 0.0);
+    bool dashStroke = false;
+
+    // A glyph is coverage rather than a distance field, so it stands where a shape's SDF would
+    // and hands the tail below its coverage in place of the edge fade. The 1 is what every other
+    // shape leaves here, and the 0 distance is only ever read by the shape gradient.
+    //
+    // An SVG element takes the same arm with the even-odd fill rule instead of nonzero. It is the
+    // same curves through the same two loops, so the rule is a second shape id rather than a
+    // branch of its own, and it costs one step here and two lerps at the very end.
+    bool isGlyph = shape >= 12.5 && shape < 14.5;
+    float evenOdd = step(13.5, shape);
+    float glyphFade = 1.0;
+
+    float d = 0.0;
+    if (isGlyph) {
+        // Glyph coverage, from the Slug algorithm by way of Forme. The two loops are held to
+        // what GLSL ES 1.00 Appendix A admits; see MAX_BAND_CURVES above.
+        float2 emCoord = q;
+        float bandBase = p.Meta2.x;
+        float bandCount = p.Meta2.y;
         float bandMax = bandCount - 1.0;
         // Per axis rather than one number: an anisotropic transform stretches the two scans by
         // different amounts, and each loop only ever measures along its own axis.
-        float2 pixelsPerEm = p.FillCoord.zw;
+        float2 pixelsPerEm = p.Meta2.zw;
 
         float2 bandPos = emCoord * p.BorderCoord.xy + p.BorderCoord.zw;
         float bandIndexY = clamp(floor(bandPos.y), 0.0, bandMax);
@@ -2679,42 +2740,24 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             ywgt = max(ywgt, elig.y * saturate(1.0 - abs(r.y) * 2.0));
         }
 
+        // Each accumulator holds a signed count of the crossings on one side of the sample, so
+        // the fill rule is only how that count is read: nonzero takes its magnitude, even-odd
+        // takes its parity. TriSigned is the identity on [-1, 1], which is everywhere the two
+        // rules agree, so an outline that draws the same either way comes out bit for bit the
+        // same whichever id it carries. Substituting the accumulators is the whole change: the
+        // weighted mix and the min below stay exactly what the nonzero fill ships with.
+        //
+        // The min is not redundant. The vertical scan swaps x and y rather than turning them, so
+        // ycov always carries the opposite sign to xcov, and on a 45 degree edge both weights
+        // reach 1 and the mix cancels to nothing. The min of the two magnitudes is what holds
+        // that edge up.
+        float px = lerp(xcov, TriSigned(xcov), evenOdd);
+        float py = lerp(ycov, TriSigned(ycov), evenOdd);
         float coverage = max(
-            abs(xcov * xwgt + ycov * ywgt) / max(xwgt + ywgt, 0.0001),
-            min(abs(xcov), abs(ycov)));
-        float4 glyphColor = UnpackColor(p.Fill.xy);
-        float alpha = sqrt(saturate(coverage)) * glyphColor.a * clipAlpha;
-        return float4(glyphColor.rgb * alpha, alpha);
-    }
-
-    // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the
-    // contour, dashV across it, and dashData, the (period, packed fraction and phase) pair
-    // from the shape's spare channels. Closed outlines instead mask their border band with
-    // dashCut, the world distance to the nearest dash edge. The defaults keep the flattened
-    // out dash arithmetic finite when a shape isn't dashed.
-    float2 q = p.TexCoord.xy;
-    float rounded = p.TexCoord.z;
-    float dashU = 0.0;
-    float dashCut = 1.0;   // Closed outlines: world distance to the dash edge, negative inside.
-    float2 dashCapA = float2(0.0, 0.0); // Where the band's centerline crosses each of the two
-    float2 dashCapB = float2(0.0, 0.0); // bounding edges: a rounded dash's cap centers.
-    float2 dashDirA = float2(1.0, 0.0); // The centerline's own direction at each of those, which
-    float2 dashDirB = float2(1.0, 0.0); // is what squares the cap across the band.
-    float dashCapSpan = 0.0;  // How far from its cap a cut still binds; see the round cap below.
-    float4 dashFarA = float4(0.0, 0.0, 1.0, 0.0); // Where the corner beyond each cut hands the
-    float4 dashFarB = float4(0.0, 0.0, 1.0, 0.0); // dash on, when one does; see CornerCenter.
-    float2 dashFarS = float2(0.0, 0.0);           // Which side of each cut that corner sits on.
-    float4 dashArcA = float4(0.0, 0.0, 0.0, 0.0); // And the centerline arc that corner rounds the
-    float4 dashArcB = float4(0.0, 0.0, 0.0, 0.0); // band on, which the walk between them follows.
-    float dashPat = 1.0;      // Signed pattern distance to the nearest edge, negative in a dash.
-    bool dashCapDone = false; // Set when the cut already IS the rounded capsule, see below.
-    float dashV = 0.0;
-    float dashR = 0.0;
-    float2 dashData = float2(1.0, 0.0);
-    bool dashStroke = false;
-
-    float d;
-    if (shape < 0.5) {
+            abs(px * xwgt + py * ywgt) / max(xwgt + ywgt, 0.0001),
+            min(abs(px), abs(py)));
+        glyphFade = sqrt(saturate(coverage));
+    } else if (shape < 0.5) {
         d = CircleSDF(q, sdfSize);
         if (dashType >= 0.5) {
             // The circle is one arc end to end, so every dash edge is a ray out of the center
@@ -2956,10 +2999,14 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         return br;
     }
 
-    float aaSize = pixelWidth * aaPixels;
+    // A glyph has no edge to measure the fade across, so what a gradient antialiases its stops
+    // over is the pixel's own footprint, arrived at the same way a dash edge's width is.
+    float aaSize = (isGlyph ? footprint.y : pixelWidth) * aaPixels;
 
-    // Beyond the outer AA edge every branch below resolves to premultiplied zero.
-    if (d >= aaSize * (1.0 - aaBias)) {
+    // Beyond the outer AA edge every branch below resolves to premultiplied zero, and so does
+    // everything a glyph's coverage misses - which is most of its quad, since the outline's box
+    // is padded out to hold the fade.
+    if (isGlyph ? glyphFade <= 0.0 : d >= aaSize * (1.0 - aaBias)) {
         discard;
     }
 
@@ -2987,8 +3034,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float4 fillA = UnpackColor(fillPk.xy);
     float4 fillB = UnpackColor(fillPk.zw);
 
-    float edgeFade = 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize + aaBias));
-    float borderMix = smoothstep(0.0, 1.0, saturate((d + lineSize) / aaSize + 1.0 - aaBias));
+    // The glyph's own coverage is its fade, and it has no border band for the crossfade to
+    // reach: the border slots stand down on a glyph quad (see the ctor in ShapeVertex.cs) and
+    // BorderCoord carries the band transform rather than a second gradient's frame.
+    float edgeFade = isGlyph ? glyphFade : 1.0 - smoothstep(0.0, 1.0, saturate(d / aaSize + aaBias));
+    float borderMix = isGlyph ? 0.0 : smoothstep(0.0, 1.0, saturate((d + lineSize) / aaSize + 1.0 - aaBias));
 
     // Closed outlines mask their border band along the perimeter; the gaps show the fill.
     // The AA width comes from the pixel footprint alone, since the cut is already a world

@@ -39,6 +39,14 @@ namespace GameProject {
             using (var ttf = TitleContainer.OpenStream($"{Content.RootDirectory}/source-code-pro-medium.ttf")) {
                 _font = new ShapeFont(ttf);
             }
+
+            // Drawings are loaded once and kept, the same way the font is: reading the file and
+            // baking its outlines is the expensive part, and drawing one is not.
+            _svgIcon = new ShapeSvg(IconSvg);
+            _svgRulesNonzero = new ShapeSvg(RulesSvg("nonzero"));
+            _svgRulesEvenOdd = new ShapeSvg(RulesSvg("evenodd"));
+            _svgSunrise = new ShapeSvg(SunriseSvg);
+            _svgChart = new ShapeSvg(ChartSvg);
         }
 
         protected override void Update(GameTime gameTime) {
@@ -93,6 +101,7 @@ namespace GameProject {
                 case Scene.ColorSpace: DrawColorSpaceScene(fontSize); break;
                 case Scene.Clip: DrawClipScene(fontSize); break;
                 case Scene.Text: DrawTextScene(fontSize); break;
+                case Scene.Svg: DrawSvgScene(fontSize); break;
                 case Scene.Dash: DrawDashScene(); break;
                 case Scene.Closed: DrawClosedScene(); break;
                 case Scene.Blur: DrawBlurScene(fontSize); break;
@@ -145,6 +154,7 @@ namespace GameProject {
             Scene.ColorSpace => "Color spaces",
             Scene.Clip => "Clipping",
             Scene.Text => "Text",
+            Scene.Svg => "SVG drawings",
             Scene.Dash => "Dashes",
             Scene.Closed => "Closed paths",
             Scene.Blur => "Blur",
@@ -1035,22 +1045,39 @@ namespace GameProject {
             // Every glyph above came out of the file the first time it drew. Nothing was declared.
             _sb.DrawString(_font, "read from\nthe file on\nfirst use", new Vector2(400, top), fontSize, TWColor.Gray500);
 
-            // Text is a shape like the others: same batch, same clip, same one draw call.
-            L(128, "In the batch with the shapes: over a ramp, translucent, and clipped to a box");
-            _sb.FillRectangle(new Vector2(-620, _rowD - 32), new Vector2(400, 64),
-                new Gradient(new Vector2(-620, _rowD), new Vector2(-220, _rowD), _colorsSpectrum), 12f);
-            _sb.DrawString(_font, "over a ramp", new Vector2(-540, _rowD - 15), fontSize, TWColor.Gray950);
-            _sb.FillRectangle(new Vector2(-180, _rowD - 32), new Vector2(280, 64), TWColor.Indigo700, 12f);
-            _sb.DrawString(_font, "translucent", new Vector2(-140, _rowD - 15), fontSize, new Color(TWColor.White, 0.45f));
-            // The clip cuts the glyph's own coverage, so the letter it lands on comes out half drawn
-            // rather than dropped.
-            _sb.SetClipRect(new RectangleF(140, _rowD - 32, 300, 64), 12f);
-            _sb.FillRectangle(new Vector2(140, _rowD - 32), new Vector2(300, 64), TWColor.Slate800, new CornerRadii(12));
-            _sb.DrawString(_font, "a label too long for its box", new Vector2(160, _rowD - 15), fontSize, TWColor.Gray100);
-            _sb.SetClipRect(null);
-            _sb.BorderRectangle(new Vector2(140, _rowD - 32), new Vector2(300, 64), TWColor.Gray600, 2f, new CornerRadii(12));
-            _sb.FillCircle(new Vector2(520, _rowD), 32, TWColor.Sky400);
-            _sb.DrawString(_font, "1", new Vector2(520 - _font.MeasureString("1", 36f).X * 0.5f, _rowD - _font.LineHeight * 36f * 0.5f), 36f, TWColor.Gray950);
+            // The fill is a whole Gradient, so text takes the same stops, ramps and palettes a
+            // shape does. It is resolved once for the line, so the colors sweep across the string
+            // instead of starting over inside every glyph.
+            L(128, "The fill is a Gradient: two stops, a color ramp, a palette, and one that turns");
+            const float gradSize = 34f;
+            float gradTop = _rowD - _font.LineHeight * gradSize * 0.5f;
+
+            Vector2 twoAt = new(-620, gradTop);
+            float twoWide = _font.MeasureString("two stops", gradSize).X;
+            _sb.DrawString(_font, "two stops", twoAt, gradSize,
+                new Gradient(twoAt, TWColor.Sky400, twoAt + new Vector2(twoWide, 0f), TWColor.Fuchsia500));
+
+            Vector2 rampAt = new(-390, gradTop);
+            float rampWide = _font.MeasureString("a color ramp", gradSize).X;
+            _sb.DrawString(_font, "a color ramp", rampAt, gradSize,
+                new Gradient(rampAt, rampAt + new Vector2(rampWide, 0f), _colorsSpectrum));
+
+            // The cosine palettes are tuned for raw RGB channels, same as the palette scene.
+            Vector2 palAt = new(-100, gradTop);
+            float palWide = _font.MeasureString("a palette", gradSize).X;
+            var rainbow = new Palette(new Vector3(0.5f), new Vector3(0.5f), new Vector3(1f), new Vector3(0f, 0.33f, 0.67f));
+            _sb.ColorSpace = ColorSpace.Rgb;
+            _sb.DrawString(_font, "a palette", palAt, gradSize,
+                new Gradient(palAt, palAt + new Vector2(palWide, 0f), rainbow));
+            _sb.ColorSpace = ColorSpace.Oklab;
+
+            // A local gradient is read in the line's own box, y down from where the text starts,
+            // and turns with it. Half that box as the origin turns the line about its middle.
+            const string turned = "and one that turns";
+            Vector2 turnBox = _font.MeasureString(turned, gradSize);
+            _sb.DrawString(_font, turned, new Vector2(350, _rowD), gradSize,
+                new Gradient(Vector2.Zero, TWColor.Lime300, turnBox, TWColor.Teal600, isLocal: true),
+                0.15f, turnBox * 0.5f);
 
             Footer(fontSize, "Scroll to zoom: the curves are solved again every frame, so the letters never go soft");
             _sb.End();
@@ -1058,6 +1085,147 @@ namespace GameProject {
 
         private void Footer(float fontSize, string text) {
             _sb.DrawString(_font, text, new Vector2(-620, 300), fontSize, TWColor.Gray500);
+        }
+
+        // The drawings the SVG scene uses, written out here so the example stays one project with
+        // one asset. A file off disk goes through the same constructors.
+        //
+        // An icon in the shape a real one comes in: a card whose frame is a stroke, a filled sun,
+        // and a filled ridge over it, in the order the file lists them.
+        private const string IconSvg = """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+              <rect x="5" y="9" width="54" height="46" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="4"/>
+              <circle cx="21" cy="24" r="6" fill="#fbbf24"/>
+              <path d="M9 51 L26 30 L38 44 L45 36 L57 51 Z" fill="#34d399"/>
+            </svg>
+            """;
+        // Three outlines that cross themselves or each other: a five pointed star drawn in one
+        // stroke of the pen, a disc with a second disc wound the same way inside it, and two
+        // overlapping squares. The fill rule is the only thing that differs between the two copies.
+        private static string RulesSvg(string rule) => $"""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100">
+              <path fill="#f472b6" fill-rule="{rule}" d="M50 5 L76.5 86.4 L7.2 36.1 L92.8 36.1 L23.5 86.4 Z"/>
+              <path fill="#c084fc" fill-rule="{rule}" d="M150 50 m-45 0 a45 45 0 1 0 90 0 a45 45 0 1 0 -90 0 Z
+                                                         M150 50 m-24 0 a24 24 0 1 0 48 0 a24 24 0 1 0 -48 0 Z"/>
+              <path fill="#5eead4" fill-rule="{rule}" d="M212 12 H268 V68 H212 Z M232 32 H288 V88 H232 Z"/>
+            </svg>
+            """;
+        // Paint out of defs: a linear gradient down the sky, a radial one on the sun, and a ridge
+        // stroked over both of them.
+        private const string SunriseSvg = """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80">
+              <defs>
+                <linearGradient id="sky" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="80">
+                  <stop offset="0" stop-color="#1e1b4b"/>
+                  <stop offset="0.55" stop-color="#7c3aed"/>
+                  <stop offset="1" stop-color="#fb923c"/>
+                </linearGradient>
+                <radialGradient id="sun">
+                  <stop offset="0" stop-color="#fef08a"/>
+                  <stop offset="1" stop-color="#f97316"/>
+                </radialGradient>
+              </defs>
+              <rect x="0" y="0" width="120" height="80" rx="10" fill="url(#sky)"/>
+              <circle cx="60" cy="50" r="18" fill="url(#sun)"/>
+              <path d="M4 64 L30 64 L46 57 L74 57 L90 64 L116 64" fill="none" stroke="#0f172a"
+                    stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            """;
+        // Strokes and nothing else: a dashed baseline the file gives its own offset to, and a
+        // polyline whose caps and joins are round.
+        private const string ChartSvg = """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 80">
+              <path d="M10 70 H130" fill="none" stroke="#64748b" stroke-width="3"
+                    stroke-dasharray="10 7" stroke-dashoffset="4"/>
+              <polyline points="10,58 34,24 58,46 82,14 106,40 130,10" fill="none" stroke="#22d3ee"
+                        stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="82" cy="14" r="7" fill="#0f172a" stroke="#22d3ee" stroke-width="4"/>
+            </svg>
+            """;
+
+        // Vector drawings out of SVG files. Every filled element is solved from its own curves in
+        // the pixel shader the way a glyph is, so a drawing is exact at any size, and its strokes
+        // go through the same path renderer a hand written one does. Tab cycles to it.
+        private void DrawSvgScene(float fontSize) {
+            _sb.Begin(_camera.View);
+            void L(float y, string t) => _sb.DrawString(_font, t, new Vector2(-620, y), fontSize, TWColor.Gray400);
+            void Under(float x, float y, string t) => _sb.DrawString(_font, t, new Vector2(x, y), fontSize, TWColor.Gray500);
+
+            // The size is one em, which is the viewBox's height, and the position is that box's top
+            // left corner. So half the size up from a row center puts a drawing on it.
+            L(-348, "One file at every size: nothing is baked, so each of these solves the same curves");
+            float[] sizes = [24f, 36f, 52f, 72f, 96f];
+            float ix = -620f;
+            foreach (float s in sizes) {
+                _sb.DrawSvg(_svgIcon, new Vector2(ix, _rowA - s * 0.5f), s);
+                ix += s + 30f;
+            }
+            // Measure hands back the viewBox, which is where the file says its picture is.
+            _sb.BorderRectangle(new Vector2(-316, _rowA - 48f), _svgIcon.Measure(96f), TWColor.Gray500, 1f, dash: new DashStyle(8f, 6f));
+            // Turning one costs what turning a line of text costs: one sine and one cosine for the
+            // whole drawing, however many elements it has.
+            Vector2 spin = _svgIcon.Measure(72f) * 0.5f;
+            for (int i = 0; i < 5; i++) {
+                _sb.DrawSvg(_svgIcon, new Vector2(-100 + i * 160, _rowA), 72f, MathF.Tau * i / 16f, spin);
+            }
+
+            // Nonzero fills wherever the outline wraps at all, even-odd only where it wraps an odd
+            // number of times. So the two disagree where a shape covers itself twice, which is what
+            // each of these three does in its middle.
+            L(-180, "fill-rule: the same three outlines, filled nonzero and filled even-odd");
+            _sb.DrawSvg(_svgRulesNonzero, new Vector2(-620, _rowB - 48f), 96f);
+            Under(-620, _rowB + 52f, "nonzero");
+            _sb.DrawSvg(_svgRulesEvenOdd, new Vector2(-292, _rowB - 48f), 96f);
+            Under(-292, _rowB + 52f, "even-odd");
+            _sb.DrawSvg(_svgRulesEvenOdd, new Vector2(60, _rowB - 30f), 60f);
+            _sb.DrawSvg(_svgRulesEvenOdd, new Vector2(300, _rowB - 18f), 36f);
+            Under(60, _rowB + 52f, "and a hole stays a hole at any size");
+
+            L(-30, "Gradients out of defs, strokes with their caps and dashes, turned and clipped");
+            _sb.DrawSvg(_svgSunrise, new Vector2(-620, _rowC - 50f), 100f);
+            _sb.DrawSvg(_svgChart, new Vector2(-440, _rowC - 50f), 100f);
+            // A gradient in the file is part of the artwork, so it turns and scales with it.
+            _sb.DrawSvg(_svgSunrise, new Vector2(-160, _rowC), 72f, 0.35f, _svgSunrise.Measure(72f) * 0.5f);
+            _sb.DrawSvg(_svgChart, new Vector2(60, _rowC), 72f, -0.25f, _svgChart.Measure(72f) * 0.5f);
+            // A drawing clips like every other shape: the window cuts each element's own coverage,
+            // so the elements it lands on come out half drawn rather than dropped.
+            _sb.SetClipRect(new RectangleF(300, _rowC - 52f, 320, 104f), 20f);
+            _sb.DrawSvg(_svgSunrise, new Vector2(280, _rowC - 48f), 96f);
+            _sb.DrawSvg(_svgSunrise, new Vector2(480, _rowC - 48f), 96f);
+            _sb.SetClipRect(null);
+            _sb.BorderRectangle(new Vector2(300, _rowC - 52f), new Vector2(320, 104f), TWColor.Gray600, 2f, new CornerRadii(20));
+
+            // The override overload paints every element the same way, fills and strokes alike, so
+            // what survives is the drawing's shape rather than its colors.
+            L(128, "One color of your own replaces every paint in the file, fills and strokes alike");
+            const float icon = 80f;
+            float top = _rowD - icon * 0.5f;
+            Vector2 corner = new(icon, icon);
+            _sb.DrawSvg(_svgIcon, new Vector2(-620, top), icon);
+            Under(-620, _rowD + 50f, "the file");
+            _sb.DrawSvg(_svgIcon, new Vector2(-412, top), icon, TWColor.Amber300);
+            Under(-412, _rowD + 50f, "one color");
+            _sb.DrawSvg(_svgIcon, new Vector2(-204, top), icon,
+                new Gradient(new Vector2(-204, top), TWColor.Sky400, new Vector2(-204, top) + corner, TWColor.Fuchsia600));
+            Under(-204, _rowD + 50f, "two stops");
+            _sb.DrawSvg(_svgIcon, new Vector2(4, top), icon,
+                new Gradient(new Vector2(4, top), new Vector2(4, top) + corner, _colorsSpectrum));
+            Under(4, _rowD + 50f, "a color ramp");
+            _sb.ColorSpace = ColorSpace.Rgb;
+            var candy = new Palette(new Vector3(0.5f), new Vector3(0.5f), new Vector3(2f, 1f, 0f), new Vector3(0.5f, 0.2f, 0.25f));
+            _sb.DrawSvg(_svgIcon, new Vector2(212, top), icon,
+                new Gradient(new Vector2(212, top), new Vector2(212, top) + corner, candy));
+            _sb.ColorSpace = ColorSpace.Oklab;
+            Under(212, _rowD + 50f, "a palette");
+            // A local gradient is read in the drawing's own box, y down from its top left corner,
+            // and turns with it.
+            _sb.DrawSvg(_svgIcon, new Vector2(460, _rowD), icon,
+                new Gradient(Vector2.Zero, TWColor.Lime300, corner, TWColor.Teal700, isLocal: true),
+                0.3f, corner * 0.5f);
+            Under(400, _rowD + 50f, "local, turned");
+
+            Footer(fontSize, "A drawing loads once and is kept: its elements seat in the table the glyphs use");
+            _sb.End();
         }
 
         // Blurred shapes. The falloff is a world space Gaussian rather than a screen space AA
@@ -1275,6 +1443,11 @@ namespace GameProject {
         ShapeBatch _sb;
 
         ShapeFont _font = null!;
+        ShapeSvg _svgIcon = null!;
+        ShapeSvg _svgRulesNonzero = null!;
+        ShapeSvg _svgRulesEvenOdd = null!;
+        ShapeSvg _svgSunrise = null!;
+        ShapeSvg _svgChart = null!;
         FPSCounter _fps = new FPSCounter();
 
         ICondition _quit =
@@ -1335,6 +1508,7 @@ namespace GameProject {
             ColorSpace,
             Clip,
             Text,
+            Svg,
             Dash,
             Closed,
             Blur,

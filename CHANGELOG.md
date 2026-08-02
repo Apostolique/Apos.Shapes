@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- SVG drawings. `DrawSvg(svg, position, size, rotation, origin, aaSize)` solves every filled element from its own curves in the pixel shader and draws its strokes through the path renderer, so a drawing is exact at any size, rotation, and zoom, and stays in the batch's one draw call. Elements draw in the order the file lists them. `position` is the top left of the viewBox and `size` is the viewBox's height in world units. There's no viewport clipping, so a file that draws past its own viewBox draws past it here too.
+- `ShapeSvg`, an SVG document loaded from a `string`, a `byte[]`, or a `Stream`, with a `TryLoad` that returns false instead of throwing and a `tolerance` for how far a flattened curve may stray from the file. It's thread safe, and one drawing can back any number of batches. It reads `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, and `g`, with transforms, nonzero and even-odd fills, opacities, strokes with their caps, joins, miter limits, and dash patterns, and linear and radial gradients out of `defs`, multi-stop ones included. `use`, `text`, `clipPath`, `mask`, `filter`, `pattern`, and CSS style blocks are skipped.
+- `DrawSvg(svg, position, size, fill, rotation, origin, aaSize)`, which paints every element in the file with one color or gradient of your own, fills and strokes alike.
+- `ShapeSvg.Measure`, the box a drawing fills at a size, plus `Width` and `Height` in the document's own units.
+
+### Changed
+
+- `DrawString` takes a `Gradient` where it took a `Color`. A `Color` converts to one, so existing calls compile and draw the same, and text takes every gradient feature now: the gradient shapes, repeat styles, offsets, local space, color spaces, palettes, ramps, and color ramps. The gradient is resolved once for the string, so it runs across the line instead of restarting inside each glyph.
 
 ## [0.8.0] - 2026-08-01
 

@@ -11,7 +11,7 @@ _sb.FillCircle(new Vector2(200, 200), 100, new Gradient(
 
 ![A circle with a gradient from blue to red](gradient.png)
 
-This draws a circle where the color transitions from blue at the left edge to red at the right edge. The fill and the border can each have their own gradient.
+This draws a circle where the color transitions from blue at the left edge to red at the right edge. The fill and the border can each have their own gradient, and text and SVG drawings take one too.
 
 The colors are interpolated in the [Oklab](https://bottosson.github.io/posts/oklab/) color space by default. It avoids the muddy colors that you would get from interpolating in RGB.
 
@@ -37,7 +37,7 @@ _sb.ColorSpace = ColorSpace.Oklch;
 
   ![A gradient from blue to red in Rgb](rgb.png)
 
-Gray stops have no hue of their own. In Oklch they take the hue of the other stop so a gray to color gradient holds a steady hue. Texture and string masks are always multiplied in raw RGBA.
+Gray stops have no hue of their own. In Oklch they take the hue of the other stop so a gray to color gradient holds a steady hue. A texture's color mask is always multiplied in raw RGBA.
 
 ## Gradient shapes
 
@@ -163,7 +163,7 @@ Frequencies snap to whole numbers, which is what lets a palette wrap onto itself
 
 Only the colors change, so a palette takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. The channels follow the `ColorSpace`: in `Rgb` they are the raw sRGB channels like the article, in `Oklab` the cosines swing lightness and the two color axes instead. Animating the phase slides every color along the palette for the cost of passing a different float.
 
-The parameters quantize when the shape is drawn: bias and amplitude in steps of 1/127, phase in steps of 1/512 of a cycle, alpha in steps of 1/63, and frequencies to whole numbers from 0 to 15. Texture and string masks don't take palettes, and blurred shapes keep taking a flat color.
+The parameters quantize when the shape is drawn: bias and amplitude in steps of 1/127, phase in steps of 1/512 of a cycle, alpha in steps of 1/63, and frequencies to whole numbers from 0 to 15. A texture's color mask doesn't take palettes, and blurred shapes keep taking a flat color.
 
 `Palette.FromStops` fits a palette through color stops when you'd rather pick colors than cosine parameters:
 
@@ -202,7 +202,7 @@ _sb.FillRectangle(new Vector2(20, 20), new Vector2(400, 40), new Gradient(
 
 The curve rides the gradient value, so a ramp takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. Hard edges are antialiased like shape edges, and a `Sawtooth` repeat carries them cleanly across the seam.
 
-Positions snap to a 256 step grid when the curve bakes, so a stop lands within 1/512 of where it was asked for. Each distinct curve takes a row of the batch's 256 row table, and when the table fills, the row that has gone longest undrawn recycles. Build ramps once where you can, though rebuilding one every frame works: going past 256 distinct curves in one batch makes the batch flush early to make room, which costs a draw call. Texture and string masks don't take ramps. On a ramped palette the phase quantizes in steps of 1/64 of a cycle instead of 1/512.
+Positions snap to a 256 step grid when the curve bakes, so a stop lands within 1/512 of where it was asked for. Each distinct curve takes a row of the batch's 256 row table, and when the table fills, the row that has gone longest undrawn recycles. Build ramps once where you can, though rebuilding one every frame works: going past 256 distinct curves in one batch makes the batch flush early to make room, which costs a draw call. A texture's color mask doesn't take ramps. On a ramped palette the phase quantizes in steps of 1/64 of a cycle instead of 1/512.
 
 ## Color ramps
 
@@ -227,7 +227,7 @@ Stops blend the way the two stop colors do: alpha weighted, in the batch's `Colo
 
 Only the colors change, so a color ramp takes every gradient shape, repeat style, offset, and local space, and the fill and border each take their own. A `Sawtooth` repeat carries the hard edges cleanly across the seam.
 
-Positions snap to the same 256 step grid ramps use. Colors quantize to 8 bits per channel in the color space's own frame, and the batch's dither covers those steps like it covers the display's. Each color space you actually draw with bakes two rows of the batch's table. Texture and string masks don't take color ramps, and blurred shapes keep taking a flat color.
+Positions snap to the same 256 step grid ramps use. Colors quantize to 8 bits per channel in the color space's own frame, and the batch's dither covers those steps like it covers the display's. Each color space you actually draw with bakes two rows of the batch's table. A texture's color mask doesn't take color ramps, and blurred shapes keep taking a flat color.
 
 Rows recycle, so rebuilding the stops every frame animates a color ramp. That costs a bake per frame though, so sliding a palette's phase is still the cheaper animation.
 

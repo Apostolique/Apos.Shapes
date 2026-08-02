@@ -39,6 +39,10 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SlugSmoke</_Parameter1>
     </AssemblyAttribute>
+    <!-- The SVG ground truth reads the baked elements a document loads into. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SvgTruth</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

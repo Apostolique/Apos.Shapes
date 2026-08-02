@@ -5,7 +5,7 @@ Shape rendering library for MonoGame and KNI.
 
 ## Description
 
-This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text straight from a font's outlines and textures with the `SpriteBatch` API. Shapes, text, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
+This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text straight from a font's outlines, SVG drawings straight from theirs, and textures with the `SpriteBatch` API. Shapes, text, drawings, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
 
 Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions. The text follows Eric Lengyel's [Slug](https://sluglibrary.com) algorithm, by way of [Forme](https://github.com/AristurtleDev/Forme).
 
@@ -18,14 +18,15 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * Paths draw a polyline as one continuous shape, with round, miter, or bevel joins and round, butt, or square caps. Open or closed
 * Rounded or chamfered corners, one per corner, plus rotation and adjustable anti-aliasing
 * Dashed outlines and strokes, flat or round-capped, down to dotted lines
-* Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation
+* Gradients: linear, radial, conical, spiral, and more, with repeat styles and Oklab / Oklch / RGB color interpolation. Shapes, text, and SVG drawings all take one
 * Blurred shapes with a Gaussian edge, for drop shadows and glows
 * `Measure` for every shape, giving the bounds it covers so a camera can cull it. No batch and no view needed
 * Blue noise dithering so slow gradients don't band on 8-bit displays
 * Text solved from the font's own outlines in the shader. No atlas, so nothing picks a size up front and a glyph stays exact at any size, rotation, and zoom
+* SVG drawings solved the same way, fills and strokes, in the file's own colors and gradients or in one color of your own
 * Textures (`SpriteBatch` API)
 * Clipping to a rectangle
-* One batch for everything. Mixing shapes, text, and textures never breaks the batch
+* One batch for everything. Mixing shapes, text, drawings, and textures never breaks the batch
 * Precompiled shader embedded in the assembly using [ShadowDusk](https://github.com/kaltinril/ShadowDusk). No need for Wine to build on Linux or macOS.
 * Works with MonoGame 3.8.2+ and [KNI](https://github.com/kniengine/kni)
 
@@ -38,6 +39,7 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * [Blur](https://apostolique.github.io/Apos.Shapes/blur/)
 * [Clipping](https://apostolique.github.io/Apos.Shapes/clipping/)
 * [Text](https://apostolique.github.io/Apos.Shapes/text/)
+* [SVG](https://apostolique.github.io/Apos.Shapes/svg/)
 * [Textures](https://apostolique.github.io/Apos.Shapes/textures/)
 
 You can also try the library directly in your browser [here](https://xnafiddle.net/#code=H4sIAAAAAAAAA41S20rEMBB9X9h_mMcUllAFXxQf9uINLIi66puk6Ww7GJOSpFtU_HebWrsXF3ZDoe3MnDNzTqZypHN4-HAe38-Gg6r9TUha48zC8xct-KUV71gb-7Yvz6-sKAuSri8cl8bxh0KUGGLDQVmliiRIJZyD5OOqAcIptK-v4QCa80cxwyVJTIQWOVp4zVfMoaqlnAgvC3h1aUsdwh39LzGL_jjD6RngHDTWu_swX5CLznageml31ixIYcOyFeHXNMPFGvbGJaZy-ESO0hbgbYVr-WfSman5WClTzx3ae3T0GUzbqPzutVnjUXrMwCzRWsoQloYyuNHkSSj63BKcCod8PXko4a0R2dRoj9pvWejSzryV_WzTxxF0yIO7zctMeGThwh6pWYO8-2g67wfPrKh3QldDb87HpwqFZVOjjOUTJeRb1C9PJ5FPMCfN_scvSakpWamQBQ-emoGMPWbHcTyCoziORnASB_2B-rkgj_8pLnTG1tervaNWRD_7yrfm-QEZrfGonQMAAA).

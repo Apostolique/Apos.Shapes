@@ -121,7 +121,7 @@ namespace Apos.Shapes {
         }
 
         /// <summary>
-        /// The box <see cref="ShapeBatch.DrawString(ShapeFont, string, Vector2, float, Color, float, Vector2, float)"/>
+        /// The box <see cref="ShapeBatch.DrawString(ShapeFont, string, Vector2, float, Gradient, float, Vector2, float)"/>
         /// fills, in world units, with its top left corner at the position the text is drawn at.
         /// The width is the longest line's advance and the height is the line count times
         /// <see cref="LineHeight"/>, so a one line string is one line tall whatever letters are in

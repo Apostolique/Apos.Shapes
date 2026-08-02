@@ -110,7 +110,8 @@ namespace Apos.Shapes {
 
         /// <summary>
         /// Color space that gradient and border colors are interpolated in. Defaults to Oklab. Captured per shape
-        /// at draw time so it can change mid batch without breaking it. Textures and text always use raw RGBA masks.
+        /// at draw time so it can change mid batch without breaking it. Text blends in it like every other shape;
+        /// a texture mask is always a raw RGBA multiply.
         /// </summary>
         public ColorSpace ColorSpace { get; set; } = ColorSpace.Oklab;
 
@@ -2489,12 +2490,18 @@ namespace Apos.Shapes {
         ///
         /// A code point the font has no glyph for draws the font's own missing glyph box and
         /// advances by its width, so a hole in the text shows up instead of quietly closing.
+        ///
+        /// The fill is a whole <see cref="Gradient"/>, so text takes palettes, ramps and color
+        /// ramps the same way a shape does. It runs across the string rather than restarting
+        /// inside each glyph. A local gradient reads its two points in the text's own frame, the
+        /// box <see cref="ShapeFont.MeasureString(string, float)"/> hands back with y down from
+        /// <paramref name="position"/>, and turns with the text; a world one stays put.
         /// </summary>
         /// <param name="font">The font to draw with.</param>
         /// <param name="text">The text to draw. A newline starts a line, a carriage return is skipped.</param>
         /// <param name="position">Top left of the first line, before the origin is taken off.</param>
         /// <param name="size">Em size in world units, which is the size the text comes out at.</param>
-        /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
+        /// <param name="fill">Color or gradient the glyphs are filled with.</param>
         /// <param name="rotation">Angle in radians, turned around <paramref name="position"/>.</param>
         /// <param name="origin">
         /// The point rotation turns around, in world units out from the top left corner. Half of
@@ -2504,7 +2511,7 @@ namespace Apos.Shapes {
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <exception cref="ArgumentNullException"><paramref name="font"/> is null.</exception>
         /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
-        public void DrawString(ShapeFont font, ReadOnlySpan<char> text, Vector2 position, float size, Color color, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
+        public void DrawString(ShapeFont font, ReadOnlySpan<char> text, Vector2 position, float size, Gradient fill, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
             ArgumentNullException.ThrowIfNull(font);
             if (text.IsEmpty) return;
 
@@ -2518,6 +2525,13 @@ namespace Apos.Shapes {
             float cos = 1f;
             if (rotation != 0f) {
                 (sin, cos) = SinCos(rotation);
+            }
+
+            // One frame for the whole string, resolved before the first glyph: a local gradient
+            // is read in the layout box's own coordinates and every glyph then reads the same
+            // world points out of it. Per glyph the gradient would start over inside each quad.
+            if (fill.IsLocal) {
+                GradientToWorld(ref fill, position, -origin, sin, cos);
             }
 
             // The pen rides in the text's own frame, y down from the top left corner with the
@@ -2543,7 +2557,7 @@ namespace Apos.Shapes {
                 if (g.HasOutline) {
                     var at = new Vector2(position.X + penX * cos - penY * sin,
                                          position.Y + penX * sin + penY * cos);
-                    DrawGlyphQuad(g, at, glyphScale, color, sin, cos, aaSize);
+                    DrawGlyphQuad(g, at, glyphScale, fill, sin, cos, aaSize);
                 }
                 penX += g.Advance * scale;
                 prev = g.Glyph;
@@ -2554,14 +2568,157 @@ namespace Apos.Shapes {
         /// <param name="text">The text to draw. A newline starts a line, a carriage return is skipped.</param>
         /// <param name="position">Top left of the first line, before the origin is taken off.</param>
         /// <param name="size">Em size in world units, which is the size the text comes out at.</param>
-        /// <param name="color">Color of the text, applied as a raw RGBA mask.</param>
+        /// <param name="fill">Color or gradient the glyphs are filled with.</param>
         /// <param name="rotation">Angle in radians, turned around <paramref name="position"/>.</param>
         /// <param name="origin">The point rotation turns around, in world units out from the top left corner.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <exception cref="ArgumentNullException"><paramref name="font"/> is null.</exception>
         /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
-        public void DrawString(ShapeFont font, string text, Vector2 position, float size, Color color, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
-            DrawString(font, text.AsSpan(), position, size, color, rotation, origin, aaSize);
+        public void DrawString(ShapeFont font, string text, Vector2 position, float size, Gradient fill, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
+            DrawString(font, text.AsSpan(), position, size, fill, rotation, origin, aaSize);
+        }
+
+        /// <summary>
+        /// Draws an SVG drawing in the colors the file gives it. Every filled element is solved
+        /// from its curves the way a glyph is, so the drawing is exact at any size, and strokes go
+        /// through the same path renderer <see cref="DrawPath(ReadOnlySpan{Vector2}, float, Gradient, Gradient, float, PathJoin, PathCap, PathCap?, float, float, bool, DashStyle)"/>
+        /// uses. Elements draw in the order the file lists them, which is what stacks the picture,
+        /// and they interleave with everything else in the batch.
+        ///
+        /// Sizes work like text: <paramref name="size"/> is one em in world units, and one em is
+        /// the viewBox's height. So a 100 unit tall document drawn at 64 comes out 64 world units
+        /// tall whatever the numbers inside it say.
+        ///
+        /// A drawing lays out from its top left corner: <paramref name="position"/> is the
+        /// viewBox's corner, and <see cref="ShapeSvg.Measure"/> hands back the box it fills. A file
+        /// may draw outside its own viewBox and there is no clipping, so ink can land past that box.
+        /// </summary>
+        /// <param name="svg">The drawing to draw.</param>
+        /// <param name="position">Top left of the viewBox, before the origin is taken off.</param>
+        /// <param name="size">Em size in world units, where one em is the viewBox's height.</param>
+        /// <param name="rotation">Angle in radians, turned around <paramref name="position"/>.</param>
+        /// <param name="origin">
+        /// The point rotation turns around, in world units out from the top left corner. Half of
+        /// what <see cref="ShapeSvg.Measure"/> hands back turns the drawing around its middle.
+        /// </param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="svg"/> is null.</exception>
+        /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
+        public void DrawSvg(ShapeSvg svg, Vector2 position, float size, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
+            DrawSvgCore(svg, position, size, default, false, rotation, origin, aaSize);
+        }
+        /// <summary>
+        /// Draws an SVG drawing in one color or gradient of your own, which replaces every paint in
+        /// the file, fills and strokes alike. That makes the drawing a silhouette: what survives is
+        /// its shape, not its colors. Handy for an icon that has to match the text beside it.
+        ///
+        /// A local gradient reads its two points in the drawing's own frame, the box
+        /// <see cref="ShapeSvg.Measure"/> hands back with y down from <paramref name="position"/>,
+        /// and turns with the drawing. A world one stays put. Either way it is resolved once for
+        /// the whole drawing, so the gradient runs across the picture instead of restarting inside
+        /// each element.
+        ///
+        /// Everything else works like the overload that keeps the file's colors.
+        /// </summary>
+        /// <param name="svg">The drawing to draw.</param>
+        /// <param name="position">Top left of the viewBox, before the origin is taken off.</param>
+        /// <param name="size">Em size in world units, where one em is the viewBox's height.</param>
+        /// <param name="fill">Color or gradient every element is painted with.</param>
+        /// <param name="rotation">Angle in radians, turned around <paramref name="position"/>.</param>
+        /// <param name="origin">The point rotation turns around, in world units out from the top left corner.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="svg"/> is null.</exception>
+        /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
+        public void DrawSvg(ShapeSvg svg, Vector2 position, float size, Gradient fill, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
+            DrawSvgCore(svg, position, size, fill, true, rotation, origin, aaSize);
+        }
+
+        // Both overloads, with one flag between them: whether the paint comes from the file or from
+        // the caller. Nothing here throws on the draw path, the same way text doesn't - an element
+        // whose fill would not seat is skipped, and a document with nothing drawable in it draws
+        // nothing.
+        private void DrawSvgCore(ShapeSvg svg, Vector2 position, float size, Gradient fill, bool overridden, float rotation, Vector2 origin, float aaSize) {
+            ArgumentNullException.ThrowIfNull(svg);
+            IReadOnlyList<SvgShape> shapes = svg.Shapes;
+            if (shapes.Count == 0) return;
+
+            float sin = 0f;
+            float cos = 1f;
+            if (rotation != 0f) {
+                (sin, cos) = SinCos(rotation);
+            }
+
+            // One frame for the whole drawing, resolved before the first element, exactly the way
+            // a string resolves its own: per element the gradient would start over inside each
+            // quad. The file's own paints get the same treatment element by element below, since
+            // each of those is written in the document's coordinates rather than the caller's.
+            if (overridden && fill.IsLocal) {
+                GradientToWorld(ref fill, position, -origin, sin, cos);
+                // World coordinates from here on. The strokes go through the path renderer,
+                // which resolves a local gradient against the first point of the polyline it
+                // is given, so leaving the flag set would anchor the paint a second time and
+                // paint the strokes a different color from the fills.
+                fill.IsLocal = false;
+            }
+
+            var scale = new Vector2(size, size);
+            for (int i = 0; i < shapes.Count; i++) {
+                SvgShape s = shapes[i];
+                if (s.HasFill && s.Fill != null) {
+                    Gradient g = overridden ? fill : SvgPaint(s.FillPaint, position, origin, size, sin, cos);
+                    Vector2 pen = SvgToWorld(s.Origin, position, origin, size, sin, cos);
+                    DrawGlyphQuad(s.Fill, pen, scale, g, sin, cos, aaSize,
+                                  s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph);
+                }
+                if (s.HasStroke) {
+                    DrawSvgStroke(s, position, size, overridden ? fill : SvgPaint(s.StrokePaint, position, origin, size, sin, cos),
+                                  origin, sin, cos, aaSize);
+                }
+            }
+        }
+
+        // One element's stroke, subpath by subpath, through the same path renderer a hand written
+        // stroke goes through. The dash pattern never snaps: the file said where its dashes start
+        // and refitting the period to the contour would throw that away.
+        private void DrawSvgStroke(SvgShape s, Vector2 position, float size, in Gradient paint, Vector2 origin, float sin, float cos, float aaSize) {
+            float radius = s.StrokeRadius * size;
+            if (!(radius > 0f)) return;
+            DashStyle dash = s.Dashed
+                ? new DashStyle(s.DashSize * size, s.DashSpacing * size, s.DashOffset, s.DashCap, DashSnap.Off)
+                : default;
+
+            for (int i = 0; i < s.Stroke.Length; i++) {
+                Vector2[] line = s.Stroke[i];
+                if (line.Length < 2) continue;
+                // The scratch array is this batch's own and is regrown rather than reallocated, so
+                // a drawing redrawn every frame produces no garbage. It is a different array from
+                // the one the path renderer copies into, which is what lets it read from this one.
+                Span<Vector2> pts = Scratch(ref _svgPoints, line.Length);
+                for (int j = 0; j < line.Length; j++) {
+                    pts[j] = SvgToWorld(line[j], position, origin, size, sin, cos);
+                }
+                FillPath(pts, radius, paint, s.Join, s.Cap, null, s.MiterLimit, aaSize, s.StrokeClosed[i], dash);
+            }
+        }
+
+        // A point in the document's em frame, put into the world: scaled, flipped onto y down (the
+        // em frame has y up, the way a glyph's does), moved by the origin and turned around the
+        // position. This is the frame everything about a drawing goes through.
+        private static Vector2 SvgToWorld(Vector2 em, Vector2 position, Vector2 origin, float size, float sin, float cos) {
+            float x = em.X * size - origin.X;
+            float y = -em.Y * size - origin.Y;
+            return new Vector2(position.X + x * cos - y * sin, position.Y + x * sin + y * cos);
+        }
+
+        // An element's own paint through that same frame. A gradient in the file is part of the
+        // artwork, so its two points are written in the document's coordinates and it turns and
+        // scales with the drawing. The offsets are already fractions of the gradient's length, so
+        // they carry over untouched.
+        private static Gradient SvgPaint(Gradient g, Vector2 position, Vector2 origin, float size, float sin, float cos) {
+            if (g.S == Gradient.Shape.None) return g;
+            g.AXY = SvgToWorld(g.AXY, position, origin, size, sin, cos);
+            g.BXY = SvgToWorld(g.BXY, position, origin, size, sin, cos);
+            return g;
         }
 
         /// <summary>
@@ -2603,7 +2760,10 @@ namespace Apos.Shapes {
         // Nothing here throws on the draw path. A glyph with no outline - whitespace, a code
         // point the font has no glyph for, an outline the baker cannot express - draws nothing,
         // and so does one the table has no room for.
-        internal void DrawGlyph(GlyphFont font, int codePoint, Vector2 position, Vector2 scale, Color color, float rotation = 0f, float aaSize = 1.5f) {
+        //
+        // A local gradient is read from the pen, which is this glyph's own origin, and turns
+        // with it. DrawString resolves its own frame across the whole string instead.
+        internal void DrawGlyph(GlyphFont font, int codePoint, Vector2 position, Vector2 scale, Gradient fill, float rotation = 0f, float aaSize = 1.5f) {
             BakedGlyph g = font.Lookup(codePoint);
             if (!g.HasOutline) return;
             float sin = 0f;
@@ -2611,13 +2771,18 @@ namespace Apos.Shapes {
             if (rotation != 0f) {
                 (sin, cos) = SinCos(rotation);
             }
-            DrawGlyphQuad(g, position, scale, color, sin, cos, aaSize);
+            if (fill.IsLocal) {
+                GradientToWorld(ref fill, position, Vector2.Zero, sin, cos);
+            }
+            DrawGlyphQuad(g, position, scale, fill, sin, cos, aaSize);
         }
 
         // The quad itself, once the glyph is in hand and the rotation is resolved. A line of text
-        // shares one sine and one cosine across every glyph in it.
-        private void DrawGlyphQuad(BakedGlyph g, Vector2 position, Vector2 scale, Color color, float sin, float cos, float aaSize) {
-            PrepareQuad();
+        // shares one sine and one cosine across every glyph in it, and one gradient already in
+        // world space: the fill arrives resolved so a string paints one gradient rather than one
+        // per letter.
+        private void DrawGlyphQuad(BakedGlyph g, Vector2 position, Vector2 scale, in Gradient fill, float sin, float cos, float aaSize, VertexShape.Shape shape = VertexShape.Shape.Glyph) {
+            PrepareQuad(fill);
             int at = g.Seat(_glyphs);
             if (at < 0) {
                 // Every resident glyph is pinned by a quad this batch hasn't drawn yet, so
@@ -2656,13 +2821,14 @@ namespace Apos.Shapes {
             Vector2 bottomRight = GlyphCorner(emBottomRight, position, scale, sin, cos);
             Vector2 bottomLeft = GlyphCorner(emBottomLeft, position, scale, sin, cos);
 
-            Gradient gc = new(Vector2.Zero, color, Vector2.Zero, color, Gradient.Shape.None);
-
-            VertexShape v = new(new Vector3(topLeft, 0), emTopLeft, VertexShape.Shape.Glyph, gc, gc, 0f, 1f, GetClipSpace(topLeft), aaSize: Aa(aaSize));
-            // A glyph carries no gradient, so the two gradient coordinate slots carry the band
-            // block's address and the shape of the two scans instead. See the channel map above
-            // PixelInput in apos-shapes.fx.
-            v.FillCoord = new Vector4(_glyphs.BandBase(at), g.Bands, pixelsPerEm.X, pixelsPerEm.Y);
+            // The band block's address and the shape of the two scans ride in the four dash
+            // channels, which no glyph dashes with. See the channel map above PixelInput in
+            // apos-shapes.fx.
+            VertexShape v = new(new Vector3(topLeft, 0), emTopLeft, shape, fill, fill, 0f, 1f, GetClipSpace(topLeft),
+                                aaSize: Aa(aaSize), a: _glyphs.BandBase(at), b: g.Bands, c: pixelsPerEm.X, d: pixelsPerEm.Y,
+                                colorSpace: ColorSpace, ramps: _ramps);
+            // The em to band index transform, which is the one thing with nowhere else to ride.
+            // A glyph has no border band, so the border gradient's slot is free.
             v.BorderCoord = g.Transform;
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), emTopRight, GetClipSpace(topRight));
@@ -2975,11 +3141,22 @@ namespace Apos.Shapes {
                 }
             }
         }
+        // Same, for the one shape with a fill and no border: a glyph.
+        private void PrepareQuad(in Gradient fill) {
+            PrepareQuad();
+            if (fill.R != null || fill.Colors != null) {
+                if (!PinRamps(fill)) {
+                    Flush();
+                    PinRamps(fill);
+                }
+            }
+        }
         private bool PinRamps(in Gradient fill, in Gradient border) {
-            return (fill.Colors == null || fill.Colors.TryPin(_ramps, ColorSpace))
-                && (fill.R == null || fill.R.TryPin(_ramps))
-                && (border.Colors == null || border.Colors.TryPin(_ramps, ColorSpace))
-                && (border.R == null || border.R.TryPin(_ramps));
+            return PinRamps(fill) && PinRamps(border);
+        }
+        private bool PinRamps(in Gradient g) {
+            return (g.Colors == null || g.Colors.TryPin(_ramps, ColorSpace))
+                && (g.R == null || g.R.TryPin(_ramps));
         }
 
         // Hollow shapes (rings, arcs, transparent fills with a border) only shade a thin band, so they
@@ -3332,6 +3509,9 @@ namespace Apos.Shapes {
         // Working room for paths longer than _pathStackPoints, grown on demand and kept. Nothing
         // here outlives the call that fills it; they are fields only so the memory is reused.
         private Vector2[] _scratchPoints = [];
+        // An SVG stroke's polyline mapped into the world, kept apart from the one above because
+        // the path renderer copies out of this one and into that one.
+        private Vector2[] _svgPoints = [];
         private float[] _scratchRadii = [];
         private PathJoin[] _scratchJoins = [];
         private PathJoint[] _scratchJoints = [];

@@ -18,7 +18,7 @@ namespace Apos.Shapes {
         /// <param name="textureCoordinate">The corner's position in the shape's own frame, which is what the distance field is evaluated at.</param>
         /// <param name="shape">Which distance field the pixel shader runs.</param>
         /// <param name="fill">Color or gradient inside the border.</param>
-        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="border">Color or gradient of the border. A glyph has no border band, so it goes unread there.</param>
         /// <param name="thickness">Size of the border in world units. 0 makes the border the fill.</param>
         /// <param name="sdfSize">The shape's main size, which each distance field reads its own way.</param>
         /// <param name="clip">This corner's view of the clip rectangle.</param>
@@ -32,7 +32,7 @@ namespace Apos.Shapes {
         /// <param name="b">Spare channel, same as <paramref name="a"/>.</param>
         /// <param name="c">Spare channel, same as <paramref name="a"/>.</param>
         /// <param name="d">Spare channel, same as <paramref name="a"/>.</param>
-        /// <param name="colorSpace">Space the colors are interpolated in. Textures and glyphs force Rgb.</param>
+        /// <param name="colorSpace">Space the colors are interpolated in. Textures force Rgb.</param>
         /// <param name="dash">0 draws solid, 1 dashes with flat ends, 2 with round ones.</param>
         /// <param name="blur">Standard deviation of the edge's Gaussian falloff in world units, or 0 for a hard edge.</param>
         /// <param name="ramps">
@@ -45,7 +45,7 @@ namespace Apos.Shapes {
                 thickness = 0f;
             }
 
-            if (shape == Shape.Texture || shape == Shape.Glyph) {
+            if (shape == Shape.Texture) {
                 // Texture masks are multiplied in RGBA space, everything else is blended in the chosen color space.
                 colorSpace = ColorSpace.Rgb;
                 // A palette, a ramp, or a color ramp can't mask a texture, so all three fall
@@ -57,6 +57,13 @@ namespace Apos.Shapes {
                 border.R = null;
                 fill.Colors = null;
                 border.Colors = null;
+            } else if (shape == Shape.Glyph || shape == Shape.EvenOdd) {
+                // A glyph is coverage on a color rather than an RGBA multiply, so it keeps the
+                // color space and every way a gradient has of picking colors. It has no border
+                // band though, and its BorderCoord carries the em to band transform instead of
+                // a gradient's frame, so the border side stands down rather than repeating the
+                // fill over a frame that isn't one.
+                border = default;
             }
 
             Position = position;
@@ -212,7 +219,10 @@ namespace Apos.Shapes {
         public ulong BorderB;
         /// <summary>The fill gradient's two points, A in xy and B in zw, in world units.</summary>
         public Vector4 FillCoord;
-        /// <summary>The border gradient's two points, A in xy and B in zw, in world units.</summary>
+        /// <summary>
+        /// The border gradient's two points, A in xy and B in zw, in world units. A glyph puts its
+        /// em to band index transform here instead, scale in xy and offset in zw.
+        /// </summary>
         public Vector4 BorderCoord;
         /// <summary>
         /// Border thickness, then the anti-aliasing width in pixels or the blur's standard
@@ -328,7 +338,12 @@ namespace Apos.Shapes {
             /// <summary>A rectangle with its corners cut straight across.</summary>
             Chamfer = 12,
             /// <summary>A glyph outline, solved from its curves on the GPU.</summary>
-            Glyph = 13
+            Glyph = 13,
+            /// <summary>
+            /// The same outline solver as <see cref="Glyph"/>, filled by the even-odd rule
+            /// instead. This is what an SVG element with <c>fill-rule="evenodd"</c> draws as.
+            /// </summary>
+            EvenOdd = 14
         }
 
         static VertexShape() {

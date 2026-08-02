@@ -48,7 +48,7 @@ protected override void Draw(GameTime gameTime) {
 
 ![Text drawn on top of a circle](text.png)
 
-Shapes and text are drawn in the order you call them, and it's still one draw call. The color is flat and gets multiplied into the glyph, so text over a gradient means drawing a gradient shape first and the label on top. There's a `ReadOnlySpan<char>` overload for text you'd rather not build a string for.
+Shapes and text are drawn in the order you call them, and it's still one draw call. The fill is a `Gradient`, and a `Color` converts to one, so `Color.White` there is a gradient with one color in it. There's a `ReadOnlySpan<char>` overload for text you'd rather not build a string for.
 
 Every glyph is read out of the file the first time something draws it. You never declare a character set, and the ones you stop drawing get recycled to make room for the ones you start. Once a glyph is resident, building its quad costs about 13% more than a circle's, and a line of text allocates nothing.
 
@@ -102,6 +102,42 @@ for (int i = 0; i < 8; i++) {
 
 A turned line costs one sine and one cosine for the whole string, so it's the same price as a straight one. `aaSize` is there too, the same anti-aliasing width in screen pixels that every shape takes.
 
+## The fill is a gradient
+
+Text takes a `Gradient` where a shape takes one. Two stops sweep across the string:
+
+```csharp
+var at = new Vector2(16, 16);
+float wide = _font.MeasureString("Gradient", 40f).X;
+_sb.DrawString(_font, "Gradient", at, 40f, new Gradient(
+    at, new Color(96, 165, 250),
+    at + new Vector2(wide, 0f), new Color(220, 38, 38)));
+```
+
+![The word Gradient sweeping from blue to red](gradient.png)
+
+The gradient is resolved once for the whole string rather than once per glyph, so the colors run across the line instead of starting over inside every letter. Everything in the [Gradients](../gradients/README.md) guide works here: the gradient shapes, the repeat styles, the offsets, the color spaces, palettes, ramps, and color ramps.
+
+```csharp
+var sunset = new ColorRamp(
+    (0f, new Color(251, 191, 36)),
+    (0.45f, new Color(236, 72, 153)),
+    (0.7f, new Color(147, 51, 234)),
+    (0.7f, new Color(45, 212, 191)),
+    (1f, new Color(8, 145, 178)));
+
+var at = new Vector2(16, 16);
+float wide = _font.MeasureString("a color ramp", 40f).X;
+_sb.DrawString(_font, "a color ramp", at, 40f, new Gradient(
+    at, at + new Vector2(wide, 0f), sunset));
+```
+
+![The words a color ramp running through amber, pink, purple and teal](text-ramp.png)
+
+A local gradient reads its two points in the line's own box, the one `MeasureString` hands back, y down from `position`, and it turns with the text. A world one stays where it is while the text moves through it.
+
+Alpha lives in the fill's colors, so translucent text is a fill whose colors are translucent. `new Color(255, 255, 255, 128)` draws a half transparent white line, and two stops with different alphas fade a line out along its length.
+
 ## Limits
 
 Only TrueType outlines work. Most `.otf` files describe their glyphs with cubic curves in a `CFF` table instead, and this solver is quadratic only, so loading one throws a `NotSupportedException`. `TryLoad` is how you check without a `try`.
@@ -118,4 +154,4 @@ The FontStashSharp API is gone and the dependency with it. A `FontSystem` plus `
 
 ## Follow up
 
-[Textures](../textures/README.md), a guide that shows how to draw textures with the `ShapeBatch`.
+[SVG](../svg/README.md), a guide that shows how to draw SVG files with the `ShapeBatch`. A drawing is solved from its own outlines the way a glyph is.
