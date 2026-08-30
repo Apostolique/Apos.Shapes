@@ -45,6 +45,12 @@ protected override void LoadContent() {
 ShapeBatch _sb;
 ```
 
+The constructor warms up the shader, which gets the driver to compile it as early as possible instead of on the first frame that draws. It presents a frame to do that, so if your game already has something on screen, you can turn it off and call `Warmup()` when you're ready:
+
+```csharp
+_sb = new ShapeBatch(GraphicsDevice, warmup: false);
+```
+
 In your game's draw loop, call `Begin` and `End` and do your drawing between those two calls:
 
 ```csharp
@@ -68,4 +74,3 @@ Everything that is drawn within the `Begin` and `End` calls will be batched toge
 ## Follow up
 
 [Shapes](../shapes/README.md), a page that lists every shape that the `ShapeBatch` can draw.
-

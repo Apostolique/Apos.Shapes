@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.8.2] - 2026-08-30
+
+### Added
+
+- `ShapeBatch.Warmup()`, and a `warmup` parameter on the constructor to turn it off.
+
+### Fixed
+
+- The first frames of a game no longer come up black.
+
 ## [0.8.1] - 2026-08-02
 
 ### Added
@@ -393,7 +403,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.14...v0.8.0
 [0.7.14]: https://github.com/Apostolique/Apos.Shapes/compare/v0.7.13...v0.7.14

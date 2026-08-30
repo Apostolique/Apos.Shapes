@@ -22,7 +22,12 @@ namespace Apos.Shapes {
         /// A replacement for the built-in shader. Leave it null, which loads the one embedded in
         /// this assembly for the running backend.
         /// </param>
-        public ShapeBatch(GraphicsDevice graphicsDevice, Effect? effect = null) {
+        /// <param name="warmup">
+        /// Runs <see cref="Warmup"/> so the driver compiles the shader as early as possible. You
+        /// can pass false if something is already on screen when the batch gets built, since the
+        /// warmup clears it.
+        /// </param>
+        public ShapeBatch(GraphicsDevice graphicsDevice, Effect? effect = null, bool warmup = true) {
             _graphicsDevice = graphicsDevice;
 
             _effect = effect ?? LoadEmbeddedEffect(graphicsDevice);
@@ -48,6 +53,58 @@ namespace Apos.Shapes {
             _curveTexel = _effect.Parameters["curve_texel"];
 
             _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
+
+            if (warmup) {
+                // The driver caches the compile, so only the first batch presents. Every batch
+                // still draws, since each one has its own Effect that links on its own.
+                if (_warmed) {
+                    WarmupDraw();
+                } else {
+                    Warmup();
+                    _warmed = true;
+                }
+            }
+        }
+
+        // Draws one throwaway frame so the driver compiles the shader here. It takes a real
+        // draw call: applying the pass doesn't bring the compile forward.
+        private void WarmupDraw() {
+            Viewport viewport = _graphicsDevice.Viewport;
+            if (viewport.Width <= 0 || viewport.Height <= 0) return;
+
+            // Begin and End leave these set, so put back what the caller had.
+            BlendState blendState = _graphicsDevice.BlendState;
+            SamplerState samplerState = _graphicsDevice.SamplerStates[0];
+            DepthStencilState depthStencilState = _graphicsDevice.DepthStencilState;
+            RasterizerState rasterizerState = _graphicsDevice.RasterizerState;
+
+            Begin();
+            FillCircle(new Vector2(-8f, -8f), 1f, Color.White); // Outside the viewport, so it writes no pixels.
+            End();
+
+            _graphicsDevice.BlendState = blendState;
+            _graphicsDevice.SamplerStates[0] = samplerState;
+            _graphicsDevice.DepthStencilState = depthStencilState;
+            _graphicsDevice.RasterizerState = rasterizerState;
+        }
+
+        /// <summary>
+        /// Presents one throwaway frame so the driver compiles the shader as early as possible
+        /// instead of during the first frame that draws a shape.
+        /// </summary>
+        /// <remarks>
+        /// The constructor does this by default, so this is for a game that opted out and wants
+        /// to pick the moment itself. It clears to black and presents, so the screen should be
+        /// blank. Does nothing while a render target is bound, since the present isn't ours.
+        /// </remarks>
+        public void Warmup() {
+            if (_graphicsDevice.GetRenderTargets().Length > 0) return;
+
+            WarmupDraw();
+
+            // Cleared first so the present shows black instead of an unwritten backbuffer.
+            _graphicsDevice.Clear(Color.Black);
+            _graphicsDevice.Present();
         }
 
         /// <summary>
@@ -3446,6 +3503,8 @@ namespace Apos.Shapes {
 
         private const int _initialVertices = 2048 * 4;
         private const int _initialIndices = 2048 * 6;
+
+        private static bool _warmed = false;
 
         private readonly GraphicsDevice _graphicsDevice;
         private VertexShape[] _vertices;
