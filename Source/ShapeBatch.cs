@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
@@ -851,6 +851,11 @@ namespace Apos.Shapes {
             // The capsule SDFs of two segments agree along the bisector of their joint, so cutting both
             // quads there splits the stroke into regions that each blend exactly once and meet invisibly.
             Span<PathJoint> joints = jointCount <= _pathStackPoints ? stackalloc PathJoint[jointCount] : Scratch(ref _scratchJoints, jointCount);
+            // The loop below only writes the fields its branches reach, so a slot keeps whatever
+            // it already held for the rest. A stackalloc arrives zeroed while the kept buffer does
+            // not, which is the difference between a round joint and one still flagged FlatCut
+            // with another path's miter tip in it.
+            joints.Clear();
             // A uniform stroke is one half width the whole way, so the chord angle the sagitta
             // rule allows is the same at every joint and the arc cosine is worth taking once. A
             // taper changes width from joint to joint and has to ask each time.
