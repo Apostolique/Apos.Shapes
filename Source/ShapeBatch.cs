@@ -807,22 +807,25 @@ namespace Apos.Shapes {
             // end's circle short wherever the steps are shorter than the stroke is wide. The SDF
             // clips the surplus back, so this only ever costs fill. Uniform segments are unchanged.
 
-            // How much of the stroke a cut through a joint throws away. A tapered segment's wall
-            // is its two end circles' common tangent, so it crosses the joint plane at the joint's
-            // half width over the cosine of its own lean rather than at the half width itself, and
-            // it only settles onto the joint circle further along. The two segments lean by
-            // different amounts, so whichever stands higher at the plane overhangs the cut, and
-            // the side that gets drawn there is the other one. A segment leans over the plane when
-            // its far end is the wider of the two; a uniform joint leans neither way and loses
-            // nothing, which is why this is zero for every path that isn't tapered.
-            static float TaperBite(float rPrev, float rJoint, float rNext, float lenPrev, float len) {
-                static float Lean(float dr, float segLen, float r) {
-                    if (dr <= 0f || segLen <= 0f) return r;
-                    float b = dr / segLen;
-                    if (b >= 1f) return float.MaxValue;
-                    return r / MathF.Sqrt(1f - b * b);
+            // An upper bound on what a cut through the joint can throw away. Both segments' outlines
+            // pass through the joint circle, and a tapered one stands off it by its wall's lean, which
+            // is asin of how fast it changes width. The cut runs somewhere in the fan between the two
+            // segments' normals, so half the turn adds to that lean, and neither outline can reach
+            // past the joint's half width over the cosine of the two together. The difference between
+            // them is at most that stand-off, so this bounds the loss rather than measuring it: the
+            // exact figure would have to follow the cut's own corner around the fan, while an
+            // overestimate only costs a joint the slower path. Three equal radii lean neither way
+            // and bound to zero, uniform paths included.
+            static float TaperBite(float rPrev, float rJoint, float rNext, float lenPrev, float len, float theta) {
+                if (rPrev == rJoint && rJoint == rNext) return 0f;
+                static float Lean(float dr, float segLen) {
+                    if (dr <= 0f || segLen <= 0f) return 0f;
+                    return dr >= segLen ? MathF.PI / 2f : MathF.Asin(dr / segLen);
                 }
-                return MathF.Abs(Lean(rPrev - rJoint, lenPrev, rJoint) - Lean(rNext - rJoint, len, rJoint));
+                float lean = MathF.Max(Lean(MathF.Abs(rPrev - rJoint), lenPrev),
+                                       Lean(MathF.Abs(rNext - rJoint), len));
+                float cos = MathF.Cos(MathF.Min(lean + MathF.Abs(theta) * 0.5f, 1.5533f));   // ~89 degrees
+                return rJoint * (1f / cos - 1f);
             }
 
             static float SegH(float rA, float rB, float len, float aaOffset) {
@@ -918,12 +921,17 @@ namespace Apos.Shapes {
                     // The bisector, pointing at the inner miter. Also names the outer miter tip,
                     // which a round joint may borrow instead of fanning; see below.
                     Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
-                    // Dashed paths stay on the partition whatever the taper does to the edge:
+                    // A joint the taper would bite goes to overlapping slabs instead, which square
+                    // their ends off over their own cones and lose nothing. Uniform joints measure
+                    // zero and keep the partition, which is where the fill and the single blend are.
+                    //
+                    // Dashed paths keep the partition whatever the taper does to the edge:
                     // overlapping slabs each walk the pattern from their own end, so the joint
                     // comes out with the dashes drawn twice over at two different phases, which
                     // is a worse thing to look at than the wedge.
                     if (run <= MathF.Min(lenPrev, len) * 0.5f
-                        && (dashed || TaperBite(rPrev, rJoint, rNext, lenPrev, len) <= _pathTaperBitePixels * _pixelSize)) {
+                        && (dashed || TaperBite(rPrev, rJoint, rNext, lenPrev, len, jd.Theta)
+                            <= _pathTaperBitePixels * _pixelSize)) {
                         jd.Mode = PathJointMode.Partition;
                         jd.BIn = joint + m * (sign * h / cHalf);
                         PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
@@ -3259,10 +3267,12 @@ namespace Apos.Shapes {
         // How far past the join arc a round joint's miter tip may reach before it stops being
         // worth standing in for the fan. Pure overdraw, not error, so the budget buys vertices.
         private const float _pathMiterForFanPixels = 1f;
-        // How much of a tapered joint's wall may be cut away before the joint goes to overlapping
-        // slabs. Half a pixel sits inside the antialiasing band, so what is lost softens the edge
-        // rather than stepping it; past that it reads as a nick with a hard side to it.
-        private const float _pathTaperBitePixels = 0.5f;
+        // How much of a tapered joint's outline may be cut away before the joint goes to
+        // overlapping slabs. A quarter pixel sits well inside the antialiasing band, so what is
+        // lost softens the edge instead of stepping it; past that it reads as a nick with a hard
+        // side to it. Buys back the fill and the single blend on every joint that tapers gently,
+        // which on a pressure stroke is nearly all of them.
+        private const float _pathTaperBitePixels = 0.25f;
 
         private static bool IsTransparent(in Gradient g) {
             return g.AC.A == 0 && g.BC.A == 0;
