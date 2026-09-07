@@ -806,6 +806,25 @@ namespace Apos.Shapes {
             // the widest of it, since a quad that only reached its own end would cut the other
             // end's circle short wherever the steps are shorter than the stroke is wide. The SDF
             // clips the surplus back, so this only ever costs fill. Uniform segments are unchanged.
+
+            // How much of the stroke a cut through a joint throws away. A tapered segment's wall
+            // is its two end circles' common tangent, so it crosses the joint plane at the joint's
+            // half width over the cosine of its own lean rather than at the half width itself, and
+            // it only settles onto the joint circle further along. The two segments lean by
+            // different amounts, so whichever stands higher at the plane overhangs the cut, and
+            // the side that gets drawn there is the other one. A segment leans over the plane when
+            // its far end is the wider of the two; a uniform joint leans neither way and loses
+            // nothing, which is why this is zero for every path that isn't tapered.
+            static float TaperBite(float rPrev, float rJoint, float rNext, float lenPrev, float len) {
+                static float Lean(float dr, float segLen, float r) {
+                    if (dr <= 0f || segLen <= 0f) return r;
+                    float b = dr / segLen;
+                    if (b >= 1f) return float.MaxValue;
+                    return r / MathF.Sqrt(1f - b * b);
+                }
+                return MathF.Abs(Lean(rPrev - rJoint, lenPrev, rJoint) - Lean(rNext - rJoint, len, rJoint));
+            }
+
             static float SegH(float rA, float rB, float len, float aaOffset) {
                 float b = (rA - rB) / len;
                 float h = MathF.Max(rA, rB) + aaOffset;
@@ -872,13 +891,14 @@ namespace Apos.Shapes {
                 float len = d.Length();
                 Vector2 u = d / len;
                 ref PathJoint jd = ref joints[j];
-                // Both segments meeting here are the joint point's width, so the corner is built
-                // from that one half width even when the rest of the stroke tapers away from it.
                 // Both segments meeting here are built from the joint point's half width, taken wide
                 // enough for whichever of them reaches further so the shared corner covers both.
+                float rPrev = R(radii, radius, j);
+                float rJoint = R(radii, radius, (j + 1) % n);
+                float rNext = R(radii, radius, (j + 2) % n);
                 float h = radii.IsEmpty ? radius + aaOffset : MathF.Max(
-                    SegH(R(radii, radius, j), R(radii, radius, (j + 1) % n), lenPrev, aaOffset),
-                    SegH(R(radii, radius, (j + 1) % n), R(radii, radius, (j + 2) % n), len, aaOffset));
+                    SegH(rPrev, rJoint, lenPrev, aaOffset),
+                    SegH(rJoint, rNext, len, aaOffset));
 
                 float c2 = Vector2.Dot(uPrev, u);
                 float s2 = uPrev.X * u.Y - uPrev.Y * u.X;
@@ -898,7 +918,12 @@ namespace Apos.Shapes {
                     // The bisector, pointing at the inner miter. Also names the outer miter tip,
                     // which a round joint may borrow instead of fanning; see below.
                     Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
-                    if (run <= MathF.Min(lenPrev, len) * 0.5f) {
+                    // Dashed paths stay on the partition whatever the taper does to the edge:
+                    // overlapping slabs each walk the pattern from their own end, so the joint
+                    // comes out with the dashes drawn twice over at two different phases, which
+                    // is a worse thing to look at than the wedge.
+                    if (run <= MathF.Min(lenPrev, len) * 0.5f
+                        && (dashed || TaperBite(rPrev, rJoint, rNext, lenPrev, len) <= _pathTaperBitePixels * _pixelSize)) {
                         jd.Mode = PathJointMode.Partition;
                         jd.BIn = joint + m * (sign * h / cHalf);
                         PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
@@ -913,11 +938,12 @@ namespace Apos.Shapes {
                             // plane's AA, which stands off by the joint point's own half width.
                             jd.MOut = effective == PathJoin.Miter
                                 ? joint - m * (sign * h / cHalf)
-                                : joint - m * (sign * (R(radii, radius, (j + 1) % n) * cHalf + aaOffset + _pixelSize));
+                                : joint - m * (sign * (rJoint * cHalf + aaOffset + _pixelSize));
                         }
                     } else {
-                        // The inner miter outruns a short segment. Overlapping slabs stay hole-free and only
-                        // double blend inside the joint, where the stroke genuinely covers itself.
+                        // Either the inner miter outruns a short segment, or the taper would lose a
+                        // visible wedge to the cut. Overlapping slabs stay hole-free and only double
+                        // blend inside the joint, where the stroke genuinely covers itself.
                         jd.Mode = PathJointMode.Overlap;
                     }
                     if (dashed) {
@@ -947,11 +973,11 @@ namespace Apos.Shapes {
                             // The corner is the joint point's own half width on a tapered path, and
                             // both segments read that same one from their shared end, so the two of
                             // them still decode the fillet to the same arc.
-                            float rJoint = MathF.Max(R(radii, radius, (j + 1) % n), 1e-6f);
-                            float want = dash.Cap == DashCap.Round ? rJoint : 2f * rJoint;
-                            // The code spans [rJoint, 2 * rJoint]; the shader mirrors this mapping.
-                            jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, want) / rJoint - 1f) * 127f), 0f, 127f);
-                            jd.DashArc = (thetaQ - 2f * tanQ) * rJoint * (1f + jd.DashRadiusCode / 127f);
+                            float rCorner = MathF.Max(rJoint, 1e-6f);
+                            float want = dash.Cap == DashCap.Round ? rCorner : 2f * rCorner;
+                            // The code spans [rCorner, 2 * rCorner]; the shader mirrors this mapping.
+                            jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, want) / rCorner - 1f) * 127f), 0f, 127f);
+                            jd.DashArc = (thetaQ - 2f * tanQ) * rCorner * (1f + jd.DashRadiusCode / 127f);
                         } else {
                             jd.ThetaCode = 1024f;
                         }
@@ -3233,6 +3259,10 @@ namespace Apos.Shapes {
         // How far past the join arc a round joint's miter tip may reach before it stops being
         // worth standing in for the fan. Pure overdraw, not error, so the budget buys vertices.
         private const float _pathMiterForFanPixels = 1f;
+        // How much of a tapered joint's wall may be cut away before the joint goes to overlapping
+        // slabs. Half a pixel sits inside the antialiasing band, so what is lost softens the edge
+        // rather than stepping it; past that it reads as a nick with a hard side to it.
+        private const float _pathTaperBitePixels = 0.5f;
 
         private static bool IsTransparent(in Gradient g) {
             return g.AC.A == 0 && g.BC.A == 0;

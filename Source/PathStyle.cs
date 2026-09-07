@@ -29,7 +29,8 @@ namespace Apos.Shapes {
 
     /// <summary>
     /// How a path's segments connect at a joint. Joints whose segments are shorter than the stroke
-    /// radius, or that fold back on themselves, fall back to round.
+    /// radius, that fold back on themselves, or that change width fast enough for a shared corner
+    /// to cut into the stroke, fall back to round.
     /// </summary>
     public enum PathJoin {
         /// <summary>The outer corner is filled by an arc of the stroke radius.</summary>

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Nothing yet!
 
+## [0.8.4] - 2026-09-06
+
+### Fixed
+
+- A tapered path no longer has a step bitten out of its edge where the stroke changes width.
+
 ## [0.8.3] - 2026-09-06
 
 ### Fixed
@@ -410,6 +416,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Everything!
 
 [Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.3...HEAD
+[0.8.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.0...v0.8.1
