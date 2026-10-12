@@ -4,11 +4,10 @@ using System;
 using System.Collections.Generic;
 
 namespace Apos.Shapes {
-    // A stylesheet cut down to what a static drawing can use. Selectors may use tags, classes,
-    // ids, attribute tests and :first-child, joined by descendant, child and sibling combinators.
-    // @media blocks apply when they're for all or screen. Anything else is counted and left out,
-    // so a file never loads worse than it did without the sheet. @import is never followed: it
-    // would read a file or reach the network on behalf of whoever handed over the document.
+    // A stylesheet cut down to what drawing exports use: rules whose selectors are a tag, a class,
+    // an id, or those written together like path.a#b. Combinators, attribute selectors,
+    // pseudo-classes and at-rules are counted and left out, so a file never loads worse than it
+    // did without the sheet.
     //
     // Everything resolves while the file loads, into the same style an inline declaration would
     // have produced, so a drawing styled from a sheet draws exactly like one styled inline.
@@ -21,35 +20,12 @@ namespace Apos.Shapes {
         internal bool IsEmpty => _rules.Count == 0;
 
         private sealed class Rule {
-            // Right to left: Parts[0] is the element itself, each later part is reached from the
-            // one before it through that part's Combinator.
-            internal Compound[] Parts = null!;
+            internal string? Tag;
+            internal string? Id;
+            internal string[] Classes = Array.Empty<string>();
             internal int Specificity;
             internal int Order;
             internal Dictionary<string, string> Declarations = null!;
-        }
-
-        private sealed class Compound {
-            internal string? Tag;
-            internal string? Id;
-            internal readonly List<string> Classes = new();
-            internal readonly List<AttrTest> Attrs = new();
-            internal bool FirstChild;
-            // How the element this part matches relates to the part before it: ' ' ancestor,
-            // '>' parent, '~' earlier sibling, '+' the sibling right before.
-            internal char Combinator;
-        }
-
-        private readonly struct AttrTest {
-            internal AttrTest(string name, char op, string? value) {
-                Name = name;
-                Op = op;
-                Value = value;
-            }
-            internal readonly string Name;
-            // '\0' for presence, '=' for equality, or the first character of ~= |= ^= $= *=.
-            internal readonly char Op;
-            internal readonly string? Value;
         }
 
         internal void Add(string css) {
@@ -65,29 +41,24 @@ namespace Apos.Shapes {
                     // An at-rule ends at its semicolon, or with its block when it has one.
                     int semi = css.IndexOf(';', at);
                     int open = css.IndexOf('{', at);
+                    // Some exporters start with @charset, which says nothing about the drawing.
+                    bool charset = string.CompareOrdinal(css, at, "@charset", 0, 8) == 0;
                     if (open >= 0 && (semi < 0 || open < semi)) {
-                        int close = BlockEnd(css, open);
-                        string prelude = css.Substring(at, open - at);
-                        if (IsScreenMedia(prelude)) {
-                            Add(css.Substring(open + 1, Math.Max(0, close - open - 1)));
-                        } else {
-                            Skip("@rule");
-                        }
-                        at = close + 1;
+                        at = BlockEnd(css, open) + 1;
                     } else {
                         at = semi < 0 ? css.Length : semi + 1;
-                        Skip("@rule");
                     }
+                    if (!charset) Skip("@rule");
                     continue;
                 }
                 int brace = css.IndexOf('{', at);
                 if (brace < 0) break;
                 int end = BlockEnd(css, brace);
-                string selectors = css.Substring(at, brace - at);
+                string prelude = css.Substring(at, brace - at);
                 var decls = new Dictionary<string, string>(StringComparer.Ordinal);
                 Declarations(css.Substring(brace + 1, Math.Max(0, end - brace - 1)), decls);
                 if (decls.Count > 0) {
-                    foreach (string selector in selectors.Split(',')) {
+                    foreach (string selector in prelude.Split(',')) {
                         Rule? rule = Selector(selector.Trim());
                         if (rule == null) {
                             Skip("css selector");
@@ -104,11 +75,14 @@ namespace Apos.Shapes {
 
         // What the sheet says for one element, with the more specific rule winning and the later
         // one winning a tie. Null when nothing matches.
-        internal Dictionary<string, string>? Match(SvgAttrs element) {
+        internal Dictionary<string, string>? Match(string tag, string? id, string? classes) {
             if (_rules.Count == 0) return null;
+            string[] own = classes == null
+                ? Array.Empty<string>()
+                : classes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             List<Rule>? hits = null;
             foreach (Rule rule in _rules) {
-                if (!Matches(rule.Parts, 0, element)) continue;
+                if (!Matches(rule, tag, id, own)) continue;
                 hits ??= new List<Rule>();
                 hits.Add(rule);
             }
@@ -143,188 +117,41 @@ namespace Apos.Shapes {
             }
         }
 
-        // Whether parts[index..] match with parts[index] on this element. A descendant or later
-        // sibling combinator tries every candidate, so a.b c matches however deep the a.b is.
-        private static bool Matches(Compound[] parts, int index, SvgAttrs element) {
-            Compound part = parts[index];
-            if (!Matches(part, element)) return false;
-            if (index + 1 == parts.Length) return true;
-            switch (parts[index + 1].Combinator) {
-                case '>':
-                    return element.Parent != null && Matches(parts, index + 1, element.Parent);
-                case '+':
-                    return element.Previous != null && Matches(parts, index + 1, element.Previous);
-                case '~':
-                    for (SvgAttrs? s = element.Previous; s != null; s = s.Previous) {
-                        if (Matches(parts, index + 1, s)) return true;
-                    }
-                    return false;
-                default:
-                    for (SvgAttrs? a = element.Parent; a != null; a = a.Parent) {
-                        if (Matches(parts, index + 1, a)) return true;
-                    }
-                    return false;
-            }
-        }
-
-        private static bool Matches(Compound part, SvgAttrs element) {
-            if (part.Tag != null && !string.Equals(part.Tag, element.Tag, StringComparison.Ordinal)) return false;
-            if (part.Id != null && !string.Equals(part.Id, element.Raw("id"), StringComparison.Ordinal)) return false;
-            if (part.FirstChild && element.Previous != null) return false;
-            foreach (string c in part.Classes) {
-                if (Array.IndexOf(element.Classes, c) < 0) return false;
-            }
-            foreach (AttrTest t in part.Attrs) {
-                string? v = element.Raw(t.Name);
-                if (v == null || !Test(t, v)) return false;
+        private static bool Matches(Rule rule, string tag, string? id, string[] own) {
+            if (rule.Tag != null && !string.Equals(rule.Tag, tag, StringComparison.Ordinal)) return false;
+            if (rule.Id != null && !string.Equals(rule.Id, id, StringComparison.Ordinal)) return false;
+            foreach (string c in rule.Classes) {
+                if (Array.IndexOf(own, c) < 0) return false;
             }
             return true;
         }
 
-        private static bool Test(in AttrTest t, string v) {
-            string want = t.Value ?? string.Empty;
-            switch (t.Op) {
-                case '\0': return true;
-                case '=': return v == want;
-                case '~': return Array.IndexOf(v.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries), want) >= 0;
-                case '|': return v == want || v.StartsWith(want + "-", StringComparison.Ordinal);
-                case '^': return want.Length > 0 && v.StartsWith(want, StringComparison.Ordinal);
-                case '$': return want.Length > 0 && v.EndsWith(want, StringComparison.Ordinal);
-                case '*': return want.Length > 0 && v.Contains(want, StringComparison.Ordinal);
-                default: return false;
-            }
-        }
-
-        // One complex selector, or null for anything this doesn't read.
+        // One compound selector, or null for anything past a tag, classes and an id.
         private static Rule? Selector(string s) {
             if (s.Length == 0) return null;
-            var parts = new List<Compound>();
+            var rule = new Rule();
+            var classes = new List<string>();
             int at = 0;
-            char combinator = '\0';
-            while (true) {
-                Compound? part = ReadCompound(s, ref at);
-                if (part == null) return null;
-                part.Combinator = combinator;
-                parts.Add(part);
-
-                bool space = false;
-                while (at < s.Length && char.IsWhiteSpace(s[at])) {
-                    at++;
-                    space = true;
-                }
-                if (at >= s.Length) break;
-                char c = s[at];
-                if (c == '>' || c == '+' || c == '~') {
-                    combinator = c;
-                    at++;
-                    while (at < s.Length && char.IsWhiteSpace(s[at])) at++;
-                } else if (space) {
-                    combinator = ' ';
+            if (s[0] == '*') {
+                at = 1;
+            } else if (IsName(s[0])) {
+                rule.Tag = Name(s, ref at);
+            }
+            while (at < s.Length) {
+                char c = s[at++];
+                string name = Name(s, ref at);
+                if (name.Length == 0) return null;
+                if (c == '.') {
+                    classes.Add(name);
+                } else if (c == '#' && rule.Id == null) {
+                    rule.Id = name;
                 } else {
                     return null;
                 }
             }
-
-            int ids = 0, classes = 0, tags = 0;
-            foreach (Compound p in parts) {
-                if (p.Id != null) ids++;
-                classes += p.Classes.Count + p.Attrs.Count + (p.FirstChild ? 1 : 0);
-                if (p.Tag != null) tags++;
-            }
-            // Matching runs from the element outward, so the parts are stored the same way round,
-            // each holding the combinator that reaches it from the part before.
-            var joins = new char[parts.Count];
-            for (int i = 0; i < parts.Count; i++) joins[i] = parts[i].Combinator;
-            var reversed = new Compound[parts.Count];
-            for (int i = 0; i < parts.Count; i++) {
-                reversed[i] = parts[parts.Count - 1 - i];
-                reversed[i].Combinator = i == 0 ? '\0' : joins[parts.Count - i];
-            }
-            return new Rule { Parts = reversed, Specificity = ids * 10000 + classes * 100 + tags };
-        }
-
-        // A tag, classes, an id, attribute tests and :first-child written together, like
-        // rect.a[fill]:first-child. Null for anything else.
-        private static Compound? ReadCompound(string s, ref int at) {
-            var part = new Compound();
-            int start = at;
-            if (at < s.Length && s[at] == '*') {
-                at++;
-            } else if (at < s.Length && IsName(s[at])) {
-                part.Tag = Name(s, ref at);
-            }
-            while (at < s.Length) {
-                char c = s[at];
-                if (c == '.' || c == '#') {
-                    at++;
-                    string name = Name(s, ref at);
-                    if (name.Length == 0) return null;
-                    if (c == '.') {
-                        part.Classes.Add(name);
-                    } else if (part.Id == null) {
-                        part.Id = name;
-                    } else {
-                        return null;
-                    }
-                } else if (c == '[') {
-                    if (!Attribute(s, ref at, out AttrTest test)) return null;
-                    part.Attrs.Add(test);
-                } else if (c == ':') {
-                    const string first = ":first-child";
-                    if (string.CompareOrdinal(s, at, first, 0, first.Length) != 0) return null;
-                    at += first.Length;
-                    if (at < s.Length && IsName(s[at])) return null;
-                    part.FirstChild = true;
-                } else {
-                    break;
-                }
-            }
-            return at > start ? part : null;
-        }
-
-        // [name], [name=value] or [name op= value], with the value bare or quoted.
-        private static bool Attribute(string s, ref int at, out AttrTest test) {
-            test = default;
-            int close = s.IndexOf(']', at);
-            if (close < 0) return false;
-            string body = s.Substring(at + 1, close - at - 1).Trim();
-            at = close + 1;
-            int eq = body.IndexOf('=');
-            if (eq < 0) {
-                if (body.Length == 0) return false;
-                test = new AttrTest(body, '\0', null);
-                return true;
-            }
-            char op = '=';
-            int nameEnd = eq;
-            if (eq > 0 && "~|^$*".IndexOf(body[eq - 1]) >= 0) {
-                op = body[eq - 1];
-                nameEnd = eq - 1;
-            }
-            string name = body.Substring(0, nameEnd).Trim();
-            string value = body.Substring(eq + 1).Trim();
-            if (value.Length >= 2 && (value[0] == '"' || value[0] == '\'') && value[value.Length - 1] == value[0]) {
-                value = value.Substring(1, value.Length - 2);
-            } else if (value.Length == 0 || value.IndexOf(' ') >= 0 || value[0] == '"' || value[0] == '\'') {
-                // A case flag like [a=b i], or a quote that never closes.
-                return false;
-            }
-            if (name.Length == 0) return false;
-            test = new AttrTest(name, op, value);
-            return true;
-        }
-
-        // @media for every medium or for screens, with no feature tests. Print and anything with
-        // a condition in it doesn't describe a drawing on a screen, so its rules are skipped.
-        private static bool IsScreenMedia(string prelude) {
-            const string media = "@media";
-            if (!prelude.StartsWith(media, StringComparison.OrdinalIgnoreCase)) return false;
-            foreach (string query in prelude.Substring(media.Length).Split(',')) {
-                string q = query.Trim().ToLowerInvariant();
-                if (q.StartsWith("only ", StringComparison.Ordinal)) q = q.Substring(5).Trim();
-                if (q == "all" || q == "screen") return true;
-            }
-            return false;
+            rule.Classes = classes.ToArray();
+            rule.Specificity = (rule.Id != null ? 10000 : 0) + classes.Count * 100 + (rule.Tag != null ? 1 : 0);
+            return rule;
         }
 
         private static string Name(string s, ref int at) {

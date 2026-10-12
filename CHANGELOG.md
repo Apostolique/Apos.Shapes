@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- SVG `<style>` elements now style the drawing, below inline `style=""` and above presentation attributes. Selectors can use tags, classes, ids, attribute tests and `:first-child`, joined by descendant (`g rect`), child (`>`) and sibling (`+`, `~`) combinators. Rules inside `@media all` or `@media screen` apply. Other pseudo-classes and at-rules are skipped, and `@import` is never followed.
+- SVG `<style>` elements now apply.
 
 ## [0.8.5] - 2026-09-07
 

@@ -199,13 +199,15 @@ Elements: `path` with the whole path grammar including arcs, `rect` with `rx` an
 
 Paint and stroke properties are read off the element or inherited from its group, and a declaration in `style=""` wins over the presentation attribute of the same name: `fill`, `stroke`, `fill-rule`, `fill-opacity`, `stroke-opacity`, `opacity`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`, and `color`. Opacity folds into the colors rather than compositing, so a translucent element blends against what's under it.
 
+A `style` element applies too, which is how Illustrator and Inkscape write their colors. A rule layers below `style=""` and above the presentation attribute of the same name, so the order is inline style, then the sheet, then the attribute. Selectors can be a tag, `.class`, `#id`, `*`, or those written together like `path.a#b`, and a comma list of them. Descendant and sibling combinators, attribute selectors, pseudo-classes, and at-rules such as `@media` are skipped, and `@import` is never followed. The rules resolve while the file loads, so drawing is no slower for them.
+
 Colors can be `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `transparent`, `currentColor`, or any of the CSS color keywords. A `url(#id)` paint points at a gradient in `defs`, with the color written after it used when the reference misses. Gradients take `gradientUnits`, `gradientTransform`, `spreadMethod`, `href` chains between them, and `stop-color` with `stop-opacity`.
 
 A drawing is read once when it loads, and its elements sit in the same table the glyphs use. Drawing it after that allocates nothing, however many elements it has.
 
 ## Limits
 
-`use`, `text`, `clipPath`, `mask`, `filter`, `pattern`, and CSS `style` blocks are skipped. So is a nested `svg`, and a `switch` draws all of its children rather than the first one that fits. Anything skipped is dropped quietly, so a file that parses as XML always loads, and one full of things this doesn't draw loads to a drawing that's missing them.
+`use`, `text`, `clipPath`, `mask`, `filter`, and `pattern` are skipped. So is a nested `svg`, and a `switch` draws all of its children rather than the first one that fits. Anything skipped is dropped quietly, so a file that parses as XML always loads, and one full of things this doesn't draw loads to a drawing that's missing them.
 
 There's no viewport clipping. A file that draws past its own viewBox draws past it here too.
 
