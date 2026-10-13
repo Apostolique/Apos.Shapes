@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.8.6] - 2026-10-13
+
 ### Added
 
 - SVG `<style>` elements now apply.
@@ -423,7 +427,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.2...v0.8.3
