@@ -16,9 +16,11 @@ namespace Apos.Shapes {
     /// any number of batches at the same time.
     ///
     /// What it reads: `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon` and `g`,
-    /// with transforms, fills, strokes, and linear and radial gradients out of `defs`. Text,
-    /// `use`, clip paths, masks, filters, patterns and CSS style blocks are ignored. Anything
-    /// ignored is counted rather than reported, so a file always loads if it parses as XML.
+    /// with transforms, fills, strokes, and linear and radial gradients out of `defs`. Styles
+    /// come from presentation attributes, `style` attributes and `style` elements, where a rule
+    /// may select by tag, class and id. Text, `use`, clip paths, masks, filters and patterns are
+    /// ignored. Anything ignored is counted rather than reported, so a file always loads if it
+    /// parses as XML.
     ///
     /// Sizes are in em units: one em is the height of the viewBox, so multiply by the height you
     /// draw at to get world units. Everything here is safe to call from any thread.
@@ -34,8 +36,8 @@ namespace Apos.Shapes {
         /// <exception cref="ArgumentException">The text isn't an SVG document this can read.</exception>
         public ShapeSvg(string markup, float tolerance = DefaultTolerance) {
             ArgumentNullException.ThrowIfNull(markup);
-            using var text = new StringReader(markup);
-            Load(text, tolerance);
+            Load(() => XmlReader.Create(new StringReader(markup), Settings()), tolerance,
+                 "The text could not be read as an SVG document.", nameof(markup));
         }
         /// <summary>Loads a drawing from the bytes of an .svg file.</summary>
         /// <param name="svg">The whole file.</param>
@@ -47,8 +49,8 @@ namespace Apos.Shapes {
         /// <exception cref="ArgumentException">The bytes aren't an SVG document this can read.</exception>
         public ShapeSvg(byte[] svg, float tolerance = DefaultTolerance) {
             ArgumentNullException.ThrowIfNull(svg);
-            using var stream = new MemoryStream(svg, false);
-            Load(stream, tolerance);
+            Load(() => XmlReader.Create(new MemoryStream(svg, false), Settings()), tolerance,
+                 "The bytes could not be read as an SVG document.", nameof(svg));
         }
         /// <summary>Loads a drawing by reading a stream to its end. The stream stays open.</summary>
         /// <param name="svg">A stream over a whole .svg file.</param>
@@ -60,7 +62,11 @@ namespace Apos.Shapes {
         /// <exception cref="ArgumentException">The bytes aren't an SVG document this can read.</exception>
         public ShapeSvg(Stream svg, float tolerance = DefaultTolerance) {
             ArgumentNullException.ThrowIfNull(svg);
-            Load(svg, tolerance);
+            // The document is read twice, so the stream is taken in whole first.
+            var copy = new MemoryStream();
+            svg.CopyTo(copy);
+            Load(() => XmlReader.Create(new MemoryStream(copy.GetBuffer(), 0, (int)copy.Length, false), Settings()), tolerance,
+                 "The bytes could not be read as an SVG document.", nameof(svg));
         }
 
         /// <summary>
@@ -170,22 +176,54 @@ namespace Apos.Shapes {
         // is dropped rather than drawn wrong.
         private const float EmReach = 1.2f;
 
-        private void Load(Stream stream, float tolerance) {
+        // A style element may come after the elements it styles, so its rules are gathered in a
+        // pass of their own before anything is resolved.
+        private void Load(Func<XmlReader> open, float tolerance, string message, string param) {
             try {
-                using XmlReader reader = XmlReader.Create(stream, Settings());
-                Parse(reader, tolerance);
+                SvgSheet sheet;
+                using (XmlReader reader = open()) sheet = Sheet(reader);
+                using (XmlReader reader = open()) Parse(reader, sheet.IsEmpty ? null : sheet, tolerance);
             } catch (XmlException e) {
-                throw new ArgumentException("The bytes could not be read as an SVG document.", nameof(stream), e);
+                throw new ArgumentException(message, param, e);
             }
         }
 
-        private void Load(TextReader text, float tolerance) {
-            try {
-                using XmlReader reader = XmlReader.Create(text, Settings());
-                Parse(reader, tolerance);
-            } catch (XmlException e) {
-                throw new ArgumentException("The text could not be read as an SVG document.", nameof(text), e);
+        private SvgSheet Sheet(XmlReader r) {
+            var sheet = new SvgSheet();
+            var text = new System.Text.StringBuilder();
+            int depth = -1;
+            while (r.Read()) {
+                if (depth < 0) {
+                    if (r.NodeType == XmlNodeType.Element && r.LocalName == "style" && !r.IsEmptyElement
+                        && Applies(r.GetAttribute("type"), r.GetAttribute("media"))) {
+                        depth = r.Depth;
+                    }
+                } else if (r.NodeType == XmlNodeType.Text || r.NodeType == XmlNodeType.CDATA) {
+                    text.Append(r.Value);
+                } else if (r.NodeType == XmlNodeType.EndElement && r.Depth == depth) {
+                    sheet.Add(text.ToString(), Drop);
+                    text.Clear();
+                    depth = -1;
+                }
             }
+            return sheet;
+        }
+
+        // A style element applies when it's CSS, which is what no type means, and it isn't for
+        // some other medium. This draws to a screen.
+        private static bool Applies(string? type, string? media) {
+            return IsCss(type) && IsScreen(media);
+        }
+
+        private static bool IsCss(string? type) {
+            return type == null || type.Trim().Length == 0
+                || string.Equals(type.Trim(), "text/css", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsScreen(string? media) {
+            return media == null || media.Trim().Length == 0
+                || string.Equals(media.Trim(), "all", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(media.Trim(), "screen", StringComparison.OrdinalIgnoreCase);
         }
 
         // No DTD and no resolver: an SVG can name an external entity, and resolving one would
@@ -225,7 +263,7 @@ namespace Apos.Shapes {
             internal SvgGradientDef? Grad;
         }
 
-        private void Parse(XmlReader r, float tolerance) {
+        private void Parse(XmlReader r, SvgSheet? sheet, float tolerance) {
             var pending = new List<Pending>();
             var gradients = new SvgGradients();
             var stack = new List<Frame>();
@@ -256,7 +294,7 @@ namespace Apos.Shapes {
 
                 if (!parent.Ignore) {
                     string name = r.LocalName;
-                    var attrs = new SvgAttrs(r);
+                    var attrs = new SvgAttrs(r, sheet);
                     switch (name) {
                         case "svg":
                             if (!sawRoot) {
@@ -317,6 +355,11 @@ namespace Apos.Shapes {
                         case "title":
                         case "desc":
                         case "metadata":
+                            frame.Ignore = true;
+                            break;
+                        case "style":
+                            // Read ahead of this pass. A style that isn't used is dropped here.
+                            if (!Applies(attrs.Raw("type"), attrs.Raw("media"))) Drop("style");
                             frame.Ignore = true;
                             break;
                         default:

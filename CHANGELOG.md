@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- SVG `<style>` elements now apply.
 
 ## [0.8.5] - 2026-09-07
 

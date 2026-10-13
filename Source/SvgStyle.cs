@@ -6,43 +6,41 @@ using Microsoft.Xna.Framework;
 using System.Xml;
 
 namespace Apos.Shapes {
-    // One element's attributes, with the inline style attribute layered over them. A declaration
-    // in style="" wins over the presentation attribute of the same name, which is what CSS says
-    // and what decides which of two conflicting fills an element gets.
+    // One element's attributes, with the document's stylesheet and then the inline style
+    // attribute layered over them. A declaration in style="" beats a matching rule in a style
+    // element, which beats the presentation attribute of the same name. That's the CSS order,
+    // and it's what decides which of two conflicting fills an element gets.
     internal sealed class SvgAttrs {
-        internal SvgAttrs(XmlReader reader) {
-            if (!reader.HasAttributes) return;
-            _own = new Dictionary<string, string>(StringComparer.Ordinal);
-            reader.MoveToFirstAttribute();
-            do {
-                // Namespaced attributes are stored under both spellings so xlink:href and href
-                // answer the same lookup.
-                _own[reader.Name] = reader.Value;
-                _own[reader.LocalName] = reader.Value;
-            } while (reader.MoveToNextAttribute());
-            reader.MoveToElement();
-
-            if (!_own.TryGetValue("style", out string? style) || style.Length == 0) return;
-            _style = new Dictionary<string, string>(StringComparer.Ordinal);
-            int at = 0;
-            while (at < style.Length) {
-                int end = style.IndexOf(';', at);
-                if (end < 0) end = style.Length;
-                int colon = style.IndexOf(':', at);
-                if (colon > at && colon < end) {
-                    string name = style.Substring(at, colon - at).Trim();
-                    string value = style.Substring(colon + 1, end - colon - 1).Trim();
-                    if (name.Length > 0) _style[name] = value;
-                }
-                at = end + 1;
+        internal SvgAttrs(XmlReader reader, SvgSheet? sheet) {
+            if (reader.HasAttributes) {
+                _own = new Dictionary<string, string>(StringComparer.Ordinal);
+                reader.MoveToFirstAttribute();
+                do {
+                    // Namespaced attributes are stored under both spellings so xlink:href and href
+                    // answer the same lookup.
+                    _own[reader.Name] = reader.Value;
+                    _own[reader.LocalName] = reader.Value;
+                } while (reader.MoveToNextAttribute());
+                reader.MoveToElement();
             }
+
+            if (sheet != null && !sheet.IsEmpty) {
+                _sheet = sheet.Match(reader.LocalName, Raw("id"), Raw("class"));
+            }
+
+            string? style = Raw("style");
+            if (style == null || style.Length == 0) return;
+            _style = new Dictionary<string, string>(StringComparer.Ordinal);
+            SvgSheet.Declarations(style, _style);
         }
 
         private readonly Dictionary<string, string>? _own;
+        private readonly Dictionary<string, string>? _sheet;
         private readonly Dictionary<string, string>? _style;
 
         internal string? Get(string name) {
             if (_style != null && _style.TryGetValue(name, out string? v)) return v;
+            if (_sheet != null && _sheet.TryGetValue(name, out string? r)) return r;
             if (_own != null && _own.TryGetValue(name, out string? a)) return a;
             return null;
         }
