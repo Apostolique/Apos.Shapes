@@ -65,8 +65,7 @@ namespace Apos.Shapes {
             // The document is read twice, so the stream is taken in whole first.
             var copy = new MemoryStream();
             svg.CopyTo(copy);
-            byte[] bytes = copy.ToArray();
-            Load(() => XmlReader.Create(new MemoryStream(bytes, false), Settings()), tolerance,
+            Load(() => XmlReader.Create(new MemoryStream(copy.GetBuffer(), 0, (int)copy.Length, false), Settings()), tolerance,
                  "The bytes could not be read as an SVG document.", nameof(svg));
         }
 
@@ -183,28 +182,26 @@ namespace Apos.Shapes {
             try {
                 SvgSheet sheet;
                 using (XmlReader reader = open()) sheet = Sheet(reader);
-                _skipped += sheet.Skipped;
-                foreach (string name in sheet.SkippedNames) Drop(name, 0);
                 using (XmlReader reader = open()) Parse(reader, sheet.IsEmpty ? null : sheet, tolerance);
             } catch (XmlException e) {
                 throw new ArgumentException(message, param, e);
             }
         }
 
-        private static SvgSheet Sheet(XmlReader r) {
+        private SvgSheet Sheet(XmlReader r) {
             var sheet = new SvgSheet();
             var text = new System.Text.StringBuilder();
             int depth = -1;
             while (r.Read()) {
                 if (depth < 0) {
                     if (r.NodeType == XmlNodeType.Element && r.LocalName == "style" && !r.IsEmptyElement
-                        && IsCss(r.GetAttribute("type"))) {
+                        && Applies(r.GetAttribute("type"), r.GetAttribute("media"))) {
                         depth = r.Depth;
                     }
                 } else if (r.NodeType == XmlNodeType.Text || r.NodeType == XmlNodeType.CDATA) {
                     text.Append(r.Value);
                 } else if (r.NodeType == XmlNodeType.EndElement && r.Depth == depth) {
-                    sheet.Add(text.ToString());
+                    sheet.Add(text.ToString(), Drop);
                     text.Clear();
                     depth = -1;
                 }
@@ -212,10 +209,21 @@ namespace Apos.Shapes {
             return sheet;
         }
 
-        // No type means CSS.
+        // A style element applies when it's CSS, which is what no type means, and it isn't for
+        // some other medium. This draws to a screen.
+        private static bool Applies(string? type, string? media) {
+            return IsCss(type) && IsScreen(media);
+        }
+
         private static bool IsCss(string? type) {
             return type == null || type.Trim().Length == 0
                 || string.Equals(type.Trim(), "text/css", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsScreen(string? media) {
+            return media == null || media.Trim().Length == 0
+                || string.Equals(media.Trim(), "all", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(media.Trim(), "screen", StringComparison.OrdinalIgnoreCase);
         }
 
         // No DTD and no resolver: an SVG can name an external entity, and resolving one would
@@ -350,8 +358,8 @@ namespace Apos.Shapes {
                             frame.Ignore = true;
                             break;
                         case "style":
-                            // Read ahead of this pass. A style of another type is dropped here.
-                            if (!IsCss(attrs.Raw("type"))) Drop("style");
+                            // Read ahead of this pass. A style that isn't used is dropped here.
+                            if (!Applies(attrs.Raw("type"), attrs.Raw("media"))) Drop("style");
                             frame.Ignore = true;
                             break;
                         default:
@@ -415,8 +423,8 @@ namespace Apos.Shapes {
             Max = max;
         }
 
-        private void Drop(string what, int count = 1) {
-            _skipped += count;
+        private void Drop(string what) {
+            _skipped++;
             if (_skippedNames.Count < 64 && !_skippedNames.Contains(what)) _skippedNames.Add(what);
         }
 
