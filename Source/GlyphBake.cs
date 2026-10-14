@@ -61,6 +61,12 @@ namespace Apos.Shapes {
         internal int Y2;
         internal Vector2 Min;
         internal Vector2 Max;
+        // Set on a side the quad should end exactly at, with no anti aliasing margin, because
+        // another quad starts there. A drawing's tiles meet on these edges.
+        internal bool SeamMinX;
+        internal bool SeamMaxX;
+        internal bool SeamMinY;
+        internal bool SeamMaxY;
 
         // Bands per axis. Zero means the glyph has no outline to draw: a space, a code point
         // the font has no glyph for, or an outline this baker cannot express.
