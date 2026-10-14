@@ -34,6 +34,9 @@ internal sealed class SmokeGame : Game {
 
         DenseShapeKeepsEveryHole();
 
+        SquashedDrawingStaysInsideItsBox(horizontal: true);
+        SquashedDrawingStaysInsideItsBox(horizontal: false);
+
         Console.WriteLine(Failures == 0 ? "PASS" : $"FAIL: {Failures} check(s) failed");
         Exit();
     }
@@ -82,6 +85,50 @@ internal sealed class SmokeGame : Game {
         // The bars above and below the holes, along their whole length: a seam would cut them.
         Check(AllRed(px, Width, 3, 3, Width - 3, 18, margin: 0), "dense shape: top bar is solid along its length");
         Check(AllRed(px, Width, 3, 82, Width - 3, Height - 3, margin: 0), "dense shape: bottom bar is solid along its length");
+    }
+
+    // A drawing squashed hard along one axis by the view, the way Gum stretches an SVG to a width
+    // that disagrees with its aspect ratio. The pixel size is not the same in both directions, and
+    // a margin or fade sized from the coarse one runs far past the box on the fine one.
+    private void SquashedDrawingStaysInsideItsBox(bool horizontal) {
+        const int Size = 100;
+        const float Squash = 0.04f;
+        const int Origin = 50;
+        const int Target = 300;
+        string name = horizontal ? "squashed horizontally" : "squashed vertically";
+        const string Markup = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0,0H100V100H0Z" fill="#f00"/></svg>""";
+        if (!ShapeSvg.TryLoad(Markup, out ShapeSvg? svg)) throw new InvalidOperationException("The SVG didn't load.");
+
+        using var target = new RenderTarget2D(GraphicsDevice, Target, Target, false, SurfaceFormat.Color, DepthFormat.None);
+        var batch = new ShapeBatch(GraphicsDevice);
+        GraphicsDevice.SetRenderTarget(target);
+        GraphicsDevice.Clear(Color.Black);
+        var scale = horizontal ? new Vector3(Squash, 1f, 1f) : new Vector3(1f, Squash, 1f);
+        Matrix view = Matrix.CreateTranslation(-Origin, -Origin, 0f) * Matrix.CreateScale(scale) * Matrix.CreateTranslation(Origin, Origin, 0f);
+        batch.Begin(view);
+        batch.DrawSvg(svg, new Vector2(Origin), Size, aaSize: 1);
+        batch.End();
+        GraphicsDevice.SetRenderTarget(null);
+        var px = new Color[Target * Target];
+        target.GetData(px);
+
+        // The drawing lands in a Size by Squash * Size box. Nothing may be lit a pixel past it.
+        int boxW = horizontal ? (int)MathF.Ceiling(Size * Squash) : Size;
+        int boxH = horizontal ? Size : (int)MathF.Ceiling(Size * Squash);
+        int stray = 0;
+        int worst = 0;
+        for (int y = 0; y < Target; y++) {
+            for (int x = 0; x < Target; x++) {
+                bool inside = x >= Origin - 1 && x <= Origin + boxW + 1 && y >= Origin - 1 && y <= Origin + boxH + 1;
+                int r = Get(px, Target, x, y).R;
+                if (!inside && r > 3) {
+                    stray++;
+                    worst = Math.Max(worst, r);
+                }
+            }
+        }
+        Check(stray == 0, $"{name}: nothing is drawn outside its box ({stray} stray pixels, brightest {worst})");
+        Check(IsRed(Get(px, Target, Origin + boxW / 2, Origin + boxH / 2)), $"{name}: center is red");
     }
 
     private Color[] Render(string markup, int width) {
