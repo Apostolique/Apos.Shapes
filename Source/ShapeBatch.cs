@@ -2763,8 +2763,14 @@ namespace Apos.Shapes {
                 if (s.HasFill && s.Fill != null) {
                     Gradient g = overridden ? fill : SvgPaint(s.FillPaint, position, origin, size, sin, cos);
                     Vector2 pen = SvgToWorld(s.Origin, position, origin, size, sin, cos);
-                    DrawGlyphQuad(s.Fill, pen, scale, g, sin, cos, aaSize,
-                                  s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph);
+                    VertexShape.Shape fillShape = s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph;
+                    if (s.FillTiles != null) {
+                        foreach (BakedGlyph tile in s.FillTiles) {
+                            DrawGlyphQuad(tile, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
+                        }
+                    } else {
+                        DrawGlyphQuad(s.Fill, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
+                    }
                 }
                 if (s.HasStroke) {
                     DrawSvgStroke(s, position, size, overridden ? fill : SvgPaint(s.StrokePaint, position, origin, size, sin, cos),
@@ -2904,6 +2910,10 @@ namespace Apos.Shapes {
             Vector2 pad = new(MathF.Abs(aaSize) / MathF.Max(pixelsPerEm.X, 1e-6f), MathF.Abs(aaSize) / MathF.Max(pixelsPerEm.Y, 1e-6f));
             Vector2 emMin = g.Min - pad;
             Vector2 emMax = g.Max + pad;
+            if (g.SeamMinX) emMin.X = g.Min.X;
+            if (g.SeamMaxX) emMax.X = g.Max.X;
+            if (g.SeamMinY) emMin.Y = g.Min.Y;
+            if (g.SeamMaxY) emMax.Y = g.Max.Y;
 
             // Font space has y up and the world has it down, so the top of the glyph is its
             // largest em y. The corners still go round the way every other quad's do.
