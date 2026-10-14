@@ -2903,6 +2903,19 @@ namespace Apos.Shapes {
                                  position.Y - (g.Min.Y + g.Max.Y) * 0.5f * scale.Y);
             UpdatePixelSize(center, (g.Max - g.Min).Length() * MathF.Max(worldPerEm.X, worldPerEm.Y) * 0.5f);
             Vector2 pixelsPerEm = new(worldPerEm.X / _pixelSize, worldPerEm.Y / _pixelSize);
+            if (!_isPerspective) {
+                // A view that stretches one axis more than the other (a squashed drawing) has no
+                // single pixel size: the isotropic one above is the coarser axis's, so the finer
+                // axis would read far too few pixels per em, and both its margin and its fade
+                // would balloon past the shape. Measure each em axis where it lands on screen.
+                float jxx = _worldToClip.M11 * _halfViewport.X, jxy = _worldToClip.M21 * _halfViewport.X;
+                float jyx = _worldToClip.M12 * _halfViewport.Y, jyy = _worldToClip.M22 * _halfViewport.Y;
+                Vector2 emX = new(cos, sin);
+                Vector2 emY = new(sin, -cos);
+                float screenPerEmX = MathF.Sqrt(MathF.Pow(jxx * emX.X + jxy * emX.Y, 2f) + MathF.Pow(jyx * emX.X + jyy * emX.Y, 2f));
+                float screenPerEmY = MathF.Sqrt(MathF.Pow(jxx * emY.X + jxy * emY.Y, 2f) + MathF.Pow(jyx * emY.X + jyy * emY.Y, 2f));
+                pixelsPerEm = new(worldPerEm.X * screenPerEmX, worldPerEm.Y * screenPerEmY);
+            }
 
             // Coverage only reaches half a pixel past the outline, and outside the outline's own
             // box the two scans cancel to exactly zero however far out the sample sits, so the
