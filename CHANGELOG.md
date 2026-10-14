@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Fixed
+
+- An SVG element more than about 2.4 times wider or taller than the viewBox height is no longer dropped. A wide logo whose background is a single rectangle used to draw nothing.
+- An SVG element with more curves across one row or column than a band holds, such as a line of text outlined into a single path, no longer draws with horizontal streaks. It is cut into tiles that each fit.
 
 ## [0.8.6] - 2026-10-13
 
