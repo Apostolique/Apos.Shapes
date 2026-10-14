@@ -73,6 +73,30 @@ namespace Apos.Shapes.Tests {
             Assert.Equal(6f, svg.Width / svg.Height, 0.001f);
         }
 
+        [Theory]
+        [InlineData("wide")]
+        [InlineData("very wide")]
+        [InlineData("dense")]
+        public void Load_AnyElement_KeepsEveryControlPointInsideWhatTheCurveTextureHolds(string kind) {
+            // KNI's GL backends store each curve coordinate as 16 bit fixed point over [-2, 2]
+            // ems and clamp anything outside it, which draws the shape wrong.
+            string markup = kind switch {
+                "wide" => Rect(600, 100),
+                "very wide" => Rect(6000, 100),
+                _ => Comb(holes: 39),
+            };
+
+            SvgShape shape = Assert.Single(Load(markup).Shapes);
+
+            var glyphs = new List<BakedGlyph> { shape.Fill! };
+            if (shape.FillTiles != null) glyphs.AddRange(shape.FillTiles);
+            foreach (BakedGlyph glyph in glyphs) {
+                foreach (float value in glyph.CurveTexels) {
+                    Assert.True(GlyphRepack.CurveInRange(value), $"{value} is outside the curve texture's range");
+                }
+            }
+        }
+
         [Fact]
         public void Load_TallElement_IsShrunkTheSameWay() {
             ShapeSvg svg = Load(Rect(100, 600));
