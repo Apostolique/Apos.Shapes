@@ -46,6 +46,10 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SvgTruth</_Parameter1>
     </AssemblyAttribute>
+    <!-- The unit tests check what a document bakes into, which needs no graphics device. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Apos.Shapes.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
