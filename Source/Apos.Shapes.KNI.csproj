@@ -38,17 +38,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The GPU smoke test drives the internal glyph path directly; nothing else sees inside. -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SlugSmoke</_Parameter1>
-    </AssemblyAttribute>
-    <!-- The SVG ground truth reads the baked elements a document loads into. -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>SvgTruth</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="../Images/Icon.png" Pack="true" PackagePath="" />
     <None Include="../THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="" />
     <None Include="$(BaseIntermediateOutputPath)README.md" Pack="true" PackagePath="" />
