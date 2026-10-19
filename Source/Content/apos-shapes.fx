@@ -102,7 +102,8 @@ struct PixelInput {
     float4 ClipMeta : TEXCOORD9; // xy: right/bottom clip distances, z: clip rounding, w: clip AA size.
 };
 
-// https://iquilezles.org/articles/distfunctions2d/
+// The distance functions below that aren't derived in place come from Inigo Quilez (MIT),
+// https://iquilezles.org/articles/distfunctions2d/. See THIRD_PARTY_NOTICES.md.
 float CircleSDF(float2 p, float r) {
     return length(p) - r;
 }
@@ -2281,10 +2282,11 @@ float4 LutColor(float t, float row, float introw, float aaT, bool wrapped) {
 
 // A packed color float driven negative by the vertex shader carries a cosine palette
 // instead of two stops: bias + amplitude * cos(tau * (frequency * t + phase)) per channel,
-// after https://iquilezles.org/articles/palettes/. The channels come out in the active
-// color space's remapped [0, 1] frame, exactly what ToRgb takes, so in Oklab the cosines
-// swing lightness and the two color axes. Bit layout lives with PackPalette in
-// ShapeVertex.cs; whole number frequencies are what let a palette tile with no seam.
+// after https://iquilezles.org/articles/palettes/ (MIT, see THIRD_PARTY_NOTICES.md). The
+// channels come out in the active color space's remapped [0, 1] frame, exactly what ToRgb
+// takes, so in Oklab the cosines swing lightness and the two color axes. Bit layout lives
+// with PackPalette in ShapeVertex.cs; whole number frequencies are what let a palette tile
+// with no seam.
 // rampd marks a ramp row aboard: ch6 and ch7 reshape to carry it, and t runs through the
 // row's curve before the cosines see it.
 float4 PaletteColor(float4 data, float t, float tAa, float wrapF, bool rampd) {
