@@ -33,6 +33,7 @@ internal sealed class SmokeGame : Game {
         }
 
         DenseShapeKeepsEveryHole();
+        foreach (int h in new[] { 12, 20, 40 }) DenseShapeAtIconSize(h);
 
         SquashedDrawingStaysInsideItsBox(horizontal: true);
         SquashedDrawingStaysInsideItsBox(horizontal: false);
@@ -131,17 +132,43 @@ internal sealed class SmokeGame : Game {
         Check(IsRed(Get(px, Target, Origin + boxW / 2, Origin + boxH / 2)), $"{name}: center is red");
     }
 
-    private Color[] Render(string markup, int width) {
+    // The same element at icon sizes, where the seam margin (a fraction of an em) shrinks to a
+    // fraction of a pixel. The bars above and below the holes cross every seam, and they are
+    // several pixels deep at these sizes, so a seam that dims or cuts them shows up in the rows
+    // that lie wholly inside them.
+    private void DenseShapeAtIconSize(int h) {
+        const int Holes = 39;
+        var path = new StringBuilder("M0,0H600V100H0Z");
+        for (int i = 0; i < Holes; i++) {
+            int x = 12 + i * 15;
+            path.Append($"M{x},20V80H{x + 6}V20Z");
+        }
+        int w = (int)MathF.Ceiling(600 * h / 100f);
+        Color[] px = Render(
+            $"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 100"><path d="{path}" fill="#f00"/></svg>""",
+            w, h);
+
+        // Rows 1 up to the hole top, and from the hole bottom up to the last, lie wholly inside the
+        // bars at every size drawn here. Two columns at each end are left out for the shape's own edge.
+        int top = (int)MathF.Floor(h * 0.2f);
+        int bottom = (int)MathF.Ceiling(h * 0.8f);
+        Check(AllRed(px, w, 2, 1, w - 2, top, margin: 0),
+              $"dense shape at {h} px: top bar is solid along its length");
+        Check(AllRed(px, w, 2, bottom, w - 2, h - 1, margin: 0),
+              $"dense shape at {h} px: bottom bar is solid along its length");
+    }
+
+    private Color[] Render(string markup, int width, int height = Height) {
         if (!ShapeSvg.TryLoad(markup, out ShapeSvg? svg)) throw new InvalidOperationException("The SVG didn't load.");
-        using var target = new RenderTarget2D(GraphicsDevice, width, Height, false, SurfaceFormat.Color, DepthFormat.None);
+        using var target = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Color, DepthFormat.None);
         var batch = new ShapeBatch(GraphicsDevice);
         GraphicsDevice.SetRenderTarget(target);
         GraphicsDevice.Clear(Color.Black);
         batch.Begin();
-        batch.DrawSvg(svg, Vector2.Zero, Height);
+        batch.DrawSvg(svg, Vector2.Zero, height);
         batch.End();
         GraphicsDevice.SetRenderTarget(null);
-        var pixels = new Color[width * Height];
+        var pixels = new Color[width * height];
         target.GetData(pixels);
         return pixels;
     }
