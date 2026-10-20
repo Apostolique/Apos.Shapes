@@ -2912,8 +2912,10 @@ namespace Apos.Shapes {
                 float jyx = _worldToClip.M12 * _halfViewport.Y, jyy = _worldToClip.M22 * _halfViewport.Y;
                 Vector2 emX = new(cos, sin);
                 Vector2 emY = new(sin, -cos);
-                float screenPerEmX = MathF.Sqrt(MathF.Pow(jxx * emX.X + jxy * emX.Y, 2f) + MathF.Pow(jyx * emX.X + jyy * emX.Y, 2f));
-                float screenPerEmY = MathF.Sqrt(MathF.Pow(jxx * emY.X + jxy * emY.Y, 2f) + MathF.Pow(jyx * emY.X + jyy * emY.Y, 2f));
+                float ax = jxx * emX.X + jxy * emX.Y, ay = jyx * emX.X + jyy * emX.Y;
+                float screenPerEmX = MathF.Sqrt(ax * ax + ay * ay);
+                float bx = jxx * emY.X + jxy * emY.Y, by = jyx * emY.X + jyy * emY.Y;
+                float screenPerEmY = MathF.Sqrt(bx * bx + by * by);
                 pixelsPerEm = new(worldPerEm.X * screenPerEmX, worldPerEm.Y * screenPerEmY);
             }
 

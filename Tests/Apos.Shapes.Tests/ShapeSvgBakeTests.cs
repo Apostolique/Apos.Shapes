@@ -98,13 +98,25 @@ namespace Apos.Shapes.Tests {
         }
 
         [Fact]
-        public void Load_TallElement_IsShrunkTheSameWay() {
+        public void Load_TallElementInsideTheReach_KeepsAFillScaleOfOne() {
             ShapeSvg svg = Load(Rect(100, 600));
 
             SvgShape shape = Assert.Single(svg.Shapes);
             Assert.Equal(1f, shape.FillScale, 0.01f);
             // 100 wide and 600 tall: the viewBox height is the em, so the shape is 1/6 em wide
             // and exactly one em tall, well inside the reach.
+        }
+
+        [Fact]
+        public void Load_ElementWhoseCoordinatesOverflow_IsDroppedWithoutBakingNaN() {
+            ShapeSvg svg = Load("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0 0 L-1e38 1e38 L1e38 -1e38 Z"/></svg>""");
+
+            Assert.Equal(1, svg.Skipped);
+            Assert.Contains("oversized element", svg.SkippedNames);
+            foreach (SvgShape shape in svg.Shapes) {
+                Assert.True(float.IsFinite(shape.FillScale));
+                Assert.Null(shape.Fill);
+            }
         }
 
         [Fact]

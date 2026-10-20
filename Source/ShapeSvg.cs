@@ -737,6 +737,10 @@ namespace Apos.Shapes {
             // origin, and drawn enlarged by the same factor, so a wide drawing loses nothing.
             float reach = Grid * EmReach;
             float farthest = MathF.Max(MathF.Max(-lox, hix), MathF.Max(-lo, hi));
+            if (!float.IsFinite(farthest)) {
+                Drop("oversized element");
+                return null;
+            }
             if (farthest > reach) {
                 float shrink = reach / farthest;
                 foreach (List<GlyphCurve> contour in contours) {

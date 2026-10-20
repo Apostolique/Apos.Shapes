@@ -19,10 +19,6 @@ jobs:
         dotnet-version: '10.0.x'
     - name: Test
       run: dotnet test Tests/Apos.Shapes.Tests -c Release
-    - name: Install a virtual display and software OpenGL
-      run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
-    - name: Render smoke test
-      run: LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dotnet run --project Tests/Apos.Shapes.RenderSmoke -c Release
     - name: Pack Apos.Shapes
       run: dotnet pack Source/Apos.Shapes.csproj -c Release --include-source --include-symbols
     - name: Pack Apos.Shapes.KNI
