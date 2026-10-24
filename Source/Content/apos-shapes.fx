@@ -21,6 +21,12 @@ float2 ramp_texel; // 1 / the ramp table's texel counts: x across a row, y acros
 float2 band_tex_size; // (width, rows) of the glyph band texture in texels.
 float2 band_texel; // 1 / band_tex_size.
 float2 curve_texel; // 1 / the glyph curve texture's texel counts.
+// The clips everything in the batch sits inside, innermost last. Each is a rounded rectangle:
+// frame is its center and the cosine and sine of its rotation, size its half extents, corner
+// radius and antialiasing width in pixels.
+float4 clip_frame[4];
+float4 clip_size[4];
+float clip_count;
 // Sampler order is load bearing, and the register annotations alone do not settle it: the
 // OpenGL and Vulkan translator hands out texture units in the order the pixel shader first
 // SAMPLES from, not the order the samplers are declared or the registers they ask for, while
@@ -68,8 +74,6 @@ struct VertexInput {
     float4 Meta1 : TEXCOORD7;
     float4 Meta2 : TEXCOORD8;
     float4 Meta3 : TEXCOORD9;
-    float4 ClipDist : POSITION1;
-    float2 ClipRoundAA : NORMAL0;
 };
 // A glyph quad reads its fill gradient exactly like every other shape, so FillCoord means what
 // it always means and the glyph's own data takes the channels a glyph has no use for:
@@ -93,8 +97,7 @@ struct PixelInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
-    float4 Pos : TEXCOORD8; // xy: world position, zw: left/top clip distances.
-    float4 ClipMeta : TEXCOORD9; // xy: right/bottom clip distances, z: clip rounding, w: clip AA size.
+    float2 Pos : TEXCOORD8; // World position.
 };
 
 // The distance functions below that aren't derived in place come from Inigo Quilez (MIT),
@@ -1206,8 +1209,7 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta1 = v.Meta1;
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
-    output.Pos = float4(v.Position.xy, v.ClipDist.xy);
-    output.ClipMeta = float4(v.ClipDist.zw, v.ClipRoundAA);
+    output.Pos = v.Position.xy;
     return output;
 }
 
@@ -1219,9 +1221,7 @@ PixelInput SpriteVertexShader(VertexInput v) {
 // The screen-space SDF gradient picks the width within the footprint's singular
 // value range: direction-correct under anisotropy, and under uniform scale the
 // range collapses so corners stay as clean as a hardcoded pixel size.
-float2 PixelFootprint(float2 pos) {
-    float2 jx = ddx(pos);
-    float2 jy = ddy(pos);
+float2 PixelFootprint(float2 jx, float2 jy) {
     float a = dot(jx, jx) + dot(jy, jy);
     float det = abs(jx.x * jy.y - jx.y * jy.x);
     float s = sqrt(max(a * a - 4.0 * det * det, 0.0));
@@ -1230,8 +1230,8 @@ float2 PixelFootprint(float2 pos) {
 }
 // The derivatives are taken before anything branches on them, so no gradient sits inside
 // flow control; see the ANGLE note on DitherNoise for why that matters.
-float PixelWidth(float d, float2 footprint, float bias) {
-    float2 gd = float2(ddx(d), ddy(d));
+// gd is the distance's change across one pixel on each screen axis.
+float PixelWidthAlong(float2 gd, float2 footprint, float bias) {
     // Square on, a pixel spans exactly one unit along the edge normal. Across a diagonal it
     // spans sqrt(2), which is |nx| + |ny| for a unit normal, and that is this sum once d is a
     // distance. A fade exactly that wide leaves every pixel the edge misses at its own color,
@@ -1254,6 +1254,26 @@ float PixelWidth(float d, float2 footprint, float bias) {
     float m = saturate(max(abs(gd.x), abs(gd.y)) / max(footprint.y, 1e-12));
     float w = bias > 0.0 ? min(abs(gd.x) + abs(gd.y), footprint.y * (m + sqrt(1.0 - m * m))) : length(gd);
     return clamp(w, footprint.x, footprint.y * (bias > 0.0 ? 1.4142135624 : 1.0));
+}
+float PixelWidth(float d, float2 footprint, float bias) {
+    return PixelWidthAlong(float2(ddx(d), ddy(d)), footprint, bias);
+}
+
+// How far outside one clip a world position sits, in that clip's antialiasing widths. The
+// distance is a rounded box's, and its slope across the screen comes from the box's own
+// normal and the position's derivatives, so nothing here takes a derivative of its own and
+// the clips can sit behind a branch.
+float ClipDistance(float2 pos, float4 frame, float4 size, float2 jx, float2 jy, float2 footprint, float bias) {
+    float2 r = pos - frame.xy;
+    float2 l = float2(dot(r, frame.zw), frame.z * r.y - frame.w * r.x);
+    float2 q = abs(l) - size.xy + size.z;
+    float2 qo = max(q, 0.0);
+    float d = length(qo) + min(max(q.x, q.y), 0.0) - size.z;
+    float2 n = q.x > 0.0 || q.y > 0.0 ? qo / max(length(qo), 1e-12) : (q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
+    n *= sign(l);
+    float2 g = n.x * frame.zw + n.y * float2(-frame.w, frame.z);
+    float w = PixelWidthAlong(float2(dot(g, jx), dot(g, jy)), footprint, bias) * size.w;
+    return d / max(w, 1e-12);
 }
 
 // Abramowitz and Stegun 7.1.26. The error peaks at 1.5e-7, orders below an 8 bit alpha step,
@@ -1437,16 +1457,23 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // Set when Meta1.y carries a world space blur instead of a screen space AA width.
     float blurred = meta;
 
-    float2 footprint = PixelFootprint(p.Pos.xy);
+    float2 jx = ddx(p.Pos);
+    float2 jy = ddy(p.Pos);
+    float2 footprint = PixelFootprint(jx, jy);
 
-    // Rounded box SDF from the interpolated edge distances.
-    float2 clipQ = p.ClipMeta.z - min(p.Pos.zw, p.ClipMeta.xy);
-    float clipD = length(max(clipQ, 0.0)) + min(max(clipQ.x, clipQ.y), 0.0) - p.ClipMeta.z;
-    float clipAa = PixelWidth(clipD, footprint, aaBias) * p.ClipMeta.w;
-    if (clipD >= clipAa * (1.0 - aaBias)) {
-        discard;
+    // Each clip's distance in its own antialiasing widths; the pixel is as far out as the
+    // furthest clip puts it.
+    float clipAlpha = 1.0;
+    if (clip_count > 0.5) {
+        float clipN = ClipDistance(p.Pos, clip_frame[0], clip_size[0], jx, jy, footprint, aaBias);
+        if (clip_count > 1.5) clipN = max(clipN, ClipDistance(p.Pos, clip_frame[1], clip_size[1], jx, jy, footprint, aaBias));
+        if (clip_count > 2.5) clipN = max(clipN, ClipDistance(p.Pos, clip_frame[2], clip_size[2], jx, jy, footprint, aaBias));
+        if (clip_count > 3.5) clipN = max(clipN, ClipDistance(p.Pos, clip_frame[3], clip_size[3], jx, jy, footprint, aaBias));
+        if (clipN >= 1.0 - aaBias) {
+            discard;
+        }
+        clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipN + aaBias));
     }
-    float clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipD / clipAa + aaBias));
 
     if (shape >= 8.5 && shape < 9.5) {
         return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;

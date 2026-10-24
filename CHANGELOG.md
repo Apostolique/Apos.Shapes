@@ -6,11 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `PushClip` and `PopClip` nest clips. Each one keeps its own rounding and rotation, and draws land where they all overlap.
+
 ### Changed
 
 - The shader compiles much faster the first time a game starts.
 - Large dashed shapes draw faster.
 - A dash pattern now runs along the middle of the border, so its phase shifts slightly from before.
+- Every clip change now costs a draw call.
+- `VertexShape` is 28 bytes smaller. `Position` is a `Vector2` and the clip fields are gone, along with the constructor's `clip` parameter.
+
+### Removed
+
+- `ClipSpace`.
 
 ### Fixed
 

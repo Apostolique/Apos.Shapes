@@ -21,7 +21,6 @@ namespace Apos.Shapes {
         /// <param name="border">Color or gradient of the border. A glyph has no border band, so it goes unread there.</param>
         /// <param name="thickness">Size of the border in world units. 0 makes the border the fill.</param>
         /// <param name="sdfSize">The shape's main size, which each distance field reads its own way.</param>
-        /// <param name="clip">This corner's view of the clip rectangle.</param>
         /// <param name="height">The shape's second size, where it has one.</param>
         /// <param name="aaSize">
         /// Size of the anti-aliasing edge in pixels. The sign carries the <see cref="AAStyle"/>:
@@ -39,7 +38,7 @@ namespace Apos.Shapes {
         /// The batch's ramp table, which is where a <see cref="Ramp"/> or <see cref="ColorRamp"/>
         /// gets its row. Without one those fall away and the gradient uses its stop colors.
         /// </param>
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, ClipSpace clip, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab, int dash = 0, float blur = 0f, RampTable? ramps = null) {
+        public VertexShape(Vector2 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height = 1.0f, float aaSize = 1.5f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f, ColorSpace colorSpace = ColorSpace.Oklab, int dash = 0, float blur = 0f, RampTable? ramps = null) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
@@ -95,9 +94,6 @@ namespace Apos.Shapes {
             Meta1 = new Vector4(thickness, blur > 0f ? blur : aaSize, sdfSize, height);
             Meta2 = new Vector4(a, b, c, d);
             Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
-            ClipDistances = clip.Distances;
-            ClipRounding = clip.Rounding;
-            ClipAaSize = clip.AaSize;
         }
 
         private static (ulong, ulong) PackSide(in Gradient g, ColorSpace colorSpace, RampTable? ramps) {
@@ -194,16 +190,15 @@ namespace Apos.Shapes {
         /// copied as it stands, so the packing and the color space conversion run once per
         /// quad instead of once per vertex.
         /// </summary>
-        internal readonly void CopyTo(ref VertexShape dst, Vector3 position, Vector2 local, in ClipSpace clip) {
+        internal readonly void CopyTo(ref VertexShape dst, Vector2 position, Vector2 local) {
             dst = this;
             dst.Position = position;
             dst.TextureCoordinate.X = local.X;
             dst.TextureCoordinate.Y = local.Y;
-            dst.ClipDistances = clip.Distances;
         }
 
         /// <summary>Where this corner sits, in world units. Shapes live on the z = 0 plane.</summary>
-        public Vector3 Position;
+        public Vector2 Position;
         /// <summary>
         /// The corner in the shape's own frame in xy, the corner rounding in z, and the shape,
         /// gradient styles, color space, dash and blur flags packed into w.
@@ -233,12 +228,6 @@ namespace Apos.Shapes {
         public Vector4 Meta2;
         /// <summary>The fill's two gradient offsets, then the border's.</summary>
         public Vector4 Meta3;
-        /// <summary>Distances to the left, top, right, bottom clip edges. Positive inside.</summary>
-        public Vector4 ClipDistances;
-        /// <summary>Corner radius of the clip rectangle.</summary>
-        public float ClipRounding;
-        /// <summary>Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</summary>
-        public float ClipAaSize;
         /// <summary>Layout of this vertex, for the vertex buffer.</summary>
         public static readonly VertexDeclaration VertexDeclaration;
 
@@ -247,7 +236,7 @@ namespace Apos.Shapes {
         /// <summary>A hash over every packed field.</summary>
         /// <returns>The hash code.</returns>
         public override readonly int GetHashCode() {
-            return HashCode.Combine(Position, TextureCoordinate, HashCode.Combine(FillA, FillB, BorderA, BorderB), HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, ClipDistances, ClipRounding, ClipAaSize));
+            return HashCode.Combine(Position, TextureCoordinate, HashCode.Combine(FillA, FillB, BorderA, BorderB), HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3));
         }
 
         /// <summary>The position, the packed color slots and a few of the meta channels, for debugging.</summary>
@@ -284,10 +273,7 @@ namespace Apos.Shapes {
                 left.BorderCoord == right.BorderCoord &&
                 left.Meta1 == right.Meta1 &&
                 left.Meta2 == right.Meta2 &&
-                left.Meta3 == right.Meta3 &&
-                left.ClipDistances == right.ClipDistances &&
-                left.ClipRounding == right.ClipRounding &&
-                left.ClipAaSize == right.ClipAaSize;
+                left.Meta3 == right.Meta3;
         }
 
         /// <summary>Whether any packed field of the two vertices differs.</summary>
@@ -353,7 +339,7 @@ namespace Apos.Shapes {
         static VertexShape() {
             int offset = 0;
             var elements = new VertexElement[] {
-                GetVertexElement(ref offset, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
+                GetVertexElement(ref offset, VertexElementFormat.Vector2, VertexElementUsage.Position, 0),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 0),
                 GetVertexElement(ref offset, VertexElementFormat.NormalizedShort4, VertexElementUsage.TextureCoordinate, 1),
                 GetVertexElement(ref offset, VertexElementFormat.NormalizedShort4, VertexElementUsage.TextureCoordinate, 2),
@@ -363,9 +349,7 @@ namespace Apos.Shapes {
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 6),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 8),
-                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 9),
-                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.Position, 1),
-                GetVertexElement(ref offset, VertexElementFormat.Vector2, VertexElementUsage.Normal, 0)
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 9)
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }

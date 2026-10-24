@@ -223,11 +223,14 @@ namespace GameProject {
             _sb.FillRectangle(new Vector2(-620, 288), new Vector2(360, 36), new Gradient(new Vector2(-620, 306), new Vector2(-528, 306), new Palette(half, half, new Vector3(1f), new Vector3(slide, 0.1f + slide, 0.2f + slide)), Gradient.Shape.Linear, Gradient.RepeatStyle.Sawtooth), 6f);
             _sb.ColorSpace = ColorSpace.Oklab;
 
-            // Clipping without breaking the batch. The window outline is dashed, and it marches.
+            // A rounded clip with a rotated one inside it. The window outline is dashed, and it marches.
             _sb.SetClipRect(new RectangleF(-180, 150, 360, 174), 24f);
             _sb.FillCircle(new Vector2(-130, 237), 70, TWColor.Red500);
             _sb.FillCircle(new Vector2(0, 237), 70, TWColor.Amber400);
             _sb.FillCircle(new Vector2(130, 237), 70, TWColor.Sky500);
+            _sb.PushClip(new RectangleF(-150, 213, 300, 48), 24f, -0.32f);
+            _sb.FillRectangle(new Vector2(-220, 150), new Vector2(440, 174), new Color(255, 255, 255, 90));
+            _sb.PopClip();
             _sb.BorderLine(new Vector2(-220, 320), new Vector2(220, 172), 16, TWColor.White, 3f);
             _sb.SetClipRect(null);
             _sb.BorderRectangle(new Vector2(-181, 149), new Vector2(362, 176), TWColor.Gray600, 2f, new CornerRadii(24), dash: new DashStyle(12f, 9f, offset));

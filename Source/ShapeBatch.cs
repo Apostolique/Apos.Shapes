@@ -51,6 +51,9 @@ namespace Apos.Shapes {
             _bandTexSize = _effect.Parameters["band_tex_size"];
             _bandTexel = _effect.Parameters["band_texel"];
             _curveTexel = _effect.Parameters["curve_texel"];
+            _clipFrameParam = _effect.Parameters["clip_frame"];
+            _clipSizeParam = _effect.Parameters["clip_size"];
+            _clipCountParam = _effect.Parameters["clip_count"];
 
             _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
 
@@ -311,11 +314,11 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius1, -radius1), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius1, radius1), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(radius1, -radius1));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius1, radius1));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius1, radius1));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -409,11 +412,11 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(half1.X, -half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -524,11 +527,11 @@ namespace Apos.Shapes {
 
             if (IsLocal(fill, border)) GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, GetClipSpace(topLeft), width, aaSize: Aa(aaSize), rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(topLeft, new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, width, aaSize: Aa(aaSize), rounded: radius, a: rd.Period, b: rd.FracPhase, c: radius, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(width1, -radius1), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(width1, radius1), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-radius1, radius1), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(width1, -radius1));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(width1, radius1));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius1, radius1));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1365,11 +1368,11 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(size.X, -size.Y), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-size.X, size.Y), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(size.X, -size.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(size.X, size.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-size.X, size.Y));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1469,11 +1472,11 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-halfWidth1, circumcircle1), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(halfWidth1, -incircle1));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(halfWidth1, circumcircle1));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-halfWidth1, circumcircle1));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1621,11 +1624,11 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(topLeft), height: A.Y, aaSize: Aa(aaSize), rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, height: A.Y, aaSize: Aa(aaSize), rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), topRight, GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), bottomRight, GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), bottomLeft, GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, topRight);
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, bottomRight);
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, bottomLeft);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1704,11 +1707,11 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius4), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius4), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-radius3, radius4), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(radius3, -radius4));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius3, radius4));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius3, radius4));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1812,11 +1815,11 @@ namespace Apos.Shapes {
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps);
+            VertexShape v = new(topLeft, new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(half1.X, -half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1896,11 +1899,11 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(reach);
             var bottomLeft = center + new Vector2(-reach, reach);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reach, -reach), VertexShape.Shape.Circle, color, color, thickness, radius, GetClipSpace(topLeft), colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
+            VertexShape v = new(topLeft, new Vector2(-reach, -reach), VertexShape.Shape.Circle, color, color, thickness, radius, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(reach, -reach), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(reach, reach), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-reach, reach), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(reach, -reach));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(reach, reach));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-reach, reach));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1952,11 +1955,11 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, radius1, GetClipSpace(topLeft), radius2, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
+            VertexShape v = new(topLeft, new Vector2(-reachX, -reachY), VertexShape.Shape.Ellipse, color, color, thickness, radius1, radius2, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(reachX, -reachY), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(reachX, reachY), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-reachX, reachY), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(reachX, -reachY));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(reachX, reachY));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-reachX, reachY));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2006,11 +2009,11 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
+            VertexShape v = new(topLeft, new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, color, color, thickness, half.X, half.Y, rounded: 0f, a: rTR, b: rBR, c: rTL, d: rBL, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(half1.X, -half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2059,11 +2062,11 @@ namespace Apos.Shapes {
                 RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, color, color, thickness, half.X, GetClipSpace(topLeft), half.Y, rounded: 0f, a: cTR, b: cBR, c: cTL, d: cBL, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
+            VertexShape v = new(topLeft, new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, color, color, thickness, half.X, half.Y, rounded: 0f, a: cTR, b: cBR, c: cTL, d: cBL, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-half1.X, half1.Y), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(half1.X, -half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2132,11 +2135,11 @@ namespace Apos.Shapes {
             // Same channels a plain line uses, with the far end's half width in the third spare
             // slot. Matching radii there is what asks for the capsule, and the shader answers a
             // taper with the two circles' hull instead, dropping the rounding it has folded in.
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(back, -half), VertexShape.Shape.Line, color, color, thickness, radiusA, GetClipSpace(topLeft), length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
+            VertexShape v = new(topLeft, new Vector2(back, -half), VertexShape.Shape.Line, color, color, thickness, radiusA, length, rounded: radiusA, c: radiusB, colorSpace: ColorSpace, ramps: _ramps, blur: sigma);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(front, -half), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(front, half), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(back, half), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(front, -half));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(front, half));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(back, half));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2199,11 +2202,11 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: Aa(aaSize), a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(topLeft, new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, height: dashHeight, aaSize: Aa(aaSize), a: sin, b: cos, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius3), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius3), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(radius3, -radius3));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius3, radius3));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius3, radius3));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2296,11 +2299,11 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, GetClipSpace(topLeft), height: dashHeight, aaSize: Aa(aaSize), a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(topLeft, new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, height: dashHeight, aaSize: Aa(aaSize), a: cos, b: sin, c: radius2, d: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius3), GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius3), GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), new Vector2(-radius3, radius3), GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(radius3, -radius3));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius3, radius3));
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius3, radius3));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2377,11 +2380,11 @@ namespace Apos.Shapes {
 
             Gradient g = new(Vector2.Zero, mask ?? Color.White, Vector2.Zero, mask ?? Color.White, Gradient.Shape.None);
 
-            VertexShape v = new(new Vector3(wTopLeft.X, wTopLeft.Y, 0f), topLeft, VertexShape.Shape.Texture, g, g, 0f, 1f, GetClipSpace(wTopLeft));
+            VertexShape v = new(wTopLeft, topLeft, VertexShape.Shape.Texture, g, g, 0f, 1f);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(wTopRight.X, wTopRight.Y, 0f), topRight, GetClipSpace(wTopRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(wBottomRight.X, wBottomRight.Y, 0f), bottomRight, GetClipSpace(wBottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(wBottomLeft.X, wBottomLeft.Y, 0f), bottomLeft, GetClipSpace(wBottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], wTopRight, topRight);
+            v.CopyTo(ref _vertices[_vertexCount + 2], wBottomRight, bottomRight);
+            v.CopyTo(ref _vertices[_vertexCount + 3], wBottomLeft, bottomLeft);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2807,24 +2810,105 @@ namespace Apos.Shapes {
         }
 
         /// <summary>
-        /// Clips upcoming draws to the given rectangle without breaking the batch. Pass null to stop clipping.
+        /// Clips upcoming draws to the given rectangle, replacing every clip already active. Pass
+        /// null to stop clipping. Changing the clip sends what was drawn so far to the GPU, so
+        /// each change costs a draw call.
         /// </summary>
         /// <param name="clipRect">The clip bounds in the same coordinate space as the shapes.</param>
         /// <param name="rounding">Corner radius of the clip rectangle. A fully rounded square gives a circle mask.</param>
         /// <param name="rotation">Rotation of the clip rectangle around its center in radians.</param>
         /// <param name="aaSize">Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</param>
         public void SetClipRect(RectangleF? clipRect, float rounding = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            if (clipRect == null) {
-                _hasClip = false;
-                return;
+            Flush();
+            _clips.Clear();
+            if (clipRect != null) _clips.Add(new Clip(clipRect.Value, rounding, rotation, aaSize));
+            _clipsChanged = true;
+        }
+
+        /// <summary>
+        /// Clips upcoming draws to the given rectangle as well as to every clip already active, so
+        /// draws land only where all of them overlap. Each clip keeps its own rounding and rotation.
+        /// <see cref="PopClip"/> takes it off again. Up to four clips that cut across each other
+        /// apply at once. A clip that sits whole inside another doesn't count toward that. Past
+        /// four, the outermost ones stop applying.
+        /// </summary>
+        /// <param name="clipRect">The clip bounds in the same coordinate space as the shapes.</param>
+        /// <param name="rounding">Corner radius of the clip rectangle. A fully rounded square gives a circle mask.</param>
+        /// <param name="rotation">Rotation of the clip rectangle around its center in radians.</param>
+        /// <param name="aaSize">Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</param>
+        public void PushClip(RectangleF clipRect, float rounding = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            Flush();
+            _clips.Add(new Clip(clipRect, rounding, rotation, aaSize));
+            _clipsChanged = true;
+        }
+
+        /// <summary>Takes off the clip the last <see cref="PushClip"/> added.</summary>
+        /// <exception cref="InvalidOperationException">No clip is active.</exception>
+        public void PopClip() {
+            if (_clips.Count == 0) {
+                throw new InvalidOperationException("PopClip was called with no clip active.");
             }
-            RectangleF r = clipRect.Value;
-            _hasClip = true;
-            _clipCenter = new Vector2(r.X + r.Width / 2f, r.Y + r.Height / 2f);
-            _clipHalf = new Vector2(r.Width / 2f, r.Height / 2f);
-            _clipRounding = MathHelper.Clamp(rounding, 0f, MathF.Min(_clipHalf.X, _clipHalf.Y));
-            _clipU = rotation != 0f ? new Vector2(MathF.Cos(rotation), MathF.Sin(rotation)) : Vector2.UnitX;
-            _clipAaSize = MathF.Max(aaSize, 0f);
+            Flush();
+            _clips.RemoveAt(_clips.Count - 1);
+            _clipsChanged = true;
+        }
+
+        private readonly struct Clip {
+            public Clip(RectangleF r, float rounding, float rotation, float aaSize) {
+                Center = new Vector2(r.X + r.Width / 2f, r.Y + r.Height / 2f);
+                Half = new Vector2(r.Width / 2f, r.Height / 2f);
+                Rounding = MathHelper.Clamp(rounding, 0f, MathF.Min(Half.X, Half.Y));
+                U = rotation != 0f ? new Vector2(MathF.Cos(rotation), MathF.Sin(rotation)) : Vector2.UnitX;
+                AaSize = MathF.Max(aaSize, 0f);
+            }
+            public readonly Vector2 Center;
+            public readonly Vector2 Half;
+            public readonly Vector2 U; // The rotation's cosine and sine.
+            public readonly float Rounding;
+            public readonly float AaSize;
+
+            public Vector2 Corner(float x, float y) {
+                Vector2 l = Half * new Vector2(x, y);
+                return Center + new Vector2(l.X * U.X - l.Y * U.Y, l.X * U.Y + l.Y * U.X);
+            }
+            // Whether other sits whole inside this one, which makes this one add nothing.
+            public bool Holds(in Clip other) {
+                return Contains(other.Corner(-1f, -1f)) && Contains(other.Corner(1f, -1f)) && Contains(other.Corner(1f, 1f)) && Contains(other.Corner(-1f, 1f));
+            }
+            private bool Contains(Vector2 p) {
+                Vector2 d = p - Center;
+                Vector2 l = new(MathF.Abs(d.X * U.X + d.Y * U.Y), MathF.Abs(d.Y * U.X - d.X * U.Y));
+                Vector2 q = l - Half + new Vector2(Rounding);
+                float sdf = new Vector2(MathF.Max(q.X, 0f), MathF.Max(q.Y, 0f)).Length() + MathF.Min(MathF.Max(q.X, q.Y), 0f) - Rounding;
+                // Layout math lands edges a float rounding error apart, which shouldn't count.
+                return sdf <= 0.01f;
+            }
+        }
+
+        // Hands the shader the clips that still cut anything, innermost last: one that holds
+        // another adds nothing over it, and only the innermost four fit.
+        private void UploadClips() {
+            if (!_clipsChanged) return;
+            _clipsChanged = false;
+            int count = 0;
+            for (int i = _clips.Count - 1; i >= 0 && count < _clipFrames.Length; i--) {
+                bool redundant = false;
+                for (int j = 0; j < _clips.Count && !redundant; j++) {
+                    // Of two clips that hold each other, the inner one stays.
+                    redundant = j != i && _clips[i].Holds(_clips[j]) && (j > i || !_clips[j].Holds(_clips[i]));
+                }
+                if (redundant) continue;
+                Clip c = _clips[i];
+                int slot = _clipFrames.Length - 1 - count++;
+                _clipFrames[slot] = new Vector4(c.Center, c.U.X, c.U.Y);
+                _clipSizes[slot] = new Vector4(c.Half, c.Rounding, c.AaSize);
+            }
+            // The slots filled from the back, so the used ones move to the front.
+            Array.Copy(_clipFrames, _clipFrames.Length - count, _clipFrames, 0, count);
+            Array.Copy(_clipSizes, _clipSizes.Length - count, _clipSizes, 0, count);
+            _clipFrameParam?.SetValue(_clipFrames);
+            _clipSizeParam?.SetValue(_clipSizes);
+            _clipCountParam?.SetValue((float)count);
         }
 
         // Where this batch's glyphs are seated, which is what the GPU smoke test rebuilds its
@@ -2909,16 +2993,16 @@ namespace Apos.Shapes {
             // The band block's address and the shape of the two scans ride in the four dash
             // channels, which no glyph dashes with. See the channel map above PixelInput in
             // apos-shapes.fx.
-            VertexShape v = new(new Vector3(topLeft, 0), emTopLeft, shape, fill, fill, 0f, 1f, GetClipSpace(topLeft),
+            VertexShape v = new(topLeft, emTopLeft, shape, fill, fill, 0f, 1f,
                                 aaSize: Aa(aaSize), a: _glyphs.BandBase(at), b: g.Bands, c: pixelsPerEm.X, d: pixelsPerEm.Y,
                                 colorSpace: ColorSpace, ramps: _ramps);
             // The em to band index transform, which is the one thing with nowhere else to ride.
             // A glyph has no border band, so the border gradient's slot is free.
             v.BorderCoord = g.Transform;
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), emTopRight, GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), emBottomRight, GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), emBottomLeft, GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, emTopRight);
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, emBottomRight);
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, emBottomLeft);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -2980,6 +3064,7 @@ namespace Apos.Shapes {
             UploadRamps();
             _rampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
             UploadGlyphs();
+            UploadClips();
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -3263,11 +3348,11 @@ namespace Apos.Shapes {
         private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
             PrepareQuad(fill, border);
 
-            VertexShape v = new(new Vector3(w0, 0), l0, shape, fill, border, thickness, sdfSize, GetClipSpace(w0), height, aaSize: Aa(aaSize), rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: dash);
+            VertexShape v = new(w0, l0, shape, fill, border, thickness, sdfSize, height, aaSize: Aa(aaSize), rounded: rounded, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: dash);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(w1, 0), l1, GetClipSpace(w1));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(w2, 0), l2, GetClipSpace(w2));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(w3, 0), l3, GetClipSpace(w3));
+            v.CopyTo(ref _vertices[_vertexCount + 1], w1, l1);
+            v.CopyTo(ref _vertices[_vertexCount + 2], w2, l2);
+            v.CopyTo(ref _vertices[_vertexCount + 3], w3, l3);
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -3444,7 +3529,7 @@ namespace Apos.Shapes {
             // The colors and gradients pack once for the whole outline; each piece only changes its
             // corners and which corner of the outline it walks.
             PrepareQuad(fill, border);
-            VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.OutlinePiece, fill, border, thickness, pattern.Period, GetClipSpace(origin), pattern.FracPhase, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
+            VertexShape template = new(Vector2.Zero, Vector2.Zero, VertexShape.Shape.OutlinePiece, fill, border, thickness, pattern.Period, pattern.FracPhase, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
 
             // Past the band and its fade a transparent fill leaves nothing to draw, so a piece
             // skips its share of the hole once that share is worth the extra quad. Its inner edge
@@ -3681,7 +3766,7 @@ namespace Apos.Shapes {
         private void PieceVertex(in VertexShape template, in OutlineCorner c, ref VertexShape dst, Vector2 p, Vector2 origin, float sin, float cos) {
             Vector2 w = origin + new Vector2(p.X * cos - p.Y * sin, p.X * sin + p.Y * cos);
             Vector2 q = p - c.Fillet;
-            template.CopyTo(ref dst, new Vector3(w, 0), new Vector2(Vector2.Dot(q, c.N1), c.N1.X * q.Y - c.N1.Y * q.X), GetClipSpace(w));
+            template.CopyTo(ref dst, w, new Vector2(Vector2.Dot(q, c.N1), c.N1.X * q.Y - c.N1.Y * q.X));
         }
 
         // A chamfer splits the way its distance does: into quadrants through the center, and each
@@ -3842,7 +3927,7 @@ namespace Apos.Shapes {
 
             PrepareQuad(fill, border);
             (float sin, float cos) = SinCos(tall ? rotation + MathF.PI * 0.5f : rotation);
-            VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(center), radius2, aaSize: Aa(aaSize), rounded: pattern.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
+            VertexShape template = new(Vector2.Zero, Vector2.Zero, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize: Aa(aaSize), rounded: pattern.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
             // Clockwise on screen, the quadrants run from the end of the major axis through the
             // end of the minor one and back, mirrored in turn, every other one walking the folded
             // angle backwards. The pattern starts on the ellipse's own +x axis either way, which
@@ -3876,7 +3961,7 @@ namespace Apos.Shapes {
         // shader reads it, and out in the world.
         private void EllipseVertex(in VertexShape template, ref VertexShape dst, Vector2 p, bool tall, Vector2 center, float sin, float cos) {
             Vector2 w = center + new Vector2(p.X * cos - p.Y * sin, p.X * sin + p.Y * cos);
-            template.CopyTo(ref dst, new Vector3(w, 0), tall ? new Vector2(-p.Y, p.X) : p, GetClipSpace(w));
+            template.CopyTo(ref dst, w, tall ? new Vector2(-p.Y, p.X) : p);
         }
 
         // Splits the quadrant until every piece's cubic is within tol of the true length at its
@@ -3980,16 +4065,6 @@ namespace Apos.Shapes {
             corners[5] = new Vector2(half, -apothem);
         }
 
-        private ClipSpace GetClipSpace(Vector2 xy) {
-            if (!_hasClip) return ClipSpace.None;
-
-            Vector2 d = xy - _clipCenter;
-            float lx = d.X * _clipU.X + d.Y * _clipU.Y;
-            float ly = d.Y * _clipU.X - d.X * _clipU.Y;
-
-            return new ClipSpace(new Vector4(lx + _clipHalf.X, ly + _clipHalf.Y, _clipHalf.X - lx, _clipHalf.Y - ly), _clipRounding, _clipAaSize);
-        }
-
         private static bool EnsureSizeOrDouble<T>(ref T[] array, int neededCapacity) {
             if (array.Length < neededCapacity) {
                 // Doubling is what the growth is meant to be, but a caller asking for more than
@@ -4089,12 +4164,13 @@ namespace Apos.Shapes {
         private uint _fromVertex = 0;
 
 
-        private bool _hasClip = false;
-        private Vector2 _clipCenter;
-        private Vector2 _clipHalf;
-        private Vector2 _clipU = Vector2.UnitX;
-        private float _clipRounding;
-        private float _clipAaSize;
+        private readonly List<Clip> _clips = new();
+        private bool _clipsChanged = true;
+        private readonly Vector4[] _clipFrames = new Vector4[4];
+        private readonly Vector4[] _clipSizes = new Vector4[4];
+        private readonly EffectParameter? _clipFrameParam;
+        private readonly EffectParameter? _clipSizeParam;
+        private readonly EffectParameter? _clipCountParam;
 
         // Working room for paths longer than _pathStackPoints, grown on demand and kept. Nothing
         // here outlives the call that fills it; they are fields only so the memory is reused.
