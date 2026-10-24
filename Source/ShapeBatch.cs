@@ -159,7 +159,23 @@ namespace Apos.Shapes {
                 ?? throw new InvalidOperationException($"Missing embedded resource \"{name}\".");
             byte[] bytes = new byte[stream.Length];
             stream.ReadExactly(bytes);
+            UseHighpFloats(bytes);
             return bytes;
+        }
+
+        /// <summary>
+        /// ShadowDusk declares the GL pixel shader mediump, which phones run as 16-bit floats that
+        /// can't hold pixel distances, so nothing draws. Swaps in highp, padded to keep lengths intact.
+        /// </summary>
+        private static void UseHighpFloats(byte[] bytes) {
+            ReadOnlySpan<byte> mediump = "precision mediump float;"u8;
+            ReadOnlySpan<byte> highp = "precision highp float;  "u8;
+            Span<byte> rest = bytes;
+            int i;
+            while ((i = rest.IndexOf(mediump)) >= 0) {
+                highp.CopyTo(rest[i..]);
+                rest = rest[(i + highp.Length)..];
+            }
         }
 
         /// <summary>The device this batch draws with.</summary>

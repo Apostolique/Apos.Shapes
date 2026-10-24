@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Fixed
+
+- Shapes now draw on real iOS and Android devices, where the OpenGL shader used to run at 16-bit precision and draw nothing.
 
 ## [0.8.6] - 2026-10-13
 
