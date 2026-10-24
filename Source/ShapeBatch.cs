@@ -2338,22 +2338,22 @@ namespace Apos.Shapes {
         /// <summary>
         /// Draws a texture through a world matrix, which is what every other Draw overload builds.
         /// The matrix transforms a 1x1 quad, so it reaches further than the SpriteBatch API does.
-        /// The batch draws with a single texture slot, so switching textures flushes it. Group draw
-        /// calls by texture, or pack an atlas and use the source overloads.
+        /// The batch draws with a single texture slot, so switching textures costs a draw call.
+        /// Group draw calls by texture, or pack an atlas and use the source overloads.
         /// </summary>
         /// <param name="texture">The texture to draw.</param>
         /// <param name="world">Transform applied to a 1x1 quad to place it in the world.</param>
         /// <param name="source">Transform applied to a 1x1 quad to pick the part of the texture to read, in pixels. Null reads all of it.</param>
         /// <param name="mask">Color multiplied into the texture in raw RGBA. Null leaves it alone.</param>
         public void Draw(Texture2D texture, Matrix3x2 world, Matrix3x2? source = null, Color? mask = null) {
-            if (_texture == null) {
-                _texture = texture;
-            } else if (_texture != texture) {
-                Flush();
-                _texture = texture;
-            }
-
             PrepareQuad();
+            if (_runs[_runCount - 1].Texture is { } current && current != texture && _runs[_runCount - 1].FirstIndex != _indexCount) {
+                DrawRun previous = _runs[_runCount - 1];
+                ref DrawRun next = ref NextRun();
+                next.ClipSet = previous.ClipSet;
+                next.ClipCount = previous.ClipCount;
+            }
+            _runs[_runCount - 1].Texture = texture;
 
             Vector2 topLeft;
             Vector2 topRight;
@@ -2811,15 +2811,14 @@ namespace Apos.Shapes {
 
         /// <summary>
         /// Clips upcoming draws to the given rectangle, replacing every clip already active. Pass
-        /// null to stop clipping. Changing the clip sends what was drawn so far to the GPU, so
-        /// each change costs a draw call.
+        /// null to stop clipping. Everything in the batch still goes to the GPU in one upload, but
+        /// each clip change costs a draw call.
         /// </summary>
         /// <param name="clipRect">The clip bounds in the same coordinate space as the shapes.</param>
         /// <param name="rounding">Corner radius of the clip rectangle. A fully rounded square gives a circle mask.</param>
         /// <param name="rotation">Rotation of the clip rectangle around its center in radians.</param>
         /// <param name="aaSize">Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</param>
         public void SetClipRect(RectangleF? clipRect, float rounding = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            Flush();
             _clips.Clear();
             if (clipRect != null) _clips.Add(new Clip(clipRect.Value, rounding, rotation, aaSize));
             _clipsChanged = true;
@@ -2837,7 +2836,6 @@ namespace Apos.Shapes {
         /// <param name="rotation">Rotation of the clip rectangle around its center in radians.</param>
         /// <param name="aaSize">Antialiasing band width of the clip edge in pixels. 0 gives a hard scissor edge.</param>
         public void PushClip(RectangleF clipRect, float rounding = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            Flush();
             _clips.Add(new Clip(clipRect, rounding, rotation, aaSize));
             _clipsChanged = true;
         }
@@ -2848,7 +2846,6 @@ namespace Apos.Shapes {
             if (_clips.Count == 0) {
                 throw new InvalidOperationException("PopClip was called with no clip active.");
             }
-            Flush();
             _clips.RemoveAt(_clips.Count - 1);
             _clipsChanged = true;
         }
@@ -2885,11 +2882,10 @@ namespace Apos.Shapes {
             }
         }
 
-        // Hands the shader the clips that still cut anything, innermost last: one that holds
-        // another adds nothing over it, and only the innermost four fit.
-        private void UploadClips() {
-            if (!_clipsChanged) return;
-            _clipsChanged = false;
+        // The clips that still cut anything, innermost last: one that holds another adds nothing
+        // over it, and only the innermost four fit. They go to the end of _clipSets as four
+        // frames and then four sizes, and the count comes back.
+        private int ResolveClips() {
             int count = 0;
             for (int i = _clips.Count - 1; i >= 0 && count < _clipFrames.Length; i--) {
                 bool redundant = false;
@@ -2906,9 +2902,35 @@ namespace Apos.Shapes {
             // The slots filled from the back, so the used ones move to the front.
             Array.Copy(_clipFrames, _clipFrames.Length - count, _clipFrames, 0, count);
             Array.Copy(_clipSizes, _clipSizes.Length - count, _clipSizes, 0, count);
-            _clipFrameParam?.SetValue(_clipFrames);
-            _clipSizeParam?.SetValue(_clipSizes);
-            _clipCountParam?.SetValue((float)count);
+            _clipSets.AddRange(_clipFrames);
+            _clipSets.AddRange(_clipSizes);
+            return count;
+        }
+
+        // A stretch of the batch that draws with one texture and one set of clips. Changing
+        // either between draws starts the next one, and Flush draws them in order out of the one
+        // upload. A run that hasn't drawn anything yet is taken over rather than left empty.
+        private struct DrawRun {
+            public int FirstIndex;
+            public Texture2D? Texture; // Null until a texture quad lands in it, which lets it take any.
+            public int ClipSet;        // Where its clips start in _clipSets.
+            public int ClipCount;
+        }
+
+        private ref DrawRun NextRun() {
+            if (_runCount == 0 || _runs[_runCount - 1].FirstIndex != _indexCount) {
+                if (_runCount == _runs.Length) Array.Resize(ref _runs, _runs.Length * 2);
+                _runs[_runCount++] = new DrawRun { FirstIndex = _indexCount };
+            }
+            return ref _runs[_runCount - 1];
+        }
+
+        // The clips changed, so whatever draws next gets its own set.
+        private void StartClipRun() {
+            _clipsChanged = false;
+            ref DrawRun run = ref NextRun();
+            run.ClipSet = _clipSets.Count;
+            run.ClipCount = ResolveClips();
         }
 
         // Where this batch's glyphs are seated, which is what the GPU smoke test rebuilds its
@@ -3064,7 +3086,6 @@ namespace Apos.Shapes {
             UploadRamps();
             _rampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
             UploadGlyphs();
-            UploadClips();
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -3090,12 +3111,41 @@ namespace Apos.Shapes {
             _graphicsDevice.DepthStencilState = _depthStencilState;
             _graphicsDevice.RasterizerState = _rasterizerState;
 
+            int clipSet = -1;
+            for (int r = 0; r < _runCount; r++) {
+                ref DrawRun run = ref _runs[r];
+                int end = r + 1 < _runCount ? _runs[r + 1].FirstIndex : _indexCount;
+                if (end == run.FirstIndex) continue;
+                if (run.ClipSet != clipSet) {
+                    clipSet = run.ClipSet;
+                    _clipSets.CopyTo(clipSet, _clipFrames, 0, 4);
+                    _clipSets.CopyTo(clipSet + 4, _clipSizes, 0, 4);
+                    _clipFrameParam?.SetValue(_clipFrames);
+                    _clipSizeParam?.SetValue(_clipSizes);
+                    _clipCountParam?.SetValue((float)run.ClipCount);
+                }
+                DrawRange(run.Texture, run.FirstIndex, (end - run.FirstIndex) / 3);
+            }
+
+            _triangleCount = 0;
+            _vertexCount = 0;
+            _indexCount = 0;
+            _runCount = 0;
+            _clipSets.Clear();
+            // The next batch starts a run of its own with the clips as they stand.
+            _clipsChanged = true;
+            // Everything packed so far is drawn, so the rows it referenced are free to recycle.
+            _ramps.Flushed();
+            _glyphs.Flushed();
+        }
+
+        private void DrawRange(Texture2D? texture, int firstIndex, int triangles) {
             foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
                 pass.Apply();
                 // Five units, in the order the pixel shader first samples them. See the note on
                 // the sampler declarations in apos-shapes.fx: these numbers and that order have
                 // to agree, and nothing warns when they don't.
-                if (_texture != null) _graphicsDevice.Textures[0] = _texture;
+                if (texture != null) _graphicsDevice.Textures[0] = texture;
                 if (_glyphAtlas?.Band != null && _glyphAtlas.Curve != null) {
                     // Both glyph tables are read texel by texel as data, so they must arrive
                     // unfiltered; clamped because a padded lane's fetch is free to land anywhere.
@@ -3111,15 +3161,8 @@ namespace Apos.Shapes {
                 _graphicsDevice.Textures[4] = _rampAtlas ?? _blueNoise;
                 _graphicsDevice.SamplerStates[4] = SamplerState.PointClamp;
 
-                _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
+                _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, firstIndex, triangles);
             }
-
-            _triangleCount = 0;
-            _vertexCount = 0;
-            _indexCount = 0;
-            // Everything packed so far is drawn, so the rows it referenced are free to recycle.
-            _ramps.Flushed();
-            _glyphs.Flushed();
         }
 
         // Brings the two glyph textures up to date with the table's arenas, then hands the
@@ -3289,6 +3332,7 @@ namespace Apos.Shapes {
             }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
+            if (_clipsChanged) StartClipRun();
         }
 
         // The gradient-taking form also seats the rows the quad's ramps and color ramps need,
@@ -4099,7 +4143,9 @@ namespace Apos.Shapes {
             _fromVertex = (uint)_vertices.Length;
         }
 
-        private Texture2D? _texture = null;
+        private DrawRun[] _runs = new DrawRun[16];
+        private int _runCount = 0;
+        private readonly List<Vector4> _clipSets = new();
 
         // This batch's own glyph table and the two textures that mirror its arenas, built the
         // first time a glyph is drawn. Per batch for the same reason the ramp table is: two
