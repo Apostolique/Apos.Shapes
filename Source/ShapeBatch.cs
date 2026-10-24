@@ -368,43 +368,16 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, xy + half, -half, rotation);
 
-            float rA = rTR;
-            float rB = rBR;
-            float rC = rTL;
-            float rD = rBL;
+            if (dash.IsEnabled && thickness > 0f) {
+                Span<float> radii = stackalloc float[] { rTR, rBR, rBL, rTL };
+                if (EmitDashedRectangle(center, rotation, half, aaOffset, radii, fill, border, thickness, aaSize, dash)) return;
+            }
 
-            // Dashed rectangles ship their corner radii as 11 bit fractions of the largest allowed
-            // radius, freeing two channels for the pattern. Snapping the radii to that grid here
-            // keeps the CPU perimeter bit-exact with the one the shader walks.
+            float a = rTR;
+            float b = rBR;
+            float c = rTL;
+            float d = rBL;
             ResolvedDash rd = default;
-            if (dash.IsEnabled) {
-                if (maxR > 0f) {
-                    rA = MathF.Round(rA / maxR * 2047f) / 2047f * maxR;
-                    rB = MathF.Round(rB / maxR * 2047f) / 2047f * maxR;
-                    rC = MathF.Round(rC / maxR * 2047f) / 2047f * maxR;
-                    rD = MathF.Round(rD / maxR * 2047f) / 2047f * maxR;
-                }
-                // Each corner is walked on its own pattern radius, so the straight runs between
-                // them shorten to match; the shader derives the same four radii.
-                float boxCap = MathF.Min(size.X, size.Y) * 0.5f * 0.5f;
-                float pA2 = PatternRadius(rA, thickness, boxCap);
-                float pB2 = PatternRadius(rB, thickness, boxCap);
-                float pC2 = PatternRadius(rC, thickness, boxCap);
-                float pD2 = PatternRadius(rD, thickness, boxCap);
-                float perimeter = 2f * (size.X + size.Y) - (2f - MathF.PI / 2f) * (pA2 + pB2 + pC2 + pD2);
-                rd = dash.Resolve(perimeter, closed: true);
-            }
-            float a = rA;
-            float b = rB;
-            float c = rC;
-            float d = rD;
-            if (rd.TypeDigit > 0) {
-                float mr = MathF.Max(maxR, 1e-9f);
-                a = DashStyle.Pack11(rA / mr, rB / mr);
-                b = DashStyle.Pack11(rC / mr, rD / mr);
-                c = rd.Period;
-                d = rd.FracPhase;
-            }
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float maxCorner = MathF.Max(MathF.Max(rTL, rTR), MathF.Max(rBR, rBL));
@@ -3495,6 +3468,96 @@ namespace Apos.Shapes {
                 int j = i + 1 == outer.Length ? 0 : i + 1;
                 EmitHollowQuad(W(outer[i]), W(outer[j]), W(inner[j]), W(inner[i]), outer[i], outer[j], inner[j], inner[i], shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d, dash);
             }
+        }
+
+        // A dashed rectangle goes out as one piece per quadrant, each one a corner of the outline
+        // with half of each edge beside it. A piece only ever walks the pattern straight or around
+        // one circle, so the shader needs nothing shape specific to dash, and inside its quadrant
+        // the distance to the outline only ever involves its own corner and two edges, so it stays
+        // exact all the way in. With a transparent fill and a hole worth skipping, each quadrant is
+        // an L of two quads around it instead. radii runs in travel order: top-right, bottom-right,
+        // bottom-left, top-left. Returns false when there is no outline left to dash.
+        private bool EmitDashedRectangle(Vector2 center, float rotation, Vector2 half, float aaOffset, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness, float aaSize, DashStyle dash) {
+            float rd = thickness * 0.5f;
+            bool round = dash.Cap == DashCap.Round;
+            float cap = MathF.Min(half.X, half.Y) * 0.5f;
+
+            // Travel runs clockwise on screen, and every corner turns from its incoming edge's
+            // outward normal onto the next one's.
+            ReadOnlySpan<Vector2> normals = stackalloc Vector2[] { new(0f, -1f), new(1f, 0f), new(0f, 1f), new(-1f, 0f) };
+            ReadOnlySpan<float> sides = stackalloc float[] { 2f * half.X, 2f * half.Y, 2f * half.X, 2f * half.Y };
+            Span<float> rp = stackalloc float[4];
+            Span<float> u0 = stackalloc float[4];
+            for (int k = 0; k < 4; k++) {
+                // Round caps follow the band's own centerline, which has no arc where the corner
+                // is tighter than half the band. A butt cut is a ray out of the fan's center, and
+                // those meet there, so it turns on a wider circle that keeps them apart.
+                rp[k] = MathF.Max(round ? radii[k] : PatternRadius(radii[k], thickness, cap), rd);
+            }
+            // The pattern starts where the top edge leaves the top-left corner's fan, and each
+            // corner's own position is where its fan starts.
+            const float quarter = MathF.PI * 0.5f;
+            float u = 0f;
+            for (int k = 0; k < 4; k++) {
+                u += sides[k] - rp[(k + 3) % 4] - rp[k];
+                u0[k] = u;
+                u += quarter * (rp[k] - rd);
+            }
+            ResolvedDash pattern = dash.Resolve(u, closed: true);
+            if (pattern.TypeDigit == 0) return false;
+
+            float margin = aaOffset + _pixelSize;
+            bool hollow = IsTransparent(fill);
+            (float sin, float cos) = SinCos(rotation);
+
+            // The colors and gradients pack once for the whole outline; each quad only changes its
+            // corners and which corner of the outline it walks.
+            PrepareQuad(fill, border);
+            VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.OutlinePiece, fill, border, thickness, pattern.Period, GetClipSpace(center), pattern.FracPhase, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
+            float minHole = _hollowMinHolePixels * 2f * _pixelSize;
+
+            for (int k = 0; k < 4; k++) {
+                Vector2 n1 = normals[k];
+                Vector2 n2 = normals[(k + 1) % 4];
+                Vector2 sg = n1 + n2; // Which quadrant, as a sign per axis.
+                float ro = radii[k];
+                Vector2 fillet = sg * (half - new Vector2(ro));
+                Vector2 outer = sg * (half + new Vector2(aaOffset));
+                template.Meta2 = new Vector4(quarter, ro, rp[k], u0[k]);
+                // Past the band and its fade, a transparent fill leaves nothing to draw. The rounded
+                // corner pulls the band in by at most 1 - 1 / sqrt(2) of its radius. An L of two
+                // quads only pays for itself once the hole it skips is big.
+                Vector2 hole = half - new Vector2(thickness + margin + 0.3f * ro);
+                if (hollow && hole.X > 0f && hole.Y > 0f && hole.X * hole.Y > minHole * minHole) {
+                    Vector2 h = sg * hole;
+                    EmitPieceBox(template, new Vector2(0f, outer.Y), new Vector2(outer.X, h.Y), fillet, n1, n2, center, sin, cos);
+                    EmitPieceBox(template, h, new Vector2(outer.X, 0f), fillet, n1, n2, center, sin, cos);
+                } else {
+                    EmitPieceBox(template, Vector2.Zero, outer, fillet, n1, n2, center, sin, cos);
+                }
+            }
+            return true;
+        }
+
+        // One axis aligned box of an outline piece, from and to in the shape's own frame. The piece's
+        // local frame has the corner's fillet center at its origin, the incoming edge's normal on x
+        // and the outgoing edge's on y, which for a box corner is also the incoming direction of travel.
+        private void EmitPieceBox(in VertexShape template, Vector2 from, Vector2 to, Vector2 fillet, Vector2 n1, Vector2 n2, Vector2 center, float sin, float cos) {
+            float x0 = MathF.Min(from.X, to.X), x1 = MathF.Max(from.X, to.X);
+            float y0 = MathF.Min(from.Y, to.Y), y1 = MathF.Max(from.Y, to.Y);
+            if (x1 <= x0 || y1 <= y0) return;
+            PrepareQuad();
+            Vector2 W(Vector2 l) => center + new Vector2(l.X * cos - l.Y * sin, l.X * sin + l.Y * cos);
+            Vector2 L(Vector2 l) => new(Vector2.Dot(l - fillet, n1), Vector2.Dot(l - fillet, n2));
+            Vector2 p0 = new(x0, y0), p1 = new(x1, y0), p2 = new(x1, y1), p3 = new(x0, y1);
+            Vector2 w0 = W(p0), w1 = W(p1), w2 = W(p2), w3 = W(p3);
+            template.CopyTo(ref _vertices[_vertexCount + 0], new Vector3(w0, 0), L(p0), GetClipSpace(w0));
+            template.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(w1, 0), L(p1), GetClipSpace(w1));
+            template.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(w2, 0), L(p2), GetClipSpace(w2));
+            template.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(w3, 0), L(p3), GetClipSpace(w3));
+            _triangleCount += 2;
+            _vertexCount += 4;
+            _indexCount += 6;
         }
 
         private static void HexagonCorners(float apothem, Span<Vector2> corners) {

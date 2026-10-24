@@ -333,6 +333,10 @@ namespace Apos.Shapes {
             Ring = 8,
             /// <summary>A textured quad, masked in raw RGBA.</summary>
             Texture = 9,
+            /// <summary>
+            /// One piece of a dashed outline's border: a corner of it, or a straight run between two.
+            /// </summary>
+            OutlinePiece = 10,
             /// <summary>One quad of a path, which carries its own caps and joins.</summary>
             Path = 11,
             /// <summary>A rectangle with its corners cut straight across.</summary>

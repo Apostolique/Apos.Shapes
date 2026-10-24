@@ -1857,6 +1857,24 @@ float EllipseDashCut(float2 p, float2 ab, float sq, float lineSize, float2 data,
     return roundCap ? EllipseCapsule(pw, sdf, cut, capA, capB, capR, rd) : cut;
 }
 
+// A dashed outline arrives cut into pieces at its corners, and each piece is one corner of the
+// border band or a straight run of it. The local frame puts the corner's fillet center at the
+// origin with the incoming edge's outward normal on x and the direction of travel on y, so the
+// outgoing edge's normal sits tau further round. A straight run is the same thing with tau = 0.
+// The pattern turns the corner on a circle of its own around piv, which is rc out from the band's
+// centerline; see PatternRadius for why that circle runs wider than the corner itself.
+//
+// Spine point at pattern position ue: straight along the incoming edge before the fan, around
+// the pattern circle through it, and straight along the outgoing edge after it.
+float2 PieceSpine(float ue, float u0, float arc, float rc, float2 piv, float2 n2) {
+    float s = ue - u0;
+    if (s < 0.0) return piv + float2(rc, s);
+    if (s > arc) return piv + n2 * rc + float2(-n2.y, n2.x) * (s - arc);
+    float2 cs;
+    sincos(s / max(rc, 1e-4), cs.y, cs.x);
+    return piv + cs * rc;
+}
+
 float LinearToGamma(float c) {
     return c >= 0.0031308 ? pow(abs(c), 1.0 / 2.4) * 1.055 - 0.055 : 12.92 * c;
 }
@@ -2877,6 +2895,57 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
             dashData = float2(p.Meta1.w, p.Meta2.w);
             dashStroke = true;
         }
+    } else if (shape < 10.5) {
+        // One piece of a dashed outline; see PieceSpine. Meta2 is the turn, the outline's own
+        // corner radius, the radius the pattern turns on, and the pattern position where its fan
+        // starts. The pattern itself rides in the two size slots, which a piece has no use for.
+        float tau = p.Meta2.x;
+        float ro = p.Meta2.y;
+        float rp = p.Meta2.z;
+        float u0 = p.Meta2.w;
+        float rd = lineSize * 0.5;
+        float2 h;
+        sincos(tau * 0.5, h.y, h.x);
+        float2 n2 = float2(h.x * h.x - h.y * h.y, 2.0 * h.x * h.y);
+        // The rounded corner: the fillet's circle across its own cone, the two edges either side.
+        bool cone = tau > 0.0 && q.y >= 0.0 && q.x * n2.y - q.y * n2.x >= 0.0;
+        d = cone ? length(q) - ro : max(q.x, dot(q, n2)) - ro;
+
+        float2 piv = -h * ((rp - ro) / max(h.x, 1e-4));
+        float rc = rp - rd;
+        float arc = tau * max(rc, 0.0);
+        float2 w = q - piv;
+        float u;
+        float stretch = 1.0; // How much wider the fan is at this pixel than on the centerline.
+        bool before = w.y < 0.0;
+        bool after = tau <= 0.0 || w.x * n2.y - w.y * n2.x < 0.0;
+        // Behind the pivot both edges are candidates, and the nearer one is the one whose own
+        // coordinate is larger, which is a test against the bisector.
+        if (before && after) {
+            before = w.x >= dot(w, n2);
+            after = !before;
+        }
+        if (before) {
+            u = u0 + w.y;
+        } else if (after) {
+            u = u0 + arc + dot(w, float2(-n2.y, n2.x));
+        } else {
+            u = u0 + atan2(w.y, w.x) * max(rc, 0.0);
+            stretch = length(w) / max(rc, 1e-4);
+        }
+        float4 de = DashEdges(u, float2(sdfSize, p.Meta1.w));
+        if (dashType >= 1.5) {
+            // Round caps are the capsule around the centerline. A pixel's own position along the
+            // pattern is its nearest centerline point's, so inside a dash the nearest spine point
+            // is inside it too and the band is the answer; in a gap it is one of the two caps.
+            float band = abs(d + rd) - rd;
+            float caps = min(length(q - PieceSpine(de.y, u0, arc, rc, piv, n2)),
+                             length(q - PieceSpine(de.z, u0, arc, rc, piv, n2))) - rd;
+            dashCut = de.x < 0.0 ? band : max(band, caps);
+        } else {
+            dashCut = de.x * stretch;
+        }
+        dashCapDone = true;
     } else if (shape > 11.5) {
         float2 hb = float2(sdfSize, p.Meta1.w);
         float4 cc = p.Meta2;
