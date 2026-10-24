@@ -1913,9 +1913,13 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // loop that carries values across iterations into a comma expression in the update clause,
     // and Appendix A of GLSL ES 1.00 admits nothing there but the index's own step. WebGL and
     // Android hold this shader to that grammar, so the sides stay written out.
+    //
+    // A side the crossfade gives no weight to is skipped, so only the thin fringe between the
+    // two pays for both. Nothing in either side takes a derivative, and the ramps they read
+    // have no mipmaps to pick between.
     float4 fr = float4(0.0, 0.0, 0.0, 0.0);
     float4 br = float4(0.0, 0.0, 0.0, 0.0);
-    if (!borderOnly) {
+    if (!borderOnly && (sameGradient || borderMix < 1.0)) {
         float tAa, wrapF;
         float t = Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy, fillPal, fillRamp || fillLut, tAa, wrapF);
         float4 c;
@@ -1943,7 +1947,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         // A shared gradient leaves the border reading exactly this, so it never runs its own.
         br = fr;
     }
-    if (!sameGradient) {
+    if (!sameGradient && borderMix > 0.0) {
         bool borderPal = p.Border.x < -0.5;
         float tAa, wrapF;
         float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
