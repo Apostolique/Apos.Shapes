@@ -3412,7 +3412,10 @@ namespace Apos.Shapes {
             public Vector2 Fillet;
             public Vector2 N1; // Outward normal of the edge coming in.
             public Vector2 N2; // Outward normal of the edge going out.
+            public Vector2 Bisector;
             public float Turn;
+            public float CosHalf; // Of half the turn, which is what the bisector makes with each normal.
+            public float TanHalf;
             public float Radius;
             public float PatternRadius;
             public float Start;
@@ -3448,17 +3451,21 @@ namespace Apos.Shapes {
             bool hollow = IsTransparent(fill);
             Span<bool> skips = stackalloc bool[n];
             Span<Vector2> holes = stackalloc Vector2[n];
+            Span<Vector2> outer = stackalloc Vector2[2 * n];
+            Span<int> outerCounts = stackalloc int[n];
             Span<Vector2> poly = stackalloc Vector2[16];
+            for (int k = 0; k < n; k++) outerCounts[k] = OuterChain(corners[k], aaOffset, outer[(2 * k)..]);
             for (int k = 0; hollow && k < n; k++) {
                 ref OutlineCorner c = ref corners[k];
                 ReadOnlySpan<Vector2> chain = inner[(k == 0 ? 0 : innerEnds[k - 1])..innerEnds[k]];
-                Vector2 hole = HollowCorner(c, depth);
                 bool deep = true;
                 for (int i = 0; i < chain.Length; i++) deep &= PieceDistance(c, chain[i]) < -depth;
                 if (!deep) continue;
+                Vector2 hole = HollowCorner(c, depth);
                 Vector2 s1 = splits[k == 0 ? n - 1 : k - 1];
                 Vector2 s2 = splits[k];
-                int m = OuterChain(c, aaOffset, poly);
+                int m = 0;
+                for (int i = 0; i < outerCounts[k]; i++) poly[m++] = outer[2 * k + i];
                 poly[m++] = s2 + c.N2 * aaOffset;
                 for (int i = 0; i < chain.Length; i++) poly[m++] = chain[i];
                 poly[m++] = s1 + c.N1 * aaOffset;
@@ -3491,12 +3498,12 @@ namespace Apos.Shapes {
                     poly[m++] = holes[k];
                     poly[m++] = g1;
                     poly[m++] = f1;
-                    m += OuterChain(c, aaOffset, poly[m..]);
+                    for (int i = 0; i < outerCounts[k]; i++) poly[m++] = outer[2 * k + i];
                     poly[m++] = f2;
                     poly[m++] = g2;
                 } else {
                     // The fan starts on the outer corner, which no split runs through.
-                    m += OuterChain(c, aaOffset, poly);
+                    for (int i = 0; i < outerCounts[k]; i++) poly[m++] = outer[2 * k + i];
                     poly[m++] = f2;
                     if (skips[next]) poly[m++] = g2;
                     ReadOnlySpan<Vector2> chain = inner[(k == 0 ? 0 : innerEnds[k - 1])..innerEnds[k]];
@@ -3534,20 +3541,27 @@ namespace Apos.Shapes {
                 Vector2 v = vertices[k];
                 Vector2 nOut = k + 1 < n ? EdgeNormal(v, vertices[k + 1]) : first;
                 float cosT = Vector2.Dot(nIn, nOut);
-                float turn = MathF.Atan2(nIn.X * nOut.Y - nIn.Y * nOut.X, cosT);
+                float sinT = nIn.X * nOut.Y - nIn.Y * nOut.X;
+                float turn = MathF.Atan2(sinT, cosT);
+                Vector2 bisector = Vector2.Normalize(nIn + nOut);
+                float cosHalf = Vector2.Dot(bisector, nIn);
+                float tanHalf = sinT / MathF.Max(1f + cosT, 1e-6f);
                 float r = radii[k];
                 // Round caps follow the band's own centerline, which has no arc where the corner
                 // is tighter than half the band. A butt cut is a ray out of the circle's center,
                 // and those meet there, so it turns on a wider circle that keeps them apart.
                 // Either way the circle has to leave the edges before the splits either side, or
                 // the next piece would read that stretch as straight.
-                float room = MathF.Min(Vector2.Distance(v, splits[k == 0 ? n - 1 : k - 1]), Vector2.Distance(v, splits[k])) / MathF.Max(MathF.Tan(turn * 0.5f), 1e-6f);
+                float room = MathF.Min(Vector2.Distance(v, splits[k == 0 ? n - 1 : k - 1]), Vector2.Distance(v, splits[k])) / MathF.Max(tanHalf, 1e-6f);
                 float rp = MathF.Max(round ? r : PatternRadius(r, thickness, room * 0.5f), rd);
                 corners[k] = new OutlineCorner {
                     Fillet = v - (nIn + nOut) * (r / MathF.Max(1f + cosT, 1e-6f)),
                     N1 = nIn,
                     N2 = nOut,
+                    Bisector = bisector,
                     Turn = turn,
+                    CosHalf = cosHalf,
+                    TanHalf = tanHalf,
                     Radius = r,
                     PatternRadius = MathF.Min(rp, room),
                 };
@@ -3573,7 +3587,7 @@ namespace Apos.Shapes {
 
         // How far back from the vertex the pattern's circle meets each edge.
         private static float PatternTangent(in OutlineCorner c) {
-            return c.PatternRadius * MathF.Tan(c.Turn * 0.5f);
+            return c.PatternRadius * c.TanHalf;
         }
 
         // Mirrors the piece's distance in the shader.
@@ -3581,16 +3595,14 @@ namespace Apos.Shapes {
             Vector2 q = p - c.Fillet;
             float x = Vector2.Dot(q, c.N1);
             float y = c.N1.X * q.Y - c.N1.Y * q.X;
-            (float sin, float cos) = SinCos(c.Turn);
-            bool cone = c.Turn > 0f && y >= 0f && x * sin - y * cos >= 0f;
+            bool cone = c.Turn > 0f && y >= 0f && q.X * c.N2.Y - q.Y * c.N2.X >= 0f;
             return cone ? q.Length() - c.Radius : MathF.Max(x, Vector2.Dot(q, c.N2)) - c.Radius;
         }
 
         // Where the band's inner side, depth in from the outline, crosses the corner's bisector.
         private static Vector2 HollowCorner(in OutlineCorner c, float depth) {
-            Vector2 h = Vector2.Normalize(c.N1 + c.N2);
-            if (c.Radius >= depth) return c.Fillet + h * (c.Radius - depth);
-            return c.Fillet - h * ((depth - c.Radius) / MathF.Max(MathF.Cos(c.Turn * 0.5f), 1e-4f));
+            if (c.Radius >= depth) return c.Fillet + c.Bisector * (c.Radius - depth);
+            return c.Fillet - c.Bisector * ((depth - c.Radius) / MathF.Max(c.CosHalf, 1e-4f));
         }
 
         // The outer side of a corner, reach past its fillet: the miter point where the two edges'
@@ -3598,15 +3610,15 @@ namespace Apos.Shapes {
         // past the arc to pay for the extra triangle.
         private int OuterChain(in OutlineCorner c, float ext, Span<Vector2> dst) {
             float reach = c.Radius + ext;
-            float half = c.Turn * 0.5f;
-            float waste = reach * reach * (MathF.Tan(half) - 2f * MathF.Tan(half * 0.5f));
+            // tan of a quarter turn, from the half turn's sine and cosine.
+            float tanQuarter = c.TanHalf * c.CosHalf / (1f + c.CosHalf);
+            float waste = reach * reach * (c.TanHalf - 2f * tanQuarter);
             if (waste < _pieceMiterWastePixels * _pixelSize * _pixelSize) {
-                dst[0] = c.Fillet + (c.N1 + c.N2) * (reach / (1f + Vector2.Dot(c.N1, c.N2)));
+                dst[0] = c.Fillet + c.Bisector * (reach / MathF.Max(c.CosHalf, 1e-4f));
                 return 1;
             }
-            Vector2 h = Vector2.Normalize(c.N1 + c.N2);
-            dst[0] = c.Fillet + (c.N1 + h) * (reach / (1f + Vector2.Dot(c.N1, h)));
-            dst[1] = c.Fillet + (h + c.N2) * (reach / (1f + Vector2.Dot(h, c.N2)));
+            dst[0] = c.Fillet + (c.N1 + c.Bisector) * (reach / (1f + c.CosHalf));
+            dst[1] = c.Fillet + (c.Bisector + c.N2) * (reach / (1f + c.CosHalf));
             return 2;
         }
         private const float _pieceMiterWastePixels = 256f;
