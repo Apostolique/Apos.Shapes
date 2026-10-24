@@ -2867,14 +2867,42 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         float eScale;
         d = EllipseSDF(q, ab, eq, er, eNear, eScale);
         if (dashType >= 0.5) {
-            // Meta2 is entirely spare on an ellipse, so the pattern and the quarter perimeter
-            // travel as plain floats with nothing packed. The dash anti-aliasing width goes along
-            // because a dash edge has to reach past the band's inner edge by that much.
-            // A rounded ellipse comes back with its capsule already built; see EllipseCapsule.
-            // The folded frame and the nearest point come straight from the distance above, so
-            // the Newton solve behind them runs once for the pixel rather than once per use.
-            dashCut = EllipseDashCut(q, ab, p.Meta2.z, lineSize, p.Meta2.xy,
-                                     footprint.y * aaPixels, dashType >= 1.5, d, eq, er, eNear, eScale);
+            // A dashed ellipse comes in pieces, each with a cubic in Meta2 from the folded angle
+            // of the nearest point to the outline's length so far, already in periods and turned
+            // around where the quadrant runs backwards. The pattern runs on the band's centerline,
+            // which falls behind the outline by half the band per radian turned, and the cubic's
+            // own slope against the outline's speed is the 1 / period that takes into periods.
+            // The rounding slot carries the fraction and phase, since an ellipse has no rounding.
+            float2 radii = er * eScale;
+            float2 cs = eNear / max(er, 1e-30);
+            float t = atan2(cs.y, cs.x);
+            float4 c = p.Meta2;
+            float speed = max(length(radii * cs.yx), 1e-6);
+            float ab2 = radii.x * radii.y;
+            float rd = lineSize * 0.5;
+            float slope = c.y + t * (2.0 * c.z + 3.0 * c.w * t);
+            float k = slope / speed;
+            float v = c.x + t * (c.y + t * (c.z + t * c.w)) - rd * k * atan2(radii.x * cs.y, radii.y * cs.x);
+            float dv = slope * (1.0 - rd * ab2 / (speed * speed * speed));
+            float4 de = DashEdges(v, float2(1.0, rounded));
+            rounded = 0.0;
+            if (dashType >= 1.5) {
+                // Round caps are the capsule around the centerline, as on a piece. Each cap's
+                // angle is one Newton step on from the pixel's own, which is all a cap close
+                // enough to matter needs, and past the axis the folded angle carries on into the
+                // mirror image, which is where that stretch of the outline really is.
+                float2 pf = eq * eScale;
+                float band = abs(d + rd) - rd;
+                float2 ca;
+                sincos(t + (de.y - v) / dv, ca.y, ca.x);
+                float2 cb;
+                sincos(t + (de.z - v) / dv, cb.y, cb.x);
+                float caps = min(length(pf - radii * ca + rd * normalize(radii.yx * ca)),
+                                 length(pf - radii * cb + rd * normalize(radii.yx * cb))) - rd;
+                dashCut = de.x < 0.0 ? band : max(band, caps);
+            } else {
+                dashCut = de.x * (speed + d * ab2 / (speed * speed)) / max(abs(dv), 1e-6);
+            }
             dashCapDone = true;
         }
     } else if (shape < 7.5) {

@@ -270,7 +270,23 @@ namespace Apos.Shapes {
             UpdatePixelSize(center, radius);
             float aaOffset = AaOffset(aaSize);
 
-            ResolvedDash rd = dash.Resolve(MathF.Tau * radius, closed: true);
+            if (dash.IsEnabled && thickness > 0f) {
+                // A regular polygon rounded all the way to its edges' midpoints, so its pieces
+                // are all corner and no edge. Eight of them keep what the miters reach past a
+                // large circle small.
+                int sides = radius > 64f * _pixelSize ? 8 : 4;
+                Span<Vector2> outline = stackalloc Vector2[sides];
+                Span<Vector2> splits = stackalloc Vector2[sides];
+                Span<float> radii = stackalloc float[sides];
+                RegularOutline(radius, 0f, outline, splits);
+                radii.Fill(radius);
+                Gradient wf = fill;
+                Gradient wb = border;
+                GradientToWorld(ref wf, ref wb, center, Vector2.Zero, rotation);
+                if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, wf, wb, thickness, aaOffset, aaSize, dash)) return;
+            }
+
+            ResolvedDash rd = default;
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float holeRadius = radius - thickness - aaOffset - _pixelSize;
@@ -369,8 +385,11 @@ namespace Apos.Shapes {
             GradientToWorld(ref fill, ref border, xy + half, -half, rotation);
 
             if (dash.IsEnabled && thickness > 0f) {
-                Span<float> radii = stackalloc float[] { rTR, rBR, rBL, rTL };
-                if (EmitDashedRectangle(center, rotation, half, aaOffset, radii, fill, border, thickness, aaSize, dash)) return;
+                // Every split runs through the center, which is where the four pieces meet.
+                ReadOnlySpan<Vector2> outline = stackalloc Vector2[] { new(half.X, -half.Y), half, new(-half.X, half.Y), -half };
+                ReadOnlySpan<float> radii = stackalloc float[] { rTR, rBR, rBL, rTL };
+                ReadOnlySpan<Vector2> splits = stackalloc Vector2[] { new(half.X, 0f), new(0f, half.Y), new(-half.X, 0f), new(0f, -half.Y) };
+                if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
             }
 
             float a = rTR;
@@ -1331,6 +1350,15 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
+            if (dash.IsEnabled && thickness > 0f) {
+                Span<Vector2> outline = stackalloc Vector2[6];
+                Span<Vector2> splits = stackalloc Vector2[6];
+                Span<float> radii = stackalloc float[6];
+                RegularOutline(radius + rounded, MathF.PI / 6f, outline, splits);
+                radii.Fill(rounded);
+                if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
+            }
+
             if (thickness > 0f && IsTransparent(fill)) {
                 float holeOffset = rounded - thickness - aaOffset - _pixelSize;
                 // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact hexagon.
@@ -1426,6 +1454,15 @@ namespace Apos.Shapes {
             }
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
+
+            if (dash.IsEnabled && thickness > 0f) {
+                Span<Vector2> outline = stackalloc Vector2[3];
+                Span<Vector2> splits = stackalloc Vector2[3];
+                Span<float> radii = stackalloc float[3];
+                RegularOutline(radius, -MathF.PI / 2f, outline, splits);
+                radii.Fill(rounded);
+                if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
+            }
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float inradius = halfWidth / MathF.Sqrt(3f);
@@ -1555,6 +1592,24 @@ namespace Apos.Shapes {
                 rounded = inRadius - inRadius * ratioDistance;
             }
 
+            if (dash.IsEnabled && thickness > 0f) {
+                // Every triangle's medial axis is the three bisectors meeting at the incenter, so
+                // the splits are where the incircle touches each edge. The pieces are laid out
+                // around the incenter, which keeps their coordinates small. a, b, c run counter
+                // clockwise on screen.
+                Vector2 hub = new(inCenterX, inCenterY);
+                ReadOnlySpan<Vector2> outline = stackalloc Vector2[] { a - hub, c - hub, b - hub };
+                Span<Vector2> splits = stackalloc Vector2[3];
+                Span<float> radii = stackalloc float[3];
+                for (int k = 0; k < 3; k++) {
+                    Vector2 from = outline[k];
+                    Vector2 edge = outline[k == 2 ? 0 : k + 1] - from;
+                    splits[k] = from - edge * (Vector2.Dot(from, edge) / edge.LengthSquared());
+                }
+                radii.Fill(rounded);
+                if (EmitDashedOutline(hub, 0f, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
+            }
+
             A = new Vector2(inCenterX + (ratioDistance * (a.X - inCenterX)), inCenterY + (ratioDistance * (a.Y - inCenterY)));
             B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
             C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
@@ -1643,6 +1698,13 @@ namespace Apos.Shapes {
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             UpdatePixelSize(center, MathF.Max(radius1, radius2));
             float aaOffset = AaOffset(aaSize);
+
+            if (dash.IsEnabled && thickness > 0f) {
+                Gradient wf = fill;
+                Gradient wb = border;
+                GradientToWorld(ref wf, ref wb, center, Vector2.Zero, rotation);
+                if (EmitDashedEllipse(center, rotation, radius1, radius2, wf, wb, thickness, aaOffset, aaSize, dash)) return;
+            }
 
             // A quarter of the perimeter, which is what the shader walks each quadrant of the
             // contour with; the whole perimeter is what the pattern is fitted to.
@@ -1756,6 +1818,8 @@ namespace Apos.Shapes {
             }
 
             GradientToWorld(ref fill, ref border, xy + half, -half, rotation);
+
+            if (dash.IsEnabled && thickness > 0f && EmitDashedChamfer(center, rotation, half, cTL, cTR, cBR, cBL, fill, border, thickness, aaOffset, aaSize, dash)) return;
 
             // Dashed chamfers ship their four cuts as 11 bit fractions of the largest allowed cut,
             // freeing two channels for the pattern. Snapping the cuts to that grid here keeps the
@@ -3470,94 +3534,515 @@ namespace Apos.Shapes {
             }
         }
 
-        // A dashed rectangle goes out as one piece per quadrant, each one a corner of the outline
-        // with half of each edge beside it. A piece only ever walks the pattern straight or around
-        // one circle, so the shader needs nothing shape specific to dash, and inside its quadrant
-        // the distance to the outline only ever involves its own corner and two edges, so it stays
-        // exact all the way in. With a transparent fill and a hole worth skipping, each quadrant is
-        // an L of two quads around it instead. radii runs in travel order: top-right, bottom-right,
-        // bottom-left, top-left. Returns false when there is no outline left to dash.
-        private bool EmitDashedRectangle(Vector2 center, float rotation, Vector2 half, float aaOffset, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness, float aaSize, DashStyle dash) {
-            float rd = thickness * 0.5f;
-            bool round = dash.Cap == DashCap.Round;
-            float cap = MathF.Min(half.X, half.Y) * 0.5f;
+        // One corner of a dashed outline, in the shape's own frame. The pattern runs straight
+        // along each edge and around one circle at each corner, which can be wider than the
+        // rounding; Start is where the pattern reaches that circle.
+        private struct OutlineCorner {
+            public Vector2 Fillet;
+            public Vector2 N1; // Outward normal of the edge coming in.
+            public Vector2 N2; // Outward normal of the edge going out.
+            public float Turn;
+            public float Radius;
+            public float PatternRadius;
+            public float Start;
+        }
 
-            // Travel runs clockwise on screen, and every corner turns from its incoming edge's
-            // outward normal onto the next one's.
-            ReadOnlySpan<Vector2> normals = stackalloc Vector2[] { new(0f, -1f), new(1f, 0f), new(0f, 1f), new(-1f, 0f) };
-            ReadOnlySpan<float> sides = stackalloc float[] { 2f * half.X, 2f * half.Y, 2f * half.X, 2f * half.Y };
-            Span<float> rp = stackalloc float[4];
-            Span<float> u0 = stackalloc float[4];
-            for (int k = 0; k < 4; k++) {
-                // Round caps follow the band's own centerline, which has no arc where the corner
-                // is tighter than half the band. A butt cut is a ray out of the fan's center, and
-                // those meet there, so it turns on a wider circle that keeps them apart.
-                rp[k] = MathF.Max(round ? radii[k] : PatternRadius(radii[k], thickness, cap), rd);
-            }
-            // The pattern starts where the top edge leaves the top-left corner's fan, and each
-            // corner's own position is where its fan starts.
-            const float quarter = MathF.PI * 0.5f;
-            float u = 0f;
-            for (int k = 0; k < 4; k++) {
-                u += sides[k] - rp[(k + 3) % 4] - rp[k];
-                u0[k] = u;
-                u += quarter * (rp[k] - rd);
-            }
-            ResolvedDash pattern = dash.Resolve(u, closed: true);
+        // A dashed outline goes out as one piece per corner: the corner and the half of each edge
+        // beside it, up to the split where the next corner's piece takes over. A piece only ever
+        // walks the pattern straight or around one circle, so the shader needs nothing shape
+        // specific to dash. Each split is a line square across its edge, and the caller places
+        // them along the outline's medial axis, so the distance inside a piece only ever involves
+        // its own corner and two edges and stays exact all the way in. vertices are where the edge
+        // lines meet, clockwise on screen, and edge k runs from vertex k to vertex k + 1 with its
+        // split at splits[k]. Piece k closes inward through inner[innerEnds[k - 1]..innerEnds[k]],
+        // listed from its outgoing split around to its incoming one. Returns false when the
+        // pattern comes out solid.
+        private bool EmitDashedOutline(Vector2 origin, float rotation, ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, ReadOnlySpan<Vector2> inner, ReadOnlySpan<int> innerEnds, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash) {
+            int n = vertices.Length;
+            Span<OutlineCorner> corners = stackalloc OutlineCorner[n];
+            ResolvedDash pattern = dash.Resolve(ResolveOutline(vertices, radii, splits, thickness, dash.Cap == DashCap.Round, corners), closed: true);
             if (pattern.TypeDigit == 0) return false;
 
-            float margin = aaOffset + _pixelSize;
-            bool hollow = IsTransparent(fill);
-            (float sin, float cos) = SinCos(rotation);
-
-            // The colors and gradients pack once for the whole outline; each quad only changes its
+            // The colors and gradients pack once for the whole outline; each piece only changes its
             // corners and which corner of the outline it walks.
             PrepareQuad(fill, border);
-            VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.OutlinePiece, fill, border, thickness, pattern.Period, GetClipSpace(center), pattern.FracPhase, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
-            float minHole = _hollowMinHolePixels * 2f * _pixelSize;
+            VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.OutlinePiece, fill, border, thickness, pattern.Period, GetClipSpace(origin), pattern.FracPhase, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
 
-            for (int k = 0; k < 4; k++) {
-                Vector2 n1 = normals[k];
-                Vector2 n2 = normals[(k + 1) % 4];
-                Vector2 sg = n1 + n2; // Which quadrant, as a sign per axis.
-                float ro = radii[k];
-                Vector2 fillet = sg * (half - new Vector2(ro));
-                Vector2 outer = sg * (half + new Vector2(aaOffset));
-                template.Meta2 = new Vector4(quarter, ro, rp[k], u0[k]);
-                // Past the band and its fade, a transparent fill leaves nothing to draw. The rounded
-                // corner pulls the band in by at most 1 - 1 / sqrt(2) of its radius. An L of two
-                // quads only pays for itself once the hole it skips is big.
-                Vector2 hole = half - new Vector2(thickness + margin + 0.3f * ro);
-                if (hollow && hole.X > 0f && hole.Y > 0f && hole.X * hole.Y > minHole * minHole) {
-                    Vector2 h = sg * hole;
-                    EmitPieceBox(template, new Vector2(0f, outer.Y), new Vector2(outer.X, h.Y), fillet, n1, n2, center, sin, cos);
-                    EmitPieceBox(template, h, new Vector2(outer.X, 0f), fillet, n1, n2, center, sin, cos);
+            // Past the band and its fade a transparent fill leaves nothing to draw, so a piece
+            // skips its share of the hole once that share is worth the extra quad. Its inner edge
+            // then runs from each split to one point on the corner's bisector, where the band's
+            // inner side crosses it.
+            float depth = thickness + aaOffset + _pixelSize;
+            float minHole = 2f * _hollowMinHolePixels * _pixelSize;
+            bool hollow = IsTransparent(fill);
+            Span<bool> skips = stackalloc bool[n];
+            Span<Vector2> holes = stackalloc Vector2[n];
+            Span<Vector2> poly = stackalloc Vector2[16];
+            for (int k = 0; hollow && k < n; k++) {
+                ref OutlineCorner c = ref corners[k];
+                ReadOnlySpan<Vector2> chain = inner[(k == 0 ? 0 : innerEnds[k - 1])..innerEnds[k]];
+                Vector2 hole = HollowCorner(c, depth);
+                bool deep = true;
+                for (int i = 0; i < chain.Length; i++) deep &= PieceDistance(c, chain[i]) < -depth;
+                if (!deep) continue;
+                Vector2 s1 = splits[k == 0 ? n - 1 : k - 1];
+                Vector2 s2 = splits[k];
+                int m = OuterChain(c, aaOffset, poly);
+                poly[m++] = s2 + c.N2 * aaOffset;
+                for (int i = 0; i < chain.Length; i++) poly[m++] = chain[i];
+                poly[m++] = s1 + c.N1 * aaOffset;
+                if (!InsideConvex(poly[..m], hole)) continue;
+                // The share skipped: the hole corner, the two splits' inner points, and the chain.
+                m = 0;
+                poly[m++] = hole;
+                poly[m++] = s2 - c.N2 * depth;
+                for (int i = 0; i < chain.Length; i++) poly[m++] = chain[i];
+                poly[m++] = s1 - c.N1 * depth;
+                skips[k] = MathF.Abs(PolygonArea(poly[..m])) > minHole * minHole;
+                holes[k] = hole;
+            }
+
+            (float sin, float cos) = SinCos(rotation);
+            for (int k = 0; k < n; k++) {
+                ref OutlineCorner c = ref corners[k];
+                int prev = k == 0 ? n - 1 : k - 1;
+                int next = k + 1 == n ? 0 : k + 1;
+                Vector2 s1 = splits[prev];
+                Vector2 s2 = splits[k];
+                Vector2 f1 = s1 + c.N1 * aaOffset;
+                Vector2 f2 = s2 + c.N2 * aaOffset;
+                // A split's inner point is a vertex on both sides of it whenever either side skips
+                // its hole, which keeps the two pieces' shared edge the same edge.
+                Vector2 g1 = s1 - c.N1 * depth;
+                Vector2 g2 = s2 - c.N2 * depth;
+                int m = 0;
+                if (skips[k]) {
+                    poly[m++] = holes[k];
+                    poly[m++] = g1;
+                    poly[m++] = f1;
+                    m += OuterChain(c, aaOffset, poly[m..]);
+                    poly[m++] = f2;
+                    poly[m++] = g2;
                 } else {
-                    EmitPieceBox(template, Vector2.Zero, outer, fillet, n1, n2, center, sin, cos);
+                    // The fan starts on the outer corner, which no split runs through.
+                    m += OuterChain(c, aaOffset, poly);
+                    poly[m++] = f2;
+                    if (skips[next]) poly[m++] = g2;
+                    ReadOnlySpan<Vector2> chain = inner[(k == 0 ? 0 : innerEnds[k - 1])..innerEnds[k]];
+                    for (int i = 0; i < chain.Length; i++) poly[m++] = chain[i];
+                    if (skips[prev]) poly[m++] = g1;
+                    poly[m++] = f1;
                 }
+                template.Meta2 = new Vector4(c.Turn, c.Radius, c.PatternRadius, c.Start);
+                EmitPieceFan(template, c, poly[..m], origin, sin, cos);
             }
             return true;
         }
 
-        // One axis aligned box of an outline piece, from and to in the shape's own frame. The piece's
-        // local frame has the corner's fillet center at its origin, the incoming edge's normal on x
-        // and the outgoing edge's on y, which for a box corner is also the incoming direction of travel.
-        private void EmitPieceBox(in VertexShape template, Vector2 from, Vector2 to, Vector2 fillet, Vector2 n1, Vector2 n2, Vector2 center, float sin, float cos) {
-            float x0 = MathF.Min(from.X, to.X), x1 = MathF.Max(from.X, to.X);
-            float y0 = MathF.Min(from.Y, to.Y), y1 = MathF.Max(from.Y, to.Y);
-            if (x1 <= x0 || y1 <= y0) return;
-            PrepareQuad();
-            Vector2 W(Vector2 l) => center + new Vector2(l.X * cos - l.Y * sin, l.X * sin + l.Y * cos);
-            Vector2 L(Vector2 l) => new(Vector2.Dot(l - fillet, n1), Vector2.Dot(l - fillet, n2));
-            Vector2 p0 = new(x0, y0), p1 = new(x1, y0), p2 = new(x1, y1), p3 = new(x0, y1);
-            Vector2 w0 = W(p0), w1 = W(p1), w2 = W(p2), w3 = W(p3);
-            template.CopyTo(ref _vertices[_vertexCount + 0], new Vector3(w0, 0), L(p0), GetClipSpace(w0));
-            template.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(w1, 0), L(p1), GetClipSpace(w1));
-            template.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(w2, 0), L(p2), GetClipSpace(w2));
-            template.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(w3, 0), L(p3), GetClipSpace(w3));
-            _triangleCount += 2;
-            _vertexCount += 4;
-            _indexCount += 6;
+        // The same, for an outline whose splits all meet in one point.
+        private bool EmitDashedOutline(Vector2 origin, float rotation, ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, Vector2 hub, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash) {
+            int n = vertices.Length;
+            Span<Vector2> inner = stackalloc Vector2[n];
+            Span<int> innerEnds = stackalloc int[n];
+            for (int k = 0; k < n; k++) {
+                inner[k] = hub;
+                innerEnds[k] = k + 1;
+            }
+            return EmitDashedOutline(origin, rotation, vertices, radii, splits, inner, innerEnds, fill, border, thickness, aaOffset, aaSize, dash);
+        }
+
+        // Fills in every corner's frame and pattern circle, and returns the pattern's length.
+        private static float ResolveOutline(ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, float thickness, bool round, Span<OutlineCorner> corners) {
+            int n = vertices.Length;
+            float rd = thickness * 0.5f;
+            // Each edge's normal is worked out once, so the two corners either side of it share
+            // it bit for bit and so do the points their pieces build from it.
+            Vector2 first = EdgeNormal(vertices[n - 1], vertices[0]);
+            Vector2 nIn = first;
+            for (int k = 0; k < n; k++) {
+                Vector2 v = vertices[k];
+                Vector2 nOut = k + 1 < n ? EdgeNormal(v, vertices[k + 1]) : first;
+                float cosT = Vector2.Dot(nIn, nOut);
+                float turn = MathF.Atan2(nIn.X * nOut.Y - nIn.Y * nOut.X, cosT);
+                float r = radii[k];
+                // Round caps follow the band's own centerline, which has no arc where the corner
+                // is tighter than half the band. A butt cut is a ray out of the circle's center,
+                // and those meet there, so it turns on a wider circle that keeps them apart.
+                // Either way the circle has to leave the edges before the splits either side, or
+                // the next piece would read that stretch as straight.
+                float room = MathF.Min(Vector2.Distance(v, splits[k == 0 ? n - 1 : k - 1]), Vector2.Distance(v, splits[k])) / MathF.Max(MathF.Tan(turn * 0.5f), 1e-6f);
+                float rp = MathF.Max(round ? r : PatternRadius(r, thickness, room * 0.5f), rd);
+                corners[k] = new OutlineCorner {
+                    Fillet = v - (nIn + nOut) * (r / MathF.Max(1f + cosT, 1e-6f)),
+                    N1 = nIn,
+                    N2 = nOut,
+                    Turn = turn,
+                    Radius = r,
+                    PatternRadius = MathF.Min(rp, room),
+                };
+                nIn = nOut;
+            }
+            // The pattern starts where the last edge leaves the last corner's circle.
+            float u = 0f;
+            for (int k = 0; k < n; k++) {
+                int prev = k == 0 ? n - 1 : k - 1;
+                ref OutlineCorner c = ref corners[k];
+                float edge = Vector2.Distance(vertices[prev], vertices[k]);
+                u += MathF.Max(edge - PatternTangent(corners[prev]) - PatternTangent(c), 0f);
+                c.Start = u;
+                u += c.Turn * MathF.Max(c.PatternRadius - rd, 0f);
+            }
+            return u;
+        }
+
+        private static Vector2 EdgeNormal(Vector2 a, Vector2 b) {
+            Vector2 t = Vector2.Normalize(b - a);
+            return new Vector2(t.Y, -t.X);
+        }
+
+        // How far back from the vertex the pattern's circle meets each edge.
+        private static float PatternTangent(in OutlineCorner c) {
+            return c.PatternRadius * MathF.Tan(c.Turn * 0.5f);
+        }
+
+        // Mirrors the piece's distance in the shader.
+        private static float PieceDistance(in OutlineCorner c, Vector2 p) {
+            Vector2 q = p - c.Fillet;
+            float x = Vector2.Dot(q, c.N1);
+            float y = c.N1.X * q.Y - c.N1.Y * q.X;
+            (float sin, float cos) = SinCos(c.Turn);
+            bool cone = c.Turn > 0f && y >= 0f && x * sin - y * cos >= 0f;
+            return cone ? q.Length() - c.Radius : MathF.Max(x, Vector2.Dot(q, c.N2)) - c.Radius;
+        }
+
+        // Where the band's inner side, depth in from the outline, crosses the corner's bisector.
+        private static Vector2 HollowCorner(in OutlineCorner c, float depth) {
+            Vector2 h = Vector2.Normalize(c.N1 + c.N2);
+            if (c.Radius >= depth) return c.Fillet + h * (c.Radius - depth);
+            return c.Fillet - h * ((depth - c.Radius) / MathF.Max(MathF.Cos(c.Turn * 0.5f), 1e-4f));
+        }
+
+        // The outer side of a corner, reach past its fillet: the miter point where the two edges'
+        // offsets meet, or a third tangent across the middle once the miter wastes enough area
+        // past the arc to pay for the extra triangle.
+        private int OuterChain(in OutlineCorner c, float ext, Span<Vector2> dst) {
+            float reach = c.Radius + ext;
+            float half = c.Turn * 0.5f;
+            float waste = reach * reach * (MathF.Tan(half) - 2f * MathF.Tan(half * 0.5f));
+            if (waste < _pieceMiterWastePixels * _pixelSize * _pixelSize) {
+                dst[0] = c.Fillet + (c.N1 + c.N2) * (reach / (1f + Vector2.Dot(c.N1, c.N2)));
+                return 1;
+            }
+            Vector2 h = Vector2.Normalize(c.N1 + c.N2);
+            dst[0] = c.Fillet + (c.N1 + h) * (reach / (1f + Vector2.Dot(c.N1, h)));
+            dst[1] = c.Fillet + (h + c.N2) * (reach / (1f + Vector2.Dot(h, c.N2)));
+            return 2;
+        }
+        private const float _pieceMiterWastePixels = 256f;
+
+        private static bool InsideConvex(ReadOnlySpan<Vector2> poly, Vector2 p) {
+            for (int i = 0; i < poly.Length; i++) {
+                Vector2 a = poly[i];
+                Vector2 e = poly[i + 1 == poly.Length ? 0 : i + 1] - a;
+                if (e.X * (p.Y - a.Y) - e.Y * (p.X - a.X) <= 0f) return false;
+            }
+            return true;
+        }
+
+        private static float PolygonArea(ReadOnlySpan<Vector2> poly) {
+            float sum = 0f;
+            for (int i = 0; i < poly.Length; i++) {
+                Vector2 a = poly[i];
+                Vector2 b = poly[i + 1 == poly.Length ? 0 : i + 1];
+                sum += a.X * b.Y - a.Y * b.X;
+            }
+            return sum * 0.5f;
+        }
+
+        // A piece's polygon, clockwise on screen, as a fan of quads around its first vertex. Its
+        // local frame has the corner's fillet center at the origin, the incoming edge's normal on
+        // x and the incoming direction of travel on y.
+        private void EmitPieceFan(in VertexShape template, in OutlineCorner c, ReadOnlySpan<Vector2> poly, Vector2 origin, float sin, float cos) {
+            for (int j = 1; j + 1 < poly.Length; j += 2) {
+                PrepareQuad();
+                PieceVertex(template, c, ref _vertices[_vertexCount + 0], poly[j], origin, sin, cos);
+                PieceVertex(template, c, ref _vertices[_vertexCount + 1], poly[j + 1], origin, sin, cos);
+                PieceVertex(template, c, ref _vertices[_vertexCount + 2], poly[Math.Min(j + 2, poly.Length - 1)], origin, sin, cos);
+                PieceVertex(template, c, ref _vertices[_vertexCount + 3], poly[0], origin, sin, cos);
+                _triangleCount += 2;
+                _vertexCount += 4;
+                _indexCount += 6;
+            }
+        }
+        private void PieceVertex(in VertexShape template, in OutlineCorner c, ref VertexShape dst, Vector2 p, Vector2 origin, float sin, float cos) {
+            Vector2 w = origin + new Vector2(p.X * cos - p.Y * sin, p.X * sin + p.Y * cos);
+            Vector2 q = p - c.Fillet;
+            template.CopyTo(ref dst, new Vector3(w, 0), new Vector2(Vector2.Dot(q, c.N1), c.N1.X * q.Y - c.N1.Y * q.X), GetClipSpace(w));
+        }
+
+        // A chamfer splits the way its distance does: into quadrants through the center, and each
+        // cut corner once more along the diagonal through its box corner, which runs square across
+        // the cut. A diagonal meets the quadrant's side at the same point as the neighboring
+        // quadrant's diagonal does, and a corner left square keeps that point as a vertex too, so
+        // every two pieces share their edge whole.
+        private bool EmitDashedChamfer(Vector2 center, float rotation, Vector2 half, float cTL, float cTR, float cBR, float cBL, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash) {
+            // A cut all the way to the middle of a side would leave that side no length to carry a
+            // normal or a split, so the dashed outline stops a hair short of it.
+            float maxC = MathF.Min(half.X, half.Y) * 0.999f;
+            float minC = maxC * 1e-4f;
+            ReadOnlySpan<float> cuts = stackalloc float[] { MathF.Min(cTR, maxC), MathF.Min(cBR, maxC), MathF.Min(cBL, maxC), MathF.Min(cTL, maxC) };
+            bool wide = half.X >= half.Y;
+            bool square = half.X == half.Y;
+            Span<Vector2> outline = stackalloc Vector2[8];
+            Span<Vector2> splits = stackalloc Vector2[8];
+            Span<float> radii = stackalloc float[8];
+            Span<Vector2> inner = stackalloc Vector2[16];
+            Span<int> innerEnds = stackalloc int[8];
+            int n = 0;
+            int m = 0;
+            // Quadrants in travel order from the top right. Each one is entered along one side and
+            // left along the next, and the diagonal meets the horizontal axis on a box wider than
+            // it is tall, the vertical one otherwise.
+            for (int q = 0; q < 4; q++) {
+                Vector2 tIn = q switch { 0 => new(1f, 0f), 1 => new(0f, 1f), 2 => new(-1f, 0f), _ => new(0f, -1f) };
+                Vector2 tOut = new(-tIn.Y, tIn.X);
+                Vector2 corner = (tIn - tOut) * half;
+                Vector2 sOut = q % 2 == 0 ? new Vector2(corner.X, 0f) : new Vector2(0f, corner.Y);
+                Vector2 meet = wide ? new Vector2(MathF.Sign(corner.X) * (half.X - half.Y), 0f) : new Vector2(0f, MathF.Sign(corner.Y) * (half.Y - half.X));
+                bool meetOnOut = (q % 2 == 0) == wide;
+                float c = cuts[q];
+                if (c > minC) {
+                    outline[n] = corner - tIn * c;
+                    outline[n + 1] = corner + tOut * c;
+                    splits[n] = (outline[n] + outline[n + 1]) * 0.5f;
+                    splits[n + 1] = sOut;
+                    if (square) {
+                        inner[m++] = Vector2.Zero;
+                        innerEnds[n] = m;
+                        inner[m++] = Vector2.Zero;
+                    } else if (meetOnOut) {
+                        inner[m++] = meet;
+                        inner[m++] = Vector2.Zero;
+                        innerEnds[n] = m;
+                        inner[m++] = meet;
+                    } else {
+                        inner[m++] = meet;
+                        innerEnds[n] = m;
+                        inner[m++] = Vector2.Zero;
+                        inner[m++] = meet;
+                    }
+                    innerEnds[n + 1] = m;
+                    n += 2;
+                } else {
+                    outline[n] = corner;
+                    splits[n] = sOut;
+                    inner[m++] = square || meetOnOut ? (square ? Vector2.Zero : meet) : Vector2.Zero;
+                    if (!square) inner[m++] = meetOnOut ? Vector2.Zero : meet;
+                    innerEnds[n] = m;
+                    n++;
+                }
+            }
+            radii[..n].Clear();
+            return EmitDashedOutline(center, rotation, outline[..n], radii[..n], splits[..n], inner[..m], innerEnds[..n], fill, border, thickness, aaOffset, aaSize, dash);
+        }
+
+        // A dashed ellipse keeps the shader's own distance, which is exact, and goes out in pieces
+        // only so each one can carry its stretch of the pattern: a cubic from the folded angle of
+        // the nearest point to the outline's length so far, in periods. A piece runs between the
+        // normals at its two ends and closes on the major axis, where those normals land, so the
+        // pieces partition the plane; their outer side is the offset tangent across the middle of
+        // the piece. An ellipse taller than wide is laid out a quarter turn round, which puts the
+        // major axis first here the same way the shader's fold does.
+        private bool EmitDashedEllipse(Vector2 center, float rotation, float radius1, float radius2, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash) {
+            bool tall = radius2 > radius1;
+            double a = tall ? radius2 : radius1;
+            double b = tall ? radius1 : radius2;
+            if (b <= 0.0) return false;
+            double rd = thickness * 0.5;
+
+            // The folded angles a quadrant splits at, as few as keep each cubic within a twentieth
+            // of a pixel of the true length, and that length at each of them.
+            Span<double> cuts = stackalloc double[_ellipseMaxPieces + 1];
+            Span<double> lengths = stackalloc double[_ellipseMaxPieces + 1];
+            int k = EllipseCuts(a, b, 0.05 * _pixelSize, cuts);
+            lengths[0] = 0.0;
+            for (int i = 0; i < k; i++) lengths[i + 1] = lengths[i] + EllipseLength(a, b, cuts[i], cuts[i + 1]);
+            // The pattern runs along the band's centerline, which is shorter than the outline by
+            // half the band for every radian the outline turns.
+            double quarter = lengths[k] - rd * Math.PI * 0.5;
+            ResolvedDash pattern = dash.Resolve(4f * (float)quarter, closed: true);
+            if (pattern.TypeDigit == 0) return false;
+
+            // The first quadrant's boundaries: where each normal meets the major axis, and where
+            // the offset tangents of the pieces either side meet outside.
+            Span<Vector2> axis = stackalloc Vector2[_ellipseMaxPieces + 1];
+            Span<Vector2> outer = stackalloc Vector2[_ellipseMaxPieces + 1];
+            Span<Vector2> hole = stackalloc Vector2[_ellipseMaxPieces + 1];
+            double focal = (a * a - b * b) / a;
+            double prevNx = 0.0, prevNy = 0.0, prevC = 0.0;
+            for (int i = 0; i <= k; i++) {
+                axis[i] = new Vector2(i == k ? 0f : (float)(focal * Math.Cos(cuts[i])), 0f);
+                if (i == k) {
+                    outer[i] = new Vector2(0f, (float)(prevC / prevNy));
+                    break;
+                }
+                double tm = 0.5 * (cuts[i] + cuts[i + 1]);
+                (double nx, double ny) = EllipseNormal(a, b, tm);
+                double c = nx * a * Math.Cos(tm) + ny * b * Math.Sin(tm) + aaOffset;
+                if (i == 0) {
+                    outer[i] = new Vector2((float)(c / nx), 0f);
+                } else {
+                    double det = prevNx * ny - prevNy * nx;
+                    outer[i] = new Vector2((float)((prevC * ny - c * prevNy) / det), (float)((prevNx * c - nx * prevC) / det));
+                }
+                prevNx = nx;
+                prevNy = ny;
+                prevC = c;
+            }
+
+            // Past the band and its fade a transparent fill leaves nothing to draw. Each boundary
+            // then starts where it crosses the band's inner side, and the chords between those
+            // stay inside it while that side is still convex, which is while it stays inside the
+            // tightest curvature, at the ends of the major axis.
+            double depth = thickness + aaOffset + 2f * _pixelSize;
+            float minHole = 2f * _hollowMinHolePixels * _pixelSize;
+            bool hollow = IsTransparent(fill) && depth < 0.9 * b * b / a && Math.PI * (a - depth) * (b - depth) > minHole * minHole;
+            for (int i = 0; hollow && i <= k; i++) {
+                (double nx, double ny) = EllipseNormal(a, b, cuts[i]);
+                double qx = a * Math.Cos(cuts[i]) - axis[i].X;
+                double qy = b * Math.Sin(cuts[i]);
+                double mx = outer[i].X - axis[i].X;
+                double my = outer[i].Y;
+                double lambda = (qx * nx + qy * ny - depth) / (mx * nx + my * ny);
+                hole[i] = new Vector2((float)(axis[i].X + lambda * mx), (float)(lambda * my));
+            }
+            ReadOnlySpan<Vector2> inner = hollow ? hole : axis;
+
+            PrepareQuad(fill, border);
+            (float sin, float cos) = SinCos(tall ? rotation + MathF.PI * 0.5f : rotation);
+            VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(center), radius2, aaSize: Aa(aaSize), rounded: pattern.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
+            // Clockwise on screen, the quadrants run from the end of the major axis through the
+            // end of the minor one and back, mirrored in turn, every other one walking the folded
+            // angle backwards.
+            double period = pattern.Period;
+            for (int q = 0; q < 4; q++) {
+                Vector2 sg = new(q == 1 || q == 2 ? -1f : 1f, q >= 2 ? -1f : 1f);
+                bool back = q % 2 == 1;
+                double offset = q == 0 ? 0.0 : q == 3 ? 4.0 * quarter : 2.0 * quarter;
+                for (int j = 0; j < k; j++) {
+                    int i = back ? k - 1 - j : j;
+                    template.Meta2 = EllipseCubic(cuts[i], cuts[i + 1], lengths[i], lengths[i + 1], EllipseSpeed(a, b, cuts[i]), EllipseSpeed(a, b, cuts[i + 1]), back ? -1.0 : 1.0, offset, period);
+                    int from = back ? i + 1 : i;
+                    int to = back ? i : i + 1;
+                    PrepareQuad();
+                    EllipseVertex(template, ref _vertices[_vertexCount + 0], outer[from] * sg, tall, center, sin, cos);
+                    EllipseVertex(template, ref _vertices[_vertexCount + 1], outer[to] * sg, tall, center, sin, cos);
+                    EllipseVertex(template, ref _vertices[_vertexCount + 2], inner[to] * sg, tall, center, sin, cos);
+                    EllipseVertex(template, ref _vertices[_vertexCount + 3], inner[from] * sg, tall, center, sin, cos);
+                    _triangleCount += 2;
+                    _vertexCount += 4;
+                    _indexCount += 6;
+                }
+            }
+            return true;
+        }
+        private const int _ellipseMaxPieces = 8;
+
+        // A point laid out with the major axis first, back in the ellipse's own frame, where the
+        // shader reads it, and out in the world.
+        private void EllipseVertex(in VertexShape template, ref VertexShape dst, Vector2 p, bool tall, Vector2 center, float sin, float cos) {
+            Vector2 w = center + new Vector2(p.X * cos - p.Y * sin, p.X * sin + p.Y * cos);
+            template.CopyTo(ref dst, new Vector3(w, 0), tall ? new Vector2(-p.Y, p.X) : p, GetClipSpace(w));
+        }
+
+        // Splits the quadrant until every piece's cubic is within tol of the true length at its
+        // middle, where a cubic that matches both ends and both slopes misses the most, bisecting
+        // the worst piece first. Returns the number of pieces.
+        private static int EllipseCuts(double a, double b, double tol, Span<double> cuts) {
+            int n = 1;
+            cuts[0] = 0.0;
+            cuts[1] = Math.PI * 0.5;
+            while (n < _ellipseMaxPieces) {
+                int worst = -1;
+                double miss = tol;
+                for (int i = 0; i < n; i++) {
+                    double t0 = cuts[i];
+                    double t1 = cuts[i + 1];
+                    double h = t1 - t0;
+                    double guess = 0.5 * EllipseLength(a, b, t0, t1) + 0.125 * h * (EllipseSpeed(a, b, t0) - EllipseSpeed(a, b, t1));
+                    double e = Math.Abs(guess - EllipseLength(a, b, t0, 0.5 * (t0 + t1)));
+                    if (e > miss) {
+                        miss = e;
+                        worst = i;
+                    }
+                }
+                if (worst < 0) break;
+                for (int j = n; j > worst; j--) cuts[j + 1] = cuts[j];
+                cuts[worst + 1] = 0.5 * (cuts[worst] + cuts[worst + 2]);
+                n++;
+            }
+            return n;
+        }
+
+        // The cubic in the folded angle that matches the outline's length and its rate at both ends
+        // of a piece, turned around for a quadrant walked backwards, moved on to where that
+        // quadrant starts, and counted in periods.
+        private static Vector4 EllipseCubic(double t0, double t1, double s0, double s1, double v0, double v1, double sign, double offset, double period) {
+            double h = t1 - t0;
+            double ds = s1 - s0;
+            double e0 = s0;
+            double e1 = h * v0;
+            double e2 = 3.0 * ds - h * (2.0 * v0 + v1);
+            double e3 = -2.0 * ds + h * (v0 + v1);
+            double al = 1.0 / h;
+            double be = -t0 / h;
+            double c0 = e0 + be * (e1 + be * (e2 + be * e3));
+            double c1 = al * (e1 + be * (2.0 * e2 + 3.0 * be * e3));
+            double c2 = al * al * (e2 + 3.0 * be * e3);
+            double c3 = al * al * al * e3;
+            double scale = sign / period;
+            return new Vector4((float)(c0 * scale + offset / period), (float)(c1 * scale), (float)(c2 * scale), (float)(c3 * scale));
+        }
+
+        private static double EllipseSpeed(double a, double b, double t) {
+            double s = Math.Sin(t);
+            double c = Math.Cos(t);
+            return Math.Sqrt(a * a * s * s + b * b * c * c);
+        }
+
+        private static (double, double) EllipseNormal(double a, double b, double t) {
+            double nx = b * Math.Cos(t);
+            double ny = a * Math.Sin(t);
+            double l = Math.Sqrt(nx * nx + ny * ny);
+            return (nx / l, ny / l);
+        }
+
+        // Arc length between two angles, by eight point Gauss-Legendre, which the speed is smooth
+        // enough for over a piece.
+        private static double EllipseLength(double a, double b, double t0, double t1) {
+            double m = 0.5 * (t0 + t1);
+            double r = 0.5 * (t1 - t0);
+            double sum = 0.0;
+            for (int i = 0; i < 4; i++) {
+                double x = _gaussNodes[i] * r;
+                sum += _gaussWeights[i] * (EllipseSpeed(a, b, m - x) + EllipseSpeed(a, b, m + x));
+            }
+            return sum * r;
+        }
+        private static readonly double[] _gaussNodes = { 0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363 };
+        private static readonly double[] _gaussWeights = { 0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763 };
+
+        // A regular polygon's corners and edge midpoints, with its first edge's normal at start.
+        private static void RegularOutline(float apothem, float start, Span<Vector2> vertices, Span<Vector2> splits) {
+            int n = vertices.Length;
+            float step = MathF.Tau / n;
+            float reach = apothem / MathF.Cos(step * 0.5f);
+            for (int k = 0; k < n; k++) {
+                (float sinV, float cosV) = SinCos(start + (k - 0.5f) * step);
+                vertices[k] = new Vector2(cosV, sinV) * reach;
+                (float sinS, float cosS) = SinCos(start + k * step);
+                splits[k] = new Vector2(cosS, sinS) * apothem;
+            }
         }
 
         private static void HexagonCorners(float apothem, Span<Vector2> corners) {
