@@ -27,15 +27,9 @@ float2 curve_texel; // 1 / the glyph curve texture's texel counts.
 float4 clip_frame[4];
 float4 clip_size[4];
 float clip_count;
-// Sampler order is load bearing, and the register annotations alone do not settle it: the
-// OpenGL and Vulkan translator hands out texture units in the order the pixel shader first
-// SAMPLES from, not the order the samplers are declared or the registers they ask for, while
-// the KNI toolchain goes by the register. So the three have to agree, and that means listing
-// them in the order the pixel shader reaches them: the texture mask returns early, then the
-// first arm of the shape ladder reads a glyph's band headers and then its curve control
-// points, then the dither noise, then the ramp table. The dither sits before the ramp because
-// the blur path returns early THROUGH a dither call, ahead of the color section where the ramp
-// reads. Getting this wrong is silent - the shader simply reads a different texture and the picture goes to noise.
+// The batch hands every texture over by name, and every technique reads all five in register
+// order before anything else (see the top of ShapePixel), so each backend puts them on the same
+// units in every technique.
 #if SM6
 // DXC drops the legacy sampler syntax: declare texture/sampler pairs on matching
 // registers so the Vulkan reflection treats them as combined image-samplers.
@@ -50,11 +44,20 @@ float4 SampleCurve(float2 uv) { return CurveTex.Sample(CurveSampler, uv); }
 float4 SampleBlueNoise(float2 uv) { return BlueNoiseTex.Sample(BlueNoiseSampler, uv); }
 float4 SampleRamp(float2 uv) { return RampTex.Sample(RampSampler, uv); }
 #else
-sampler TextureSampler : register(s0);
-sampler BandSampler : register(s1); // Glyph band headers and curve lists, bound with clamped point sampling.
-sampler CurveSampler : register(s2); // Glyph curve control points, bound with clamped point sampling.
-sampler BlueNoiseSampler : register(s3); // 64x64 tile, bound with wrapped point sampling.
-sampler RampSampler : register(s4); // Ramp weight curves, bound with clamped point sampling.
+// Each sampler names its texture, so the batch hands textures over by name and every technique
+// finds them on whatever units its own shader was given. Only the texture mask leaves its
+// sampling to the batch, which sets it from Begin.
+texture TextureTex;
+texture BandTex;
+texture CurveTex;
+texture BlueNoiseTex;
+texture RampTex;
+sampler TextureSampler : register(s0) = sampler_state { Texture = <TextureTex>; };
+// Glyph band headers and curve lists, and the curve control points, read texel by texel as data.
+sampler BandSampler : register(s1) = sampler_state { Texture = <BandTex>; MinFilter = Point; MagFilter = Point; MipFilter = Point; AddressU = Clamp; AddressV = Clamp; };
+sampler CurveSampler : register(s2) = sampler_state { Texture = <CurveTex>; MinFilter = Point; MagFilter = Point; MipFilter = Point; AddressU = Clamp; AddressV = Clamp; };
+sampler BlueNoiseSampler : register(s3) = sampler_state { Texture = <BlueNoiseTex>; MinFilter = Point; MagFilter = Point; MipFilter = Point; AddressU = Wrap; AddressV = Wrap; };
+sampler RampSampler : register(s4) = sampler_state { Texture = <RampTex>; MinFilter = Point; MagFilter = Point; MipFilter = Point; AddressU = Clamp; AddressV = Clamp; };
 float4 SampleTexture(float2 uv) { return tex2D(TextureSampler, uv); }
 float4 SampleBand(float2 uv) { return tex2D(BandSampler, uv); }
 float4 SampleCurve(float2 uv) { return tex2D(CurveSampler, uv); }
@@ -83,7 +86,7 @@ struct VertexInput {
 // second gradient on. TexCoord.z, the corner rounding, stays 0 because the tail takes it off
 // the distance for every shape alike. The band texel base is an integer that reaches six
 // figures, so it keeps a channel to itself rather than sharing one - see the note on the packed
-// meta in SpritePixelShader for the budget an interpolator carries exactly.
+// meta in ShapePixel for the budget an interpolator carries exactly.
 //
 // An SVG element's quad is a glyph quad in every one of those channels. All that sets it apart
 // is its shape id, which picks the even-odd fill rule at the end of the same arm.
@@ -1429,7 +1432,11 @@ float2 SolveHorizPoly(float4 p12, float2 p3) {
         (a.x * t2 - b.x * 2.0) * t2 + p12.x);
 }
 
-float4 SpritePixelShader(PixelInput p) : SV_TARGET {
+// The whole pixel shader, built once per combination of the three features that cost the most
+// to compile. A variant without one holds that feature's inputs where they sit when nothing
+// uses it, and the compiler drops whatever they would have reached. See the techniques at the
+// end of the file.
+float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
     float lineSize = p.Meta1.x;
     // A negative width asks for the fade to straddle the true edge instead of sitting outside
     // it, which is what makes a shape cover exactly the pixels its size claims. It rides in the
@@ -1456,6 +1463,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float dashType = DecodeDigit(meta, 4.0);
     // Set when Meta1.y carries a world space blur instead of a screen space AA width.
     float blurred = meta;
+    if (!useDash) dashType = 0.0;
+    if (!useGradient) {
+        fillStyles.x = 0.0;
+        borderStyles.x = 0.0;
+    }
 
     float2 jx = ddx(p.Pos);
     float2 jy = ddy(p.Pos);
@@ -1475,8 +1487,16 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipN + aaBias));
     }
 
+    float2 q0 = p.TexCoord.xy;
     if (shape >= 8.5 && shape < 9.5) {
         return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+    }
+    // Every technique reads all five textures, in register order, so every one of them keeps
+    // the same samplers on the same units: the Vulkan translator drops a sampler nothing reads
+    // and numbers the rest by first use. A texel size is never negative, so this never runs,
+    // but no compiler can know that.
+    if (ramp_texel.x < 0.0) {
+        return SampleBand(q0) + SampleCurve(q0) + SampleBlueNoise(q0) + SampleRamp(q0);
     }
 
     // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the
@@ -1500,7 +1520,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // An SVG element takes the same arm with the even-odd fill rule instead of nonzero. It is the
     // same curves through the same two loops, so the rule is a second shape id rather than a
     // branch of its own, and it costs one step here and two lerps at the very end.
-    bool isGlyph = shape >= 12.5 && shape < 14.5;
+    bool isGlyph = useText && shape >= 12.5 && shape < 14.5;
     float evenOdd = step(13.5, shape);
     float glyphFade = 1.0;
 
@@ -1847,16 +1867,16 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // The packed floats' signs are flags (see the vertex shader): y marks a ramp riding the
     // gradient, z and w carry a ramped stop pair's top row bits. The payloads come back
     // positive before anything unpacks them; x keeps its sign, PaletteColor reads it itself.
-    bool fillRamp = p.Fill.y < -0.5;
+    bool fillRamp = useGradient && p.Fill.y < -0.5;
     bool fillZN = p.Fill.z < -0.5;
     bool fillWN = p.Fill.w < -0.5;
-    bool borderRamp = p.Border.y < -0.5;
+    bool borderRamp = useGradient && p.Border.y < -0.5;
     bool borderZN = p.Border.z < -0.5;
     bool borderWN = p.Border.w < -0.5;
     // The third lane's sign without the ramp flag beside it marks a color ramp; a ramped
     // stop pair only ever sets it with the ramp flag, so the pair can't collide.
-    bool fillLut = fillZN && !fillRamp;
-    bool borderLut = borderZN && !borderRamp;
+    bool fillLut = useGradient && fillZN && !fillRamp;
+    bool borderLut = useGradient && borderZN && !borderRamp;
     float4 fillPk = float4(p.Fill.x,
                            fillRamp ? -p.Fill.y - 1.0 : p.Fill.y,
                            fillZN ? -p.Fill.z - 1.0 : p.Fill.z,
@@ -1902,7 +1922,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // A palette's unpacked stops are payload bits, not colors, so it never reads as a
     // transparent fill here, a ramped fill's alpha lanes carry row bits over the alpha, and
     // a color ramp's lanes are all payload, so those skip the shortcut too.
-    bool fillPal = p.Fill.x < -0.5;
+    bool fillPal = useGradient && p.Fill.x < -0.5;
     bool borderOnly = !fillPal && !fillRamp && !fillLut && fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
     if (borderOnly && borderMix <= 0.0) {
         // Transparent fill: everything inside the border band contributes nothing.
@@ -1948,7 +1968,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         br = fr;
     }
     if (!sameGradient && borderMix > 0.0) {
-        bool borderPal = p.Border.x < -0.5;
+        bool borderPal = useGradient && p.Border.x < -0.5;
         float tAa, wrapF;
         float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
         float4 c;
@@ -1987,9 +2007,64 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     return result;
 }
 
-technique SpriteBatch {
+// One technique per combination of dashes (bit 0), gradients beyond a flat color (bit 1) and
+// text (bit 2), at the index those bits make, which is how ShapeBatch picks one. A technique's
+// shaders compile the first time something draws with it, so a game only waits on the ones it
+// uses.
+float4 ShapePixel0(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, false); }
+float4 ShapePixel1(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, false); }
+float4 ShapePixel2(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, false); }
+float4 ShapePixel3(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, false); }
+float4 ShapePixel4(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, true); }
+float4 ShapePixel5(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, true); }
+float4 ShapePixel6(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true); }
+float4 ShapePixel7(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true); }
+
+technique Shapes0 {
     pass {
         VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL SpritePixelShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel0();
+    }
+}
+technique Shapes1 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel1();
+    }
+}
+technique Shapes2 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel2();
+    }
+}
+technique Shapes3 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel3();
+    }
+}
+technique Shapes4 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel4();
+    }
+}
+technique Shapes5 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel5();
+    }
+}
+technique Shapes6 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel6();
+    }
+}
+technique Shapes7 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel7();
     }
 }

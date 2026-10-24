@@ -54,8 +54,15 @@ namespace Apos.Shapes {
             _clipFrameParam = _effect.Parameters["clip_frame"];
             _clipSizeParam = _effect.Parameters["clip_size"];
             _clipCountParam = _effect.Parameters["clip_count"];
+            _textureParam = _effect.Parameters["TextureTex"];
+            _bandParam = _effect.Parameters["BandTex"];
+            _curveParam = _effect.Parameters["CurveTex"];
+            _blueNoiseParam = _effect.Parameters["BlueNoiseTex"];
+            _rampParam = _effect.Parameters["RampTex"];
+            for (int i = 0; i < _techniques.Length; i++) _techniques[i] = _effect.Techniques["Shapes" + i];
 
             _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
+            _placeholder = new Texture2D(graphicsDevice, 1, 1);
 
             if (warmup) {
                 // The driver caches the compile, so only the first batch presents. Every batch
@@ -71,7 +78,7 @@ namespace Apos.Shapes {
 
         // Draws one throwaway frame so the driver compiles the shader here. It takes a real
         // draw call: applying the pass doesn't bring the compile forward.
-        private void WarmupDraw() {
+        private void WarmupDraw(ShapeFeatures features = ShapeFeatures.None) {
             Viewport viewport = _graphicsDevice.Viewport;
             if (viewport.Width <= 0 || viewport.Height <= 0) return;
 
@@ -81,9 +88,11 @@ namespace Apos.Shapes {
             DepthStencilState depthStencilState = _graphicsDevice.DepthStencilState;
             RasterizerState rasterizerState = _graphicsDevice.RasterizerState;
 
+            _warmupFeatures = (int)features;
             Begin();
             FillCircle(new Vector2(-8f, -8f), 1f, Color.White); // Outside the viewport, so it writes no pixels.
             End();
+            _warmupFeatures = 0;
 
             _graphicsDevice.BlendState = blendState;
             _graphicsDevice.SamplerStates[0] = samplerState;
@@ -96,14 +105,21 @@ namespace Apos.Shapes {
         /// instead of during the first frame that draws a shape.
         /// </summary>
         /// <remarks>
-        /// The constructor does this by default, so this is for a game that opted out and wants
-        /// to pick the moment itself. It clears to black and presents, so the screen should be
-        /// blank. Does nothing while a render target is bound, since the present isn't ours.
+        /// The shader comes in a smaller and faster to compile version for every combination of
+        /// <see cref="ShapeFeatures"/>, and each one compiles the first time something draws with
+        /// it. Pass every feature the game draws in the same batch: a batch with dashes and text
+        /// in it draws with the version that has both. Once a version has compiled, a batch that
+        /// needs less draws with it rather than waiting on a smaller one.
+        ///
+        /// The constructor warms up the version with none of them by default. It clears to black
+        /// and presents, so the screen should be blank. Does nothing while a render target is
+        /// bound, since the present isn't ours.
         /// </remarks>
-        public void Warmup() {
+        /// <param name="features">The features to compile the shader with.</param>
+        public void Warmup(ShapeFeatures features = ShapeFeatures.None) {
             if (_graphicsDevice.GetRenderTargets().Length > 0) return;
 
-            WarmupDraw();
+            WarmupDraw(features);
 
             // Cleared first so the present shows black instead of an unwritten backbuffer.
             _graphicsDevice.Clear(Color.Black);
@@ -3070,6 +3086,7 @@ namespace Apos.Shapes {
                 _vertexBuffer.Dispose();
                 _indexBuffer.Dispose();
                 _blueNoise.Dispose();
+                _placeholder.Dispose();
                 _rampAtlas?.Dispose();
                 _glyphAtlas?.Dispose();
             }
@@ -3086,6 +3103,11 @@ namespace Apos.Shapes {
             UploadRamps();
             _rampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
             UploadGlyphs();
+            // Making a texture binds it on whichever unit GL last had active, behind the back of
+            // the device's record of what each unit holds, so a unit can end up holding a glyph
+            // table while the record still says blue noise and nothing ever rebinds it. Clearing
+            // the units makes every draw below bind what it uses.
+            for (int i = 0; i < 5; i++) _graphicsDevice.Textures[i] = null;
 
             if (_indicesChanged) {
                 _vertexBuffer.Dispose();
@@ -3124,7 +3146,7 @@ namespace Apos.Shapes {
                     _clipSizeParam?.SetValue(_clipSizes);
                     _clipCountParam?.SetValue((float)run.ClipCount);
                 }
-                DrawRange(run.Texture, run.FirstIndex, (end - run.FirstIndex) / 3);
+                DrawRange(run.Texture, run.FirstIndex, end - run.FirstIndex);
             }
 
             _triangleCount = 0;
@@ -3139,12 +3161,31 @@ namespace Apos.Shapes {
             _glyphs.Flushed();
         }
 
-        private void DrawRange(Texture2D? texture, int firstIndex, int triangles) {
-            foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
+        // Draws a stretch of the index buffer with the cheapest technique that has every feature
+        // its quads use.
+        private void DrawRange(Texture2D? texture, int firstIndex, int indexCount) {
+            EffectTechnique technique = PickTechnique(RangeFeatures(firstIndex, indexCount) | _warmupFeatures);
+            if (_blueNoiseParam != null) {
+                // The built-in shader names its textures, and each technique's shader may keep
+                // them on different units, so they go over by name and Apply places them.
+                // A table that doesn't exist yet gets a texel of its own rather than another
+                // texture: GL keeps sampling settings on the texture, so sharing one would hand
+                // the noise the ramp's clamping. The shader never reads it in that case.
+                if (texture != null) _textureParam?.SetValue(texture);
+                _bandParam?.SetValue(_glyphAtlas?.Band ?? _placeholder);
+                _curveParam?.SetValue(_glyphAtlas?.Curve ?? _placeholder);
+                _blueNoiseParam.SetValue(_blueNoise);
+                _rampParam?.SetValue(_rampAtlas ?? _placeholder);
+                foreach (EffectPass pass in technique.Passes) {
+                    pass.Apply();
+                    _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, firstIndex, indexCount / 3);
+                }
+                return;
+            }
+            foreach (EffectPass pass in technique.Passes) {
                 pass.Apply();
-                // Five units, in the order the pixel shader first samples them. See the note on
-                // the sampler declarations in apos-shapes.fx: these numbers and that order have
-                // to agree, and nothing warns when they don't.
+                // A replacement shader without named textures gets them on five fixed units, in
+                // the order the built-in one first samples them.
                 if (texture != null) _graphicsDevice.Textures[0] = texture;
                 if (_glyphAtlas?.Band != null && _glyphAtlas.Curve != null) {
                     // Both glyph tables are read texel by texel as data, so they must arrive
@@ -3158,11 +3199,49 @@ namespace Apos.Shapes {
                 _graphicsDevice.SamplerStates[3] = SamplerState.PointWrap;
                 // The ramp unit stays bound to something valid even with no atlas: the shader
                 // only samples it under a ramp flag no quad sets in that case.
-                _graphicsDevice.Textures[4] = _rampAtlas ?? _blueNoise;
+                _graphicsDevice.Textures[4] = _rampAtlas ?? _placeholder;
                 _graphicsDevice.SamplerStates[4] = SamplerState.PointClamp;
 
-                _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, firstIndex, triangles);
+                _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, firstIndex, indexCount / 3);
             }
+        }
+
+        // The technique for a stretch that uses these features. One that hasn't drawn yet would
+        // stall on its first compile, so while some technique that has drawn covers them, that
+        // one stands in instead, the smallest of them if there are several. A warmup asks for
+        // exactly what it names, since compiling that is the point of it.
+        private EffectTechnique PickTechnique(int features) {
+            if (_techniques[features] == null) return _effect.CurrentTechnique;
+            if (!_compiled[features] && _warmupFeatures == 0) {
+                int best = -1;
+                for (int i = 0; i < _techniques.Length; i++) {
+                    if (_compiled[i] && (i & features) == features && (best < 0 || BitCount(i) < BitCount(best))) best = i;
+                }
+                if (best >= 0) return _techniques[best]!;
+            }
+            _compiled[features] = true;
+            return _techniques[features]!;
+        }
+        private static int BitCount(int v) => (v & 1) + (v >> 1 & 1) + (v >> 2 & 1);
+
+        // Which of the three features the techniques split on the quads in a stretch use, as the
+        // technique's index: dashes in bit 0, gradients beyond a flat color in bit 1, text in bit
+        // 2. Each quad's first vertex says, in the packed meta it carries for the shader and in
+        // the negated color lanes that flag a palette, a ramp or a color ramp.
+        private int RangeFeatures(int firstIndex, int indexCount) {
+            int features = 0;
+            for (int q = firstIndex / 6, end = (firstIndex + indexCount) / 6; q < end && features != 7; q++) {
+                ref VertexShape v = ref _vertices[q * 4];
+                int meta = (int)v.TextureCoordinate.W;
+                int shape = meta % 16;
+                int fillStyle = meta / 16 % 16;
+                int borderStyle = meta / 1024 % 16;
+                int dash = meta / 262144 % 4;
+                if (dash != 0) features |= 1;
+                if (fillStyle != 0 || borderStyle != 0 || ((v.FillA | v.FillB | v.BorderA | v.BorderB) & 0x8000800080008000ul) != 0) features |= 2;
+                if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= 4;
+            }
+            return features;
         }
 
         // Brings the two glyph textures up to date with the table's arenas, then hands the
@@ -3219,7 +3298,7 @@ namespace Apos.Shapes {
         // The style rides in the sign of the width the shader reads, which costs nothing:
         // every interpolator is spoken for and the packed meta is one doubling short of what
         // one carries exactly. A call that passes a negative width asks for the centered band
-        // whatever the batch is set to. See the note at the top of SpritePixelShader.
+        // whatever the batch is set to. See the note at the top of ShapePixel.
         private float Aa(float aaSize) => AAStyle == AAStyle.Centered ? -MathF.Abs(aaSize) : aaSize;
 
         // The sign of aaSize says where the fade sits, not how wide it is, so every margin
@@ -4186,7 +4265,20 @@ namespace Apos.Shapes {
         private readonly EffectParameter? _bandTexSize;
         private readonly EffectParameter? _bandTexel;
         private readonly EffectParameter? _curveTexel;
+        private readonly EffectParameter? _textureParam;
+        private readonly EffectParameter? _bandParam;
+        private readonly EffectParameter? _curveParam;
+        private readonly EffectParameter? _blueNoiseParam;
+        private readonly EffectParameter? _rampParam;
+        // The built-in shader's techniques by the features they carry; null for a replacement
+        // shader, which draws with its current technique.
+        private readonly EffectTechnique?[] _techniques = new EffectTechnique?[8];
+        // Which techniques this batch has drawn with, and so has already paid to compile.
+        private readonly bool[] _compiled = new bool[8];
+        // Set only while a warmup draws, to the features it was asked to compile.
+        private int _warmupFeatures;
         private readonly Texture2D _blueNoise;
+        private readonly Texture2D _placeholder;
         // This batch's own ramp table and the atlas that mirrors it lazily by row generation,
         // so recycled rows reupload exactly like new ones. Rows referenced since the last
         // flush stay pinned, so they can't be recycled out from under the quads that packed

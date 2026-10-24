@@ -9,10 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `PushClip` and `PopClip` nest clips. Each one keeps its own rounding and rotation, and draws land where they all overlap.
+- `Warmup` takes `ShapeFeatures` to compile the shader version for dashes, gradients, text, or any mix of them ahead of time.
 
 ### Changed
 
-- The shader compiles much faster the first time a game starts.
+- The shader compiles much faster the first time a game starts, and fastest for games that only use flat colors.
 - Shapes draw faster, most of all large ones that are dashed or have both a fill and a border.
 - A dash pattern now runs along the middle of the border, so its phase shifts slightly from before.
 - Every clip change now costs a draw call, while the batch still uploads once.
@@ -27,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Round dashes on chamfers and narrow triangles no longer break apart at the corners.
 - Dashes on an ellipse no longer jump when its width and height trade places as the larger one.
+- Blue noise dithering works on OpenGL in batches without a ramp, and no longer turns to blocks after text grows the glyph tables.
 
 ## [0.8.7] - 2026-10-23
 

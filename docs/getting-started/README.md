@@ -51,6 +51,14 @@ The constructor warms up the shader, which gets the driver to compile it as earl
 _sb = new ShapeBatch(GraphicsDevice, warmup: false);
 ```
 
+The shader comes in a smaller version for each mix of dashes, gradients, and text, and each one compiles the first time something draws with it. Flat colors need the smallest one, which is what the constructor warms up. If your game draws text with gradients, you can warm up that version too:
+
+```csharp
+_sb.Warmup(ShapeFeatures.Text | ShapeFeatures.Gradients);
+```
+
+A batch draws with the version that has everything in it, so name the features your game draws together. Once a version has compiled, a batch that needs less keeps using it instead of waiting on a smaller one.
+
 In your game's draw loop, call `Begin` and `End` and do your drawing between those two calls:
 
 ```csharp
