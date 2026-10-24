@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A dash pattern now runs along the middle of the border, so its phase shifts slightly from before.
 - Every clip change now costs a draw call, while the batch still uploads once.
 - Switching textures in the middle of a batch costs a draw call instead of a whole new upload.
+- The assembly is about a third smaller.
 - `VertexShape` is 28 bytes smaller. `Position` is a `Vector2` and the clip fields are gone, along with the constructor's `clip` parameter.
 
 ### Removed

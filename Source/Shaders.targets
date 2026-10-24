@@ -1,0 +1,22 @@
+<Project>
+  <!-- The compiled shaders are mostly text that repeats across their techniques, so they ship
+       gzipped and the batch inflates the one it loads. -->
+  <UsingTask TaskName="AposGzip" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        foreach (var file in Files) {
+          using (var input = File.OpenRead(file.ItemSpec))
+          using (var output = File.Create(file.ItemSpec + ".gz"))
+          using (var gzip = new GZipStream(output, CompressionLevel.Optimal)) {
+            input.CopyTo(gzip);
+          }
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+</Project>

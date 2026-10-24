@@ -173,13 +173,16 @@ namespace Apos.Shapes {
         }
 #endif
 
+        // The shaders ship gzipped; see Shaders.targets.
         private static byte[] ReadEmbeddedBytes(string name) {
-            using var stream = typeof(ShapeBatch).Assembly.GetManifestResourceStream(name)
-                ?? throw new InvalidOperationException($"Missing embedded resource \"{name}\".");
-            byte[] bytes = new byte[stream.Length];
-            stream.ReadExactly(bytes);
-            UseHighpFloats(bytes);
-            return bytes;
+            using var stream = typeof(ShapeBatch).Assembly.GetManifestResourceStream(name + ".gz")
+                ?? throw new InvalidOperationException($"Missing embedded resource \"{name}.gz\".");
+            using var gzip = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
+            using var bytes = new System.IO.MemoryStream();
+            gzip.CopyTo(bytes);
+            byte[] shader = bytes.ToArray();
+            UseHighpFloats(shader);
+            return shader;
         }
 
         /// <summary>
