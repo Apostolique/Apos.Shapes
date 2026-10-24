@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.8.7] - 2026-10-23
+
 ### Fixed
 
 - Shapes now draw on real iOS and Android devices, where the OpenGL shader used to run at 16-bit precision and draw nothing.
@@ -429,7 +433,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.6...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.7...HEAD
+[0.8.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.3...v0.8.4
