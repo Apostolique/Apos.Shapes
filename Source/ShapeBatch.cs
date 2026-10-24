@@ -286,13 +286,11 @@ namespace Apos.Shapes {
                 if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, wf, wb, thickness, aaOffset, aaSize, dash)) return;
             }
 
-            ResolvedDash rd = default;
-
             if (thickness > 0f && IsTransparent(fill)) {
                 float holeRadius = radius - thickness - aaOffset - _pixelSize;
                 if (holeRadius > _hollowMinHolePixels * _pixelSize) {
                     GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
-                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, rd.Period, rd.FracPhase, 0f, 0f, rd.TypeDigit);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, 0f, 0f, 0f, 0f);
                     return;
                 }
             }
@@ -312,7 +310,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius1, -radius1), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius1, radius1), GetClipSpace(bottomRight));
@@ -396,7 +394,6 @@ namespace Apos.Shapes {
             float b = rBR;
             float c = rTL;
             float d = rBL;
-            ResolvedDash rd = default;
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float maxCorner = MathF.Max(MathF.Max(rTL, rTR), MathF.Max(rBR, rBL));
@@ -406,12 +403,12 @@ namespace Apos.Shapes {
                 if (hole.X > 4f * _pixelSize && hole.Y > 4f * _pixelSize && hole.X * hole.Y > minHole * minHole) {
                     Span<Vector2> outerCorners = stackalloc Vector2[] { new(-half1.X, -half1.Y), new(half1.X, -half1.Y), new(half1.X, half1.Y), new(-half1.X, half1.Y) };
                     Span<Vector2> innerCorners = stackalloc Vector2[] { new(-hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, hole.Y), new(-hole.X, hole.Y) };
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d, rd.TypeDigit);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d);
                     return;
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -1331,12 +1328,6 @@ namespace Apos.Shapes {
 
             radius -= rounded;
 
-            // Six sides plus the six corner arcs, walked on the pattern radius rather than the
-            // rounding, with the hexagon re-inset to keep those arcs tangent to the same edges.
-            float hexOut = radius + rounded; // Apothem of the outline itself.
-            float hexPatternR = PatternRadius(rounded, thickness, hexOut * 0.5f);
-            ResolvedDash rd = dash.Resolve(4f * MathF.Sqrt(3f) * (hexOut - hexPatternR) + MathF.Tau * hexPatternR, closed: true);
-
             Vector2 size = new(width1, radius1);
 
             var topLeft = center - size;
@@ -1368,12 +1359,12 @@ namespace Apos.Shapes {
                     Span<Vector2> innerCorners = stackalloc Vector2[6];
                     HexagonCorners(radius + rounded + aaOffset + _pixelSize, outerCorners);
                     HexagonCorners(holeApothem, innerCorners);
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Hexagon, fill, border, thickness, radius, 1f, aaSize, rounded, rd.Period, rd.FracPhase, 0f, 0f, rd.TypeDigit);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Hexagon, fill, border, thickness, radius, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
                     return;
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(size.X, -size.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(size.X, size.Y), GetClipSpace(bottomRight));
@@ -1438,12 +1429,6 @@ namespace Apos.Shapes {
 
             halfWidth -= rounded * MathF.Sqrt(3f);
 
-            // Three sides plus the three corner arcs, walked on the pattern radius rather than the
-            // rounding, with the triangle re-inset to keep those arcs tangent to the same edges.
-            float eqOut = halfWidth / MathF.Sqrt(3f) + rounded; // Apothem of the outline itself.
-            float eqPatternR = PatternRadius(rounded, thickness, eqOut * 0.5f);
-            ResolvedDash rd = dash.Resolve(6f * MathF.Sqrt(3f) * (eqOut - eqPatternR) + MathF.Tau * eqPatternR, closed: true);
-
             var topLeft = center - new Vector2(halfWidth1, incircle1);
             var topRight = center + new Vector2(halfWidth1, -incircle1);
             var bottomRight = center + new Vector2(halfWidth1, circumcircle1);
@@ -1478,12 +1463,12 @@ namespace Apos.Shapes {
                         // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
                         innerCorners[i] = holeOffset <= 0f ? corners[i] * scaleIn : corners[i] + Vector2.Normalize(corners[i]) * holeOffset;
                     }
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, rd.Period, rd.FracPhase, 0f, 0f, rd.TypeDigit);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
                     return;
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, a: rd.Period, b: rd.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, GetClipSpace(topLeft), aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(halfWidth1, circumcircle1), GetClipSpace(bottomRight));
@@ -1614,22 +1599,6 @@ namespace Apos.Shapes {
             B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
             C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
 
-            // Three sides of the shrunk triangle plus the corner arcs of the dilation, which sum
-            // to a full turn. Dashed triangles put A at the local origin so the pattern can ride
-            // in the two channels A normally occupies. The pattern walks corners wider than the
-            // rounding, so the walk is over the triangle inset by that much again.
-            Vector2 pA = A, pB = B, pC = C;
-            float triPatternR = rounded;
-            if (dash.IsEnabled) {
-                float triInR = 2f * TriangleArea(A, B, C) / MathF.Max(Vector2.Distance(A, B) + Vector2.Distance(B, C) + Vector2.Distance(C, A), 1e-6f);
-                triPatternR = PatternRadius(rounded, thickness, rounded + triInR * 0.5f);
-                InsetTriangle(ref pA, ref pB, ref pC, triPatternR - rounded);
-            }
-            ResolvedDash rd = dash.Resolve(Vector2.Distance(pA, pB) + Vector2.Distance(pB, pC) + Vector2.Distance(pC, pA) + MathF.Tau * triPatternR, closed: true);
-            Vector2 shift = rd.TypeDigit > 0 ? A : Vector2.Zero;
-            float sdfA = rd.TypeDigit > 0 ? rd.Period : A.X;
-            float sdfB = rd.TypeDigit > 0 ? rd.FracPhase : A.Y;
-
             if (thickness > 0f && IsTransparent(fill)) {
                 float inradius = inRadius * ratioDistance;
                 float holeOffset = rounded - thickness - aaOffset - _pixelSize;
@@ -1641,22 +1610,21 @@ namespace Apos.Shapes {
                     Span<Vector2> outerCorners = stackalloc Vector2[3];
                     Span<Vector2> innerCorners = stackalloc Vector2[3];
                     for (int i = 0; i < 3; i++) {
-                        outerCorners[i] = inCenter + (corners[i] - inCenter) * scaleOut - shift;
+                        outerCorners[i] = inCenter + (corners[i] - inCenter) * scaleOut;
                         // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
-                        innerCorners[i] = (holeOffset <= 0f ? inCenter + (corners[i] - inCenter) * scaleIn : corners[i] + Vector2.Normalize(corners[i] - inCenter) * holeOffset) - shift;
+                        innerCorners[i] = holeOffset <= 0f ? inCenter + (corners[i] - inCenter) * scaleIn : corners[i] + Vector2.Normalize(corners[i] - inCenter) * holeOffset;
                     }
-                    // This shape's local coordinates are the world coordinates themselves, minus the
-                    // dash shift; passing the shift as the frame origin keeps the world positions put.
-                    EmitHollowFrame(shift, 0f, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, sdfB, aaSize, rounded, B.X - shift.X, B.Y - shift.Y, C.X - shift.X, C.Y - shift.Y, rd.TypeDigit);
+                    // This shape's local coordinates are the world coordinates themselves.
+                    EmitHollowFrame(Vector2.Zero, 0f, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, A.X, A.Y, aaSize, rounded, B.X, B.Y, C.X, C.Y);
                     return;
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), topLeft - shift, VertexShape.Shape.Triangle, fill, border, thickness, sdfA, GetClipSpace(topLeft), height: sdfB, aaSize: Aa(aaSize), rounded: rounded, a: B.X - shift.X, b: B.Y - shift.Y, c: C.X - shift.X, d: C.Y - shift.Y, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), topLeft, VertexShape.Shape.Triangle, fill, border, thickness, A.X, GetClipSpace(topLeft), height: A.Y, aaSize: Aa(aaSize), rounded: rounded, a: B.X, b: B.Y, c: C.X, d: C.Y, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
-            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), topRight - shift, GetClipSpace(topRight));
-            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), bottomRight - shift, GetClipSpace(bottomRight));
-            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), bottomLeft - shift, GetClipSpace(bottomLeft));
+            v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), topRight, GetClipSpace(topRight));
+            v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), bottomRight, GetClipSpace(bottomRight));
+            v.CopyTo(ref _vertices[_vertexCount + 3], new Vector3(bottomLeft, 0), bottomLeft, GetClipSpace(bottomLeft));
 
             _triangleCount += 2;
             _vertexCount += 4;
@@ -1706,14 +1674,6 @@ namespace Apos.Shapes {
                 if (EmitDashedEllipse(center, rotation, radius1, radius2, wf, wb, thickness, aaOffset, aaSize, dash)) return;
             }
 
-            // A quarter of the perimeter, which is what the shader walks each quadrant of the
-            // contour with; the whole perimeter is what the pattern is fitted to.
-            float quarter = dash.IsEnabled ? EllipseArc.Quarter(radius1, radius2) : 0f;
-            ResolvedDash rd = dash.Resolve(4f * quarter, closed: true);
-            if (rd.TypeDigit > 0) {
-                _ellipseArc ??= EllipseArc.CreateTexture(_graphicsDevice);
-            }
-
             if (thickness > 0f && IsTransparent(fill)) {
                 float minAxis = MathF.Min(radius1, radius2);
                 float holeMin = minAxis - thickness - aaOffset - _pixelSize;
@@ -1722,7 +1682,7 @@ namespace Apos.Shapes {
                     Vector2 axes = new(radius1, radius2);
                     // Scaling instead of a fixed offset: the ellipse offset outward by s fits inside the
                     // ellipse scaled by 1 + s / minAxis, and the mirrored bound holds for the hole.
-                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, rd.Period, rd.FracPhase, quarter, 0f, rd.TypeDigit);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, 0f, 0f, 0f, 0f);
                     return;
                 }
             }
@@ -1743,7 +1703,7 @@ namespace Apos.Shapes {
 
             GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: Aa(aaSize), a: rd.Period, b: rd.FracPhase, c: quarter, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(topLeft), radius2, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(radius3, -radius4), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(radius3, radius4), GetClipSpace(bottomRight));
@@ -1821,35 +1781,10 @@ namespace Apos.Shapes {
 
             if (dash.IsEnabled && thickness > 0f && EmitDashedChamfer(center, rotation, half, cTL, cTR, cBR, cBL, fill, border, thickness, aaOffset, aaSize, dash)) return;
 
-            // Dashed chamfers ship their four cuts as 11 bit fractions of the largest allowed cut,
-            // freeing two channels for the pattern. Snapping the cuts to that grid here keeps the
-            // CPU perimeter bit-exact with the one the shader walks.
-            ResolvedDash rd = default;
-            if (dash.IsEnabled) {
-                if (maxC > 0f) {
-                    cTL = MathF.Round(cTL / maxC * 2047f) / 2047f * maxC;
-                    cTR = MathF.Round(cTR / maxC * 2047f) / 2047f * maxC;
-                    cBR = MathF.Round(cBR / maxC * 2047f) / 2047f * maxC;
-                    cBL = MathF.Round(cBL / maxC * 2047f) / 2047f * maxC;
-                }
-                // Round capped dashes ride the band's centerline and are parameterized by its own
-                // arc length, so their pattern resolves against that; see ChamferDashCut. Butt
-                // dashes keep the widened pattern contour their cuts are placed on.
-                rd = dash.Resolve(dash.Cap == DashCap.Round
-                    ? ChamferCenterPerimeter(half, cTL, cTR, cBR, cBL, thickness)
-                    : ChamferPatternPerimeter(half, cTL, cTR, cBR, cBL, thickness), closed: true);
-            }
             float a = cTR;
             float b = cBR;
             float c = cTL;
             float d = cBL;
-            if (rd.TypeDigit > 0) {
-                float mc = MathF.Max(maxC, 1e-9f);
-                a = DashStyle.Pack11(cTR / mc, cBR / mc);
-                b = DashStyle.Pack11(cTL / mc, cBL / mc);
-                c = rd.Period;
-                d = rd.FracPhase;
-            }
 
             if (thickness > 0f && IsTransparent(fill)) {
                 float maxCorner = MathF.Max(MathF.Max(cTL, cTR), MathF.Max(cBR, cBL));
@@ -1871,12 +1806,12 @@ namespace Apos.Shapes {
                         new(-hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, hole.Y),
                         new(hole.X, hole.Y), new(-hole.X, hole.Y), new(-hole.X, hole.Y), new(-hole.X, -hole.Y),
                     };
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Chamfer, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d, rd.TypeDigit);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Chamfer, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d);
                     return;
                 }
             }
 
-            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps, dash: rd.TypeDigit);
+            VertexShape v = new(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Chamfer, fill, border, thickness, half.X, GetClipSpace(topLeft), half.Y, aaSize: Aa(aaSize), rounded: 0f, a: a, b: b, c: c, d: d, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), GetClipSpace(topRight));
             v.CopyTo(ref _vertices[_vertexCount + 2], new Vector3(bottomRight, 0), new Vector2(half1.X, half1.Y), GetClipSpace(bottomRight));
@@ -3028,7 +2963,6 @@ namespace Apos.Shapes {
                 _vertexBuffer.Dispose();
                 _indexBuffer.Dispose();
                 _blueNoise.Dispose();
-                _ellipseArc?.Dispose();
                 _rampAtlas?.Dispose();
                 _glyphAtlas?.Dispose();
             }
@@ -3072,7 +3006,7 @@ namespace Apos.Shapes {
 
             foreach (EffectPass pass in _effect.CurrentTechnique.Passes) {
                 pass.Apply();
-                // Six units, in the order the pixel shader first samples them. See the note on
+                // Five units, in the order the pixel shader first samples them. See the note on
                 // the sampler declarations in apos-shapes.fx: these numbers and that order have
                 // to agree, and nothing warns when they don't.
                 if (_texture != null) _graphicsDevice.Textures[0] = _texture;
@@ -3084,18 +3018,12 @@ namespace Apos.Shapes {
                     _graphicsDevice.Textures[2] = _glyphAtlas.Curve;
                     _graphicsDevice.SamplerStates[2] = SamplerState.PointClamp;
                 }
-                if (_ellipseArc != null) {
-                    // The shader reads the table's 16 bit values apart by hand, so it must arrive
-                    // unfiltered; clamped because the walk runs to both ends of the quadrant.
-                    _graphicsDevice.Textures[3] = _ellipseArc;
-                    _graphicsDevice.SamplerStates[3] = SamplerState.PointClamp;
-                }
-                _graphicsDevice.Textures[4] = _blueNoise;
-                _graphicsDevice.SamplerStates[4] = SamplerState.PointWrap;
+                _graphicsDevice.Textures[3] = _blueNoise;
+                _graphicsDevice.SamplerStates[3] = SamplerState.PointWrap;
                 // The ramp unit stays bound to something valid even with no atlas: the shader
                 // only samples it under a ramp flag no quad sets in that case.
-                _graphicsDevice.Textures[5] = _rampAtlas ?? _blueNoise;
-                _graphicsDevice.SamplerStates[5] = SamplerState.PointClamp;
+                _graphicsDevice.Textures[4] = _rampAtlas ?? _blueNoise;
+                _graphicsDevice.SamplerStates[4] = SamplerState.PointClamp;
 
                 _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _triangleCount);
             }
@@ -3409,40 +3337,11 @@ namespace Apos.Shapes {
             public float DashArc;   // Pattern length the joint's fan consumes. Dashed only.
         }
 
-        // Mirrors the shader's PatternRadius: the radius the dash pattern walks a corner on, which
-        // runs wider than the shape's rounding so the arc center every cut in that corner converges
-        // on lands past the border band's inner edge instead of inside it.
+        // The radius a butt dash pattern turns a corner on, which runs wider than the shape's
+        // rounding so the center every cut in that corner converges on lands past the border
+        // band's inner edge instead of inside it.
         private static float PatternRadius(float rounded, float thickness, float cap) {
             return MathF.Max(rounded, MathF.Min(1.5f * thickness, cap));
-        }
-
-        // Length of the contour the dash pattern walks on a chamfer box. Mirrors ChamferPattern
-        // and ChamferSpans in the shader: the pattern's cuts are widened until every one of the
-        // eight vertices has room for a fillet of the pattern radius, then all eight are filleted,
-        // which trades 2 * tan(22.5) of straight run per vertex for a quarter of that radius'
-        // circumference.
-        private static float ChamferPatternPerimeter(Vector2 half, float cTL, float cTR, float cBR, float cBL, float thickness) {
-            float rp = MathF.Max(MathF.Min(1.5f * thickness, MathF.Min(half.X, half.Y) * 0.5f), 0f);
-            float fillet = (MathF.Sqrt(2f) - 1f) * rp;
-            float lo = (2f - MathF.Sqrt(2f)) * rp;
-            float hi = MathF.Min(half.X, half.Y) - fillet;
-            float cuts = MathHelper.Clamp(cTL, lo, hi) + MathHelper.Clamp(cTR, lo, hi)
-                       + MathHelper.Clamp(cBR, lo, hi) + MathHelper.Clamp(cBL, lo, hi);
-            return 4f * (half.X + half.Y) - (2f - MathF.Sqrt(2f)) * cuts - 16f * fillet + MathF.Tau * rp;
-        }
-
-        // Length of the band's centerline on a chamfer box, which is what a round capped dash
-        // pattern resolves against; see ChamferDashCut. The centerline is the outline inset by
-        // half the band: another chamfer box, its half extents in by that much and each cut leg
-        // shorter by (2 - sqrt(2)) times it, held to what the inset box has room for.
-        private static float ChamferCenterPerimeter(Vector2 half, float cTL, float cTR, float cBR, float cBL, float thickness) {
-            float rd = thickness * 0.5f;
-            Vector2 h = new(MathF.Max(half.X - rd, 1e-4f), MathF.Max(half.Y - rd, 1e-4f));
-            float hi = MathF.Min(h.X, h.Y);
-            float pull = (2f - MathF.Sqrt(2f)) * rd;
-            float cuts = MathHelper.Clamp(cTL - pull, 0f, hi) + MathHelper.Clamp(cTR - pull, 0f, hi)
-                       + MathHelper.Clamp(cBR - pull, 0f, hi) + MathHelper.Clamp(cBL - pull, 0f, hi);
-            return 4f * (h.X + h.Y) - (2f - MathF.Sqrt(2f)) * cuts;
         }
 
         // The eight corners of a chamfer box, clockwise on screen from where the top edge leaves
@@ -3456,34 +3355,6 @@ namespace Apos.Shapes {
             corners[5] = new Vector2(-half.X + cBL, half.Y);
             corners[6] = new Vector2(-half.X, half.Y - cBL);
             corners[7] = new Vector2(-half.X, -half.Y + cTL);
-        }
-
-        private static float TriangleArea(Vector2 a, Vector2 b, Vector2 c) {
-            return 0.5f * MathF.Abs((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X));
-        }
-
-        // Pushes every edge inward by delta, sliding each vertex along its miter. Mirrors the
-        // shader's MiterShift; parallel inset leaves the edge directions, and so the corner arc
-        // spans, exactly as they were.
-        private static void InsetTriangle(ref Vector2 a, ref Vector2 b, ref Vector2 c, float delta) {
-            if (delta <= 0f) return;
-            float orr = ((b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X)) >= 0f ? 1f : -1f;
-            Vector2 g0 = Vector2.Normalize(b - a);
-            Vector2 g1 = Vector2.Normalize(c - b);
-            Vector2 g2 = Vector2.Normalize(a - c);
-            Vector2 n0 = orr * new Vector2(g0.Y, -g0.X);
-            Vector2 n1 = orr * new Vector2(g1.Y, -g1.X);
-            Vector2 n2 = orr * new Vector2(g2.Y, -g2.X);
-            Vector2 Shift(Vector2 nIn, Vector2 nOut) {
-                Vector2 s = nIn + nOut;
-                return -s * (delta / MathF.Max(1f + Vector2.Dot(nIn, nOut), 1e-3f));
-            }
-            Vector2 sa = Shift(n2, n0);
-            Vector2 sb = Shift(n0, n1);
-            Vector2 sc = Shift(n1, n2);
-            a += sa;
-            b += sb;
-            c += sc;
         }
 
         // The first and last vertices reuse the stored wall corners so the fan shares them bitwise with
@@ -4142,8 +4013,6 @@ namespace Apos.Shapes {
         private readonly EffectParameter? _bandTexel;
         private readonly EffectParameter? _curveTexel;
         private readonly Texture2D _blueNoise;
-        // Built the first time an ellipse is dashed, since nothing else reads it.
-        private Texture2D? _ellipseArc;
         // This batch's own ramp table and the atlas that mirrors it lazily by row generation,
         // so recycled rows reupload exactly like new ones. Rows referenced since the last
         // flush stay pinned, so they can't be recycled out from under the quads that packed
