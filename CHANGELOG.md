@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Changed
+
+- The shader compiles much faster the first time a game starts.
+- Large dashed shapes draw faster.
+- A dash pattern now runs along the middle of the border, so its phase shifts slightly from before.
+
+### Fixed
+
+- Round dashes on chamfers and narrow triangles no longer break apart at the corners.
 
 ## [0.8.7] - 2026-10-23
 
