@@ -273,12 +273,13 @@ namespace Apos.Shapes {
             if (dash.IsEnabled && thickness > 0f) {
                 // A regular polygon rounded all the way to its edges' midpoints, so its pieces
                 // are all corner and no edge. Eight of them keep what the miters reach past a
-                // large circle small.
+                // large circle small. The pattern starts on the last split, which goes on the
+                // +x axis whatever the count, so changing it moves no dash.
                 int sides = radius > 64f * _pixelSize ? 8 : 4;
                 Span<Vector2> outline = stackalloc Vector2[sides];
                 Span<Vector2> splits = stackalloc Vector2[sides];
                 Span<float> radii = stackalloc float[sides];
-                RegularOutline(radius, 0f, outline, splits);
+                RegularOutline(radius, MathF.Tau / sides, outline, splits);
                 radii.Fill(radius);
                 Gradient wf = fill;
                 Gradient wb = border;
@@ -3417,6 +3418,7 @@ namespace Apos.Shapes {
             public float CosHalf; // Of half the turn, which is what the bisector makes with each normal.
             public float TanHalf;
             public float Radius;
+            public float Cut; // How far back along both edges a square corner is cut straight across.
             public float PatternRadius;
             public float Start;
         }
@@ -3429,12 +3431,14 @@ namespace Apos.Shapes {
         // its own corner and two edges and stays exact all the way in. vertices are where the edge
         // lines meet, clockwise on screen, and edge k runs from vertex k to vertex k + 1 with its
         // split at splits[k]. Piece k closes inward through inner[innerEnds[k - 1]..innerEnds[k]],
-        // listed from its outgoing split around to its incoming one. Returns false when the
-        // pattern comes out solid.
-        private bool EmitDashedOutline(Vector2 origin, float rotation, ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, ReadOnlySpan<Vector2> inner, ReadOnlySpan<int> innerEnds, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash) {
+        // listed from its outgoing split around to its incoming one. A corner can also be a square
+        // one cut straight across, and can be handed the circle its pattern turns on; both stay
+        // empty for everything but a chamfer. Returns false when the pattern comes out solid.
+        private bool EmitDashedOutline(Vector2 origin, float rotation, ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, ReadOnlySpan<Vector2> inner, ReadOnlySpan<int> innerEnds, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash, ReadOnlySpan<float> cuts = default, ReadOnlySpan<float> patternRadii = default) {
             int n = vertices.Length;
             Span<OutlineCorner> corners = stackalloc OutlineCorner[n];
-            ResolvedDash pattern = dash.Resolve(ResolveOutline(vertices, radii, splits, thickness, dash.Cap == DashCap.Round, corners), closed: true);
+            float length = ResolveOutline(vertices, radii, cuts, patternRadii, splits, thickness, dash.Cap == DashCap.Round, corners, out float perimeter);
+            ResolvedDash pattern = dash.Resolve(length, closed: true, fit: perimeter);
             if (pattern.TypeDigit == 0) return false;
 
             // The colors and gradients pack once for the whole outline; each piece only changes its
@@ -3511,7 +3515,7 @@ namespace Apos.Shapes {
                     if (skips[prev]) poly[m++] = g1;
                     poly[m++] = f1;
                 }
-                template.Meta2 = new Vector4(c.Turn, c.Radius, c.PatternRadius, c.Start);
+                template.Meta2 = new Vector4(c.Turn, c.Cut > 0f ? -c.Cut : c.Radius, c.PatternRadius, c.Start);
                 EmitPieceFan(template, c, poly[..m], origin, sin, cos);
             }
             return true;
@@ -3529,8 +3533,9 @@ namespace Apos.Shapes {
             return EmitDashedOutline(origin, rotation, vertices, radii, splits, inner, innerEnds, fill, border, thickness, aaOffset, aaSize, dash);
         }
 
-        // Fills in every corner's frame and pattern circle, and returns the pattern's length.
-        private static float ResolveOutline(ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, float thickness, bool round, Span<OutlineCorner> corners) {
+        // Fills in every corner's frame and pattern circle, and returns the pattern's length along
+        // with the outline's own.
+        private static float ResolveOutline(ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<float> cuts, ReadOnlySpan<float> patternRadii, ReadOnlySpan<Vector2> splits, float thickness, bool round, Span<OutlineCorner> corners, out float perimeter) {
             int n = vertices.Length;
             float rd = thickness * 0.5f;
             // Each edge's normal is worked out once, so the two corners either side of it share
@@ -3553,7 +3558,7 @@ namespace Apos.Shapes {
                 // Either way the circle has to leave the edges before the splits either side, or
                 // the next piece would read that stretch as straight.
                 float room = MathF.Min(Vector2.Distance(v, splits[k == 0 ? n - 1 : k - 1]), Vector2.Distance(v, splits[k])) / MathF.Max(tanHalf, 1e-6f);
-                float rp = MathF.Max(round ? r : PatternRadius(r, thickness, room * 0.5f), rd);
+                float rp = k < patternRadii.Length && patternRadii[k] > 0f ? patternRadii[k] : MathF.Max(round ? r : PatternRadius(r, thickness, room * 0.5f), rd);
                 corners[k] = new OutlineCorner {
                     Fillet = v - (nIn + nOut) * (r / MathF.Max(1f + cosT, 1e-6f)),
                     N1 = nIn,
@@ -3563,12 +3568,14 @@ namespace Apos.Shapes {
                     CosHalf = cosHalf,
                     TanHalf = tanHalf,
                     Radius = r,
+                    Cut = k < cuts.Length ? cuts[k] : 0f,
                     PatternRadius = MathF.Min(rp, room),
                 };
                 nIn = nOut;
             }
             // The pattern starts where the last edge leaves the last corner's circle.
             float u = 0f;
+            perimeter = 0f;
             for (int k = 0; k < n; k++) {
                 int prev = k == 0 ? n - 1 : k - 1;
                 ref OutlineCorner c = ref corners[k];
@@ -3576,6 +3583,8 @@ namespace Apos.Shapes {
                 u += MathF.Max(edge - PatternTangent(corners[prev]) - PatternTangent(c), 0f);
                 c.Start = u;
                 u += c.Turn * MathF.Max(c.PatternRadius - rd, 0f);
+                // A cut takes its length off both edges and puts back the diagonal across them.
+                perimeter += edge - c.Radius * (2f * c.TanHalf - c.Turn) - c.Cut * (2f - MathF.Sqrt(2f));
             }
             return u;
         }
@@ -3595,12 +3604,24 @@ namespace Apos.Shapes {
             Vector2 q = p - c.Fillet;
             float x = Vector2.Dot(q, c.N1);
             float y = c.N1.X * q.Y - c.N1.Y * q.X;
+            if (c.Cut > 0f) return CutCornerDistance(new Vector2(x, y), c.Cut);
             bool cone = c.Turn > 0f && y >= 0f && q.X * c.N2.Y - q.Y * c.N2.X >= 0f;
             return cone ? q.Length() - c.Radius : MathF.Max(x, Vector2.Dot(q, c.N2)) - c.Radius;
         }
 
+        // Mirrors the shader's CutCornerSDF.
+        private static float CutCornerDistance(Vector2 q, float cut) {
+            if (q.Y > q.X) q = new Vector2(q.Y, q.X);
+            Vector2 v = q + new Vector2(0f, cut);
+            float across = (v.X + v.Y) * 0.70710678f;
+            float d = MathF.Max(q.X, across);
+            if (d <= 0f || v.Y <= 0f) return d;
+            return v.Y - v.X >= 0f ? across : v.Length();
+        }
+
         // Where the band's inner side, depth in from the outline, crosses the corner's bisector.
         private static Vector2 HollowCorner(in OutlineCorner c, float depth) {
+            if (c.Cut > 0f) return c.Fillet - c.Bisector * MathF.Max(c.Cut * 0.70710678f + depth, depth / MathF.Max(c.CosHalf, 1e-4f));
             if (c.Radius >= depth) return c.Fillet + c.Bisector * (c.Radius - depth);
             return c.Fillet - c.Bisector * ((depth - c.Radius) / MathF.Max(c.CosHalf, 1e-4f));
         }
@@ -3668,17 +3689,29 @@ namespace Apos.Shapes {
         // the cut. A diagonal meets the quadrant's side at the same point as the neighboring
         // quadrant's diagonal does, and a corner left square keeps that point as a vertex too, so
         // every two pieces share their edge whole.
+        //
+        // A square corner's pattern turns on a circle that a cut's own two corners can't share
+        // until the cut reaches it, so a corner cut less than that stays one corner that knows
+        // its cut and keeps the square corner's circle. Past that both corners turn on that same
+        // circle for as long as they have room, and at the handover it runs through both of them
+        // exactly as it ran through the one, which keeps the pattern still while a cut grows.
         private bool EmitDashedChamfer(Vector2 center, float rotation, Vector2 half, float cTL, float cTR, float cBR, float cBL, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash) {
             // A cut all the way to the middle of a side would leave that side no length to carry a
             // normal or a split, so the dashed outline stops a hair short of it.
             float maxC = MathF.Min(half.X, half.Y) * 0.999f;
-            float minC = maxC * 1e-4f;
             ReadOnlySpan<float> cuts = stackalloc float[] { MathF.Min(cTR, maxC), MathF.Min(cBR, maxC), MathF.Min(cBL, maxC), MathF.Min(cTL, maxC) };
             bool wide = half.X >= half.Y;
             bool square = half.X == half.Y;
+            // The square corner's circle, as ResolveOutline picks it, and the cut that reaches it.
+            float rd = thickness * 0.5f;
+            float room = MathF.Min(half.X, half.Y);
+            float rpSquare = dash.Cap == DashCap.Round ? rd : MathF.Min(MathF.Max(PatternRadius(0f, thickness, room * 0.5f), rd), room);
+            float split = MathF.Max((2f - MathF.Sqrt(2f)) * rpSquare, maxC * 1e-4f);
             Span<Vector2> outline = stackalloc Vector2[8];
             Span<Vector2> splits = stackalloc Vector2[8];
             Span<float> radii = stackalloc float[8];
+            Span<float> cornerCuts = stackalloc float[8];
+            Span<float> patternRadii = stackalloc float[8];
             Span<Vector2> inner = stackalloc Vector2[16];
             Span<int> innerEnds = stackalloc int[8];
             int n = 0;
@@ -3694,11 +3727,15 @@ namespace Apos.Shapes {
                 Vector2 meet = wide ? new Vector2(MathF.Sign(corner.X) * (half.X - half.Y), 0f) : new Vector2(0f, MathF.Sign(corner.Y) * (half.Y - half.X));
                 bool meetOnOut = (q % 2 == 0) == wide;
                 float c = cuts[q];
-                if (c > minC) {
+                if (c > split) {
                     outline[n] = corner - tIn * c;
                     outline[n + 1] = corner + tOut * c;
                     splits[n] = (outline[n] + outline[n + 1]) * 0.5f;
                     splits[n + 1] = sOut;
+                    cornerCuts[n] = 0f;
+                    cornerCuts[n + 1] = 0f;
+                    patternRadii[n] = rpSquare;
+                    patternRadii[n + 1] = rpSquare;
                     if (square) {
                         inner[m++] = Vector2.Zero;
                         innerEnds[n] = m;
@@ -3719,6 +3756,8 @@ namespace Apos.Shapes {
                 } else {
                     outline[n] = corner;
                     splits[n] = sOut;
+                    cornerCuts[n] = c;
+                    patternRadii[n] = 0f;
                     inner[m++] = square || meetOnOut ? (square ? Vector2.Zero : meet) : Vector2.Zero;
                     if (!square) inner[m++] = meetOnOut ? Vector2.Zero : meet;
                     innerEnds[n] = m;
@@ -3726,7 +3765,7 @@ namespace Apos.Shapes {
                 }
             }
             radii[..n].Clear();
-            return EmitDashedOutline(center, rotation, outline[..n], radii[..n], splits[..n], inner[..m], innerEnds[..n], fill, border, thickness, aaOffset, aaSize, dash);
+            return EmitDashedOutline(center, rotation, outline[..n], radii[..n], splits[..n], inner[..m], innerEnds[..n], fill, border, thickness, aaOffset, aaSize, dash, cornerCuts[..n], patternRadii[..n]);
         }
 
         // A dashed ellipse keeps the shader's own distance, which is exact, and goes out in pieces
@@ -3753,7 +3792,7 @@ namespace Apos.Shapes {
             // The pattern runs along the band's centerline, which is shorter than the outline by
             // half the band for every radian the outline turns.
             double quarter = lengths[k] - rd * Math.PI * 0.5;
-            ResolvedDash pattern = dash.Resolve(4f * (float)quarter, closed: true);
+            ResolvedDash pattern = dash.Resolve(4f * (float)quarter, closed: true, fit: 4f * (float)lengths[k]);
             if (pattern.TypeDigit == 0) return false;
 
             // The first quadrant's boundaries: where each normal meets the major axis, and where
@@ -3806,12 +3845,14 @@ namespace Apos.Shapes {
             VertexShape template = new(Vector3.Zero, Vector2.Zero, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, GetClipSpace(center), radius2, aaSize: Aa(aaSize), rounded: pattern.FracPhase, colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
             // Clockwise on screen, the quadrants run from the end of the major axis through the
             // end of the minor one and back, mirrored in turn, every other one walking the folded
-            // angle backwards.
+            // angle backwards. The pattern starts on the ellipse's own +x axis either way, which
+            // on a tall one is where the last quadrant starts, so nothing moves as one overtakes
+            // the other.
             double period = pattern.Period;
             for (int q = 0; q < 4; q++) {
                 Vector2 sg = new(q == 1 || q == 2 ? -1f : 1f, q >= 2 ? -1f : 1f);
                 bool back = q % 2 == 1;
-                double offset = q == 0 ? 0.0 : q == 3 ? 4.0 * quarter : 2.0 * quarter;
+                double offset = tall ? (q == 0 || q == 3 ? 1.0 : 3.0) * quarter : (q == 0 ? 0.0 : q == 3 ? 4.0 : 2.0) * quarter;
                 for (int j = 0; j < k; j++) {
                     int i = back ? k - 1 - j : j;
                     template.Meta2 = EllipseCubic(cuts[i], cuts[i + 1], lengths[i], lengths[i + 1], EllipseSpeed(a, b, cuts[i]), EllipseSpeed(a, b, cuts[i + 1]), back ? -1.0 : 1.0, offset, period);

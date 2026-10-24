@@ -650,6 +650,17 @@ float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float star
 //
 // Spine point at pattern position ue: straight along the incoming edge before the fan, around
 // the pattern circle through it, and straight along the outgoing edge after it.
+// A square corner at the origin, inside where x and y are both negative, cut straight across c
+// back along both edges. It is symmetric across y = x, so one cut end and one edge remain.
+float CutCornerSDF(float2 q, float c) {
+    q = q.x >= q.y ? q : q.yx;
+    float2 v = q + float2(0.0, c);
+    float across = (v.x + v.y) * 0.70710678;
+    float d = max(q.x, across);
+    if (d <= 0.0 || v.y <= 0.0) return d;
+    return v.y >= v.x ? across : length(v);
+}
+
 float2 PieceSpine(float ue, float u0, float arc, float rc, float2 piv, float2 n2) {
     float s = ue - u0;
     if (s < 0.0) return piv + float2(rc, s);
@@ -1642,9 +1653,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     } else if (shape < 10.5) {
         // One piece of a dashed outline; see PieceSpine. Meta2 is the turn, the outline's own
         // corner radius, the radius the pattern turns on, and the pattern position where its fan
-        // starts. The pattern itself rides in the two size slots, which a piece has no use for.
+        // starts. The pattern itself rides in the two size slots, which a piece has no use for. A
+        // chamfer's square corner cut by less than its pattern circle arrives with the cut as a
+        // negative radius.
         float tau = p.Meta2.x;
-        float ro = p.Meta2.y;
+        float ro = max(p.Meta2.y, 0.0);
         float rp = p.Meta2.z;
         float u0 = p.Meta2.w;
         float rd = lineSize * 0.5;
@@ -1653,7 +1666,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
         float2 n2 = float2(h.x * h.x - h.y * h.y, 2.0 * h.x * h.y);
         // The rounded corner: the fillet's circle across its own cone, the two edges either side.
         bool cone = tau > 0.0 && q.y >= 0.0 && q.x * n2.y - q.y * n2.x >= 0.0;
-        d = cone ? length(q) - ro : max(q.x, dot(q, n2)) - ro;
+        d = p.Meta2.y < 0.0 ? CutCornerSDF(q, -p.Meta2.y) : cone ? length(q) - ro : max(q.x, dot(q, n2)) - ro;
 
         float2 piv = -h * ((rp - ro) / max(h.x, 1e-4));
         float rc = rp - rd;

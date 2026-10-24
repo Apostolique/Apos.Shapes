@@ -105,8 +105,10 @@ namespace Apos.Shapes {
 
         // Fits the pattern to a contour and packs it for the shader: the snapped period rides as a
         // full float while the dash fraction and phase, both period-relative, share one float as two
-        // 11 bit values. The phase convention puts a dash's center at u = phase * period.
-        internal ResolvedDash Resolve(float length, bool closed) {
+        // 11 bit values. The phase convention puts a dash's center at u = phase * period. A snapped
+        // count is taken from fit where one is given, which lets a border pick its count from its
+        // outer edge and so keep it while the border's thickness changes.
+        internal ResolvedDash Resolve(float length, bool closed, float fit = 0f) {
             if (!IsEnabled || !(length > 0f)) return default;
 
             float period;
@@ -130,7 +132,7 @@ namespace Apos.Shapes {
                 if (snap == DashSnap.Off) {
                     phase = closed ? 0f : frac * 0.5f;
                 } else {
-                    float n = MathF.Max(MathF.Round(length / period), 1f);
+                    float n = MathF.Max(MathF.Round((fit > 0f ? fit : length) / period), 1f);
                     if (snap == DashSnap.Tiling && !closed) {
                         // Tiling starts flush on a dash. Fitting whole periods would start the next
                         // dash exactly at u = length, and on a butt capped stroke that coincidence

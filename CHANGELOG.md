@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Round dashes on chamfers and narrow triangles no longer break apart at the corners.
+- Dashes on an ellipse no longer jump when its width and height trade places as the larger one.
 
 ## [0.8.7] - 2026-10-23
 
