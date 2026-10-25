@@ -309,11 +309,11 @@ namespace Apos.Shapes {
                 if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, wf, wb, thickness, aaOffset, aaSize, dash)) return;
             }
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
                 float holeRadius = radius - thickness - aaOffset - _pixelSize;
                 if (holeRadius > _hollowMinHolePixels * _pixelSize) {
                     GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
-                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, 0f, 0f, 0f, 0f);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, new Vector2(holeRadius), new Vector2(radius + aaOffset + _pixelSize), true, VertexShape.Shape.Circle, fill, border, thickness, radius, 1f, aaSize, 0f, 0f, 0f, 0f, 0f, interior: interior);
                     return;
                 }
             }
@@ -418,15 +418,46 @@ namespace Apos.Shapes {
             float c = rTL;
             float d = rBL;
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
+                // Whether the hole pays for its quads is judged on the box inside every corner,
+                // which keeps a small rectangle on its one quad.
+                float depth = thickness + aaOffset + _pixelSize;
                 float maxCorner = MathF.Max(MathF.Max(rTL, rTR), MathF.Max(rBR, rBL));
-                float inset = thickness + aaOffset + _pixelSize + maxCorner;
-                Vector2 hole = new(half.X - inset, half.Y - inset);
+                Vector2 hole = new(half.X - depth - maxCorner, half.Y - depth - maxCorner);
                 float minHole = _hollowMinHolePixels * _pixelSize;
                 if (hole.X > 4f * _pixelSize && hole.Y > 4f * _pixelSize && hole.X * hole.Y > minHole * minHole) {
-                    Span<Vector2> outerCorners = stackalloc Vector2[] { new(-half1.X, -half1.Y), new(half1.X, -half1.Y), new(half1.X, half1.Y), new(-half1.X, half1.Y) };
-                    Span<Vector2> innerCorners = stackalloc Vector2[] { new(-hole.X, -hole.Y), new(hole.X, -hole.Y), new(hole.X, hole.Y), new(-hole.X, hole.Y) };
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d);
+                    // The hole follows each corner's inner side. Where a corner rounds wider than
+                    // the band is deep, that side is an arc, and once the arc is worth a vertex
+                    // the hole takes both its ends and its middle, whose chords stay inside it;
+                    // otherwise it takes the arc's center. The outer ring repeats its corner to
+                    // match, which leaves the quads over the arc as triangles.
+                    Span<Vector2> outerCorners = stackalloc Vector2[12];
+                    Span<Vector2> innerCorners = stackalloc Vector2[12];
+                    ReadOnlySpan<float> radii = stackalloc float[] { rTL, rTR, rBR, rBL };
+                    int count = 0;
+                    for (int k = 0; k < 4; k++) {
+                        // Clockwise on screen from the top left, each corner entered along the
+                        // edge before it.
+                        Vector2 sgn = k switch { 0 => new(-1f, -1f), 1 => new(1f, -1f), 2 => new(1f, 1f), _ => new(-1f, 1f) };
+                        float r = MathF.Max(radii[k], depth);
+                        Vector2 arc = half * sgn - sgn * r;
+                        float reach = r - depth;
+                        if (reach > _hollowArcPixels * _pixelSize) {
+                            Vector2 inDir = k % 2 == 0 ? new Vector2(sgn.X, 0f) : new Vector2(0f, sgn.Y);
+                            Vector2 outDir = k % 2 == 0 ? new Vector2(0f, sgn.Y) : new Vector2(sgn.X, 0f);
+                            innerCorners[count] = arc + inDir * reach;
+                            innerCorners[count + 1] = arc + sgn * (reach * 0.70710678f);
+                            innerCorners[count + 2] = arc + outDir * reach;
+                            outerCorners[count] = outerCorners[count + 1] = outerCorners[count + 2] = half1 * sgn;
+                            count += 3;
+                        } else {
+                            innerCorners[count] = arc;
+                            outerCorners[count] = half1 * sgn;
+                            count++;
+                        }
+                    }
+                    EmitHollowFrame(center, rotation, outerCorners[..count], innerCorners[..count], VertexShape.Shape.Rectangle, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d);
+                    if (interior) EmitInterior(center, rotation, innerCorners[..count], fill, aaSize);
                     return;
                 }
             }
@@ -1373,7 +1404,7 @@ namespace Apos.Shapes {
                 if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
             }
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
                 float holeOffset = rounded - thickness - aaOffset - _pixelSize;
                 // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact hexagon.
                 float holeApothem = radius + (holeOffset <= 0f ? holeOffset : holeOffset * 0.8660254f);
@@ -1383,6 +1414,7 @@ namespace Apos.Shapes {
                     HexagonCorners(radius + rounded + aaOffset + _pixelSize, outerCorners);
                     HexagonCorners(holeApothem, innerCorners);
                     EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Hexagon, fill, border, thickness, radius, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    if (interior) EmitInterior(center, rotation, innerCorners, fill, aaSize);
                     return;
                 }
             }
@@ -1472,7 +1504,7 @@ namespace Apos.Shapes {
                 if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
             }
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
                 float inradius = halfWidth / MathF.Sqrt(3f);
                 float holeOffset = rounded - thickness - aaOffset - _pixelSize;
                 if (inradius + MathF.Min(holeOffset, 0f) > _hollowMinHolePixels * _pixelSize) {
@@ -1487,6 +1519,7 @@ namespace Apos.Shapes {
                         innerCorners[i] = holeOffset <= 0f ? corners[i] * scaleIn : corners[i] + Vector2.Normalize(corners[i]) * holeOffset;
                     }
                     EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    if (interior) EmitInterior(center, rotation, innerCorners, fill, aaSize);
                     return;
                 }
             }
@@ -1622,7 +1655,7 @@ namespace Apos.Shapes {
             B = new Vector2(inCenterX + (ratioDistance * (b.X - inCenterX)), inCenterY + (ratioDistance * (b.Y - inCenterY)));
             C = new Vector2(inCenterX + (ratioDistance * (c.X - inCenterX)), inCenterY + (ratioDistance * (c.Y - inCenterY)));
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
                 float inradius = inRadius * ratioDistance;
                 float holeOffset = rounded - thickness - aaOffset - _pixelSize;
                 if (inradius + MathF.Min(holeOffset, 0f) > _hollowMinHolePixels * _pixelSize) {
@@ -1639,6 +1672,7 @@ namespace Apos.Shapes {
                     }
                     // This shape's local coordinates are the world coordinates themselves.
                     EmitHollowFrame(Vector2.Zero, 0f, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, A.X, A.Y, aaSize, rounded, B.X, B.Y, C.X, C.Y);
+                    if (interior) EmitInterior(Vector2.Zero, 0f, innerCorners, fill, aaSize);
                     return;
                 }
             }
@@ -1697,7 +1731,7 @@ namespace Apos.Shapes {
                 if (EmitDashedEllipse(center, rotation, radius1, radius2, wf, wb, thickness, aaOffset, aaSize, dash)) return;
             }
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
                 float minAxis = MathF.Min(radius1, radius2);
                 float holeMin = minAxis - thickness - aaOffset - _pixelSize;
                 if (holeMin > _hollowMinHolePixels * _pixelSize) {
@@ -1705,7 +1739,7 @@ namespace Apos.Shapes {
                     Vector2 axes = new(radius1, radius2);
                     // Scaling instead of a fixed offset: the ellipse offset outward by s fits inside the
                     // ellipse scaled by 1 + s / minAxis, and the mirrored bound holds for the hole.
-                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, 0f, 0f, 0f, 0f);
+                    EmitHollowAnnulus(center, rotation, Vector2.Zero, 0f, MathF.PI, axes * (holeMin / minAxis), axes * (1f + (aaOffset + _pixelSize) / minAxis), true, VertexShape.Shape.Ellipse, fill, border, thickness, radius1, radius2, aaSize, 0f, 0f, 0f, 0f, 0f, interior: interior);
                     return;
                 }
             }
@@ -1809,7 +1843,7 @@ namespace Apos.Shapes {
             float c = cTL;
             float d = cBL;
 
-            if (thickness > 0f && IsTransparent(fill)) {
+            if (Hollows(fill, thickness, out bool interior)) {
                 float maxCorner = MathF.Max(MathF.Max(cTL, cTR), MathF.Max(cBR, cBL));
                 float inset = thickness + aaOffset + _pixelSize + maxCorner;
                 Vector2 hole = new(half.X - inset, half.Y - inset);
@@ -1830,6 +1864,7 @@ namespace Apos.Shapes {
                         new(hole.X, hole.Y), new(-hole.X, hole.Y), new(-hole.X, hole.Y), new(-hole.X, -hole.Y),
                     };
                     EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Chamfer, fill, border, thickness, half.X, half.Y, aaSize, 0f, a, b, c, d);
+                    if (interior) EmitInterior(center, rotation, innerCorners, fill, aaSize);
                     return;
                 }
             }
@@ -3454,6 +3489,8 @@ namespace Apos.Shapes {
         // vertex carries the local coordinate that matches its world position. Only worth doing once
         // the skipped interior is large on screen: the mesh multiplies vertex count.
         private const float _hollowMinHolePixels = 32f;
+        // How deep a rounded corner's inner arc has to be before the hole follows it.
+        private const float _hollowArcPixels = 24f;
         // Chords may overshoot the band by up to this sagitta; sector counts scale with radius to hold it.
         private const float _hollowMaxSagPixels = 2f;
         private const int _hollowMaxSectors = 128;
@@ -3469,6 +3506,36 @@ namespace Apos.Shapes {
 
         private static bool IsTransparent(in Gradient g) {
             return g.AC.A == 0 && g.BC.A == 0;
+        }
+
+        // Whether a large shape goes out as its band around a hole instead of one quad: either
+        // nothing shows in the hole, or a flat fill does and the hole draws faster on its own.
+        private static bool Hollows(in Gradient fill, float thickness, out bool interior) {
+            interior = fill.S == Gradient.Shape.None && !fill.IsPalette && fill.R == null && fill.Colors == null && !IsTransparent(fill);
+            return interior || thickness > 0f && IsTransparent(fill);
+        }
+
+        // The hole of a shape with a flat fill: every pixel in it is past the border and all the
+        // fades, so it is the fill and nothing else, and the shader hands that over without
+        // working out a distance. Fanned from its first corner, wound the way culling keeps.
+        private void EmitInterior(Vector2 origin, float rotation, ReadOnlySpan<Vector2> hole, in Gradient fill, float aaSize) {
+            (float sin, float cos) = SinCos(rotation);
+            Vector2 W(Vector2 l) => origin + new Vector2(l.X * cos - l.Y * sin, l.X * sin + l.Y * cos);
+            bool reverse = PolygonArea(hole) < 0f;
+            int n = hole.Length;
+            int At(int i) => reverse ? (n - i) % n : i;
+            PrepareQuad(fill, fill);
+            VertexShape template = new(Vector2.Zero, Vector2.Zero, VertexShape.Shape.Interior, fill, fill, 0f, 0f, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps);
+            for (int j = 1; j + 1 < n; j += 2) {
+                PrepareQuad();
+                template.CopyTo(ref _vertices[_vertexCount + 0], W(hole[At(j)]), Vector2.Zero);
+                template.CopyTo(ref _vertices[_vertexCount + 1], W(hole[At(j + 1)]), Vector2.Zero);
+                template.CopyTo(ref _vertices[_vertexCount + 2], W(hole[At(Math.Min(j + 2, n - 1))]), Vector2.Zero);
+                template.CopyTo(ref _vertices[_vertexCount + 3], W(hole[At(0)]), Vector2.Zero);
+                _triangleCount += 2;
+                _vertexCount += 4;
+                _indexCount += 6;
+            }
         }
 
         private void EmitHollowQuad(Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, Vector2 l0, Vector2 l1, Vector2 l2, Vector2 l3, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
@@ -3489,7 +3556,7 @@ namespace Apos.Shapes {
         // Angles are measured from the local +y axis to line up with the arc and ring SDFs. Outer
         // vertices circumscribe the band so the chords never clip it; inner vertices sit on the hole
         // boundary so their chords only dip into the hole. Quads are wound clockwise on screen.
-        private void EmitHollowAnnulus(Vector2 origin, float rotation, Vector2 localCenter, float angleCenter, float halfSpan, Vector2 axesInner, Vector2 axesOuter, bool wrap, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
+        private void EmitHollowAnnulus(Vector2 origin, float rotation, Vector2 localCenter, float angleCenter, float halfSpan, Vector2 axesInner, Vector2 axesOuter, bool wrap, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0, bool interior = false) {
             float rMax = MathF.Max(axesOuter.X, axesOuter.Y);
             float phi = MathF.Acos(MathF.Max(1f - _hollowMaxSagPixels * _pixelSize / rMax, 0f));
             int n = Math.Clamp((int)MathF.Ceiling(halfSpan / MathF.Max(phi, 1e-4f)), 3, _hollowMaxSectors);
@@ -3503,6 +3570,9 @@ namespace Apos.Shapes {
             Vector2 first = new(sinT, cosT);
             Vector2 outerPrev = localCenter + axesOuter * first * overshoot;
             Vector2 innerPrev = localCenter + axesInner * first;
+            // A full ring with a flat fill also covers its hole, through the same inner points.
+            Span<Vector2> hole = interior ? stackalloc Vector2[n] : Span<Vector2>.Empty;
+            if (interior) hole[0] = innerPrev;
             for (int i = 1; i <= n; i++) {
                 Vector2 dir;
                 if (i < n) {
@@ -3522,7 +3592,9 @@ namespace Apos.Shapes {
 
                 outerPrev = outerCur;
                 innerPrev = innerCur;
+                if (interior && i < n) hole[i] = innerCur;
             }
+            if (interior) EmitInterior(origin, rotation, hole, fill, aaSize);
         }
 
         private enum PathJointMode : byte {
@@ -3657,13 +3729,14 @@ namespace Apos.Shapes {
             PrepareQuad(fill, border);
             VertexShape template = new(Vector2.Zero, Vector2.Zero, VertexShape.Shape.OutlinePiece, fill, border, thickness, pattern.Period, pattern.FracPhase, aaSize: Aa(aaSize), colorSpace: ColorSpace, ramps: _ramps, dash: pattern.TypeDigit);
 
-            // Past the band and its fade a transparent fill leaves nothing to draw, so a piece
-            // skips its share of the hole once that share is worth the extra quad. Its inner edge
-            // then runs from each split to one point on the corner's bisector, where the band's
-            // inner side crosses it.
+            // Past the band and its fade a transparent fill leaves nothing to draw, and a flat
+            // one is nothing but its color, so a piece skips its share of the hole once that
+            // share is worth the extra quad, and a flat fill draws the share as an interior. The
+            // piece's inner edge then runs from each split to one point on the corner's
+            // bisector, where the band's inner side crosses it.
             float depth = thickness + aaOffset + _pixelSize;
             float minHole = 2f * _hollowMinHolePixels * _pixelSize;
-            bool hollow = IsTransparent(fill);
+            bool hollow = Hollows(fill, thickness, out bool interior);
             Span<bool> skips = stackalloc bool[n];
             Span<Vector2> holes = stackalloc Vector2[n];
             Span<Vector2> outer = stackalloc Vector2[2 * n];
@@ -3728,6 +3801,15 @@ namespace Apos.Shapes {
                 }
                 template.Meta2 = new Vector4(c.Turn, c.Cut > 0f ? -c.Cut : c.Radius, c.PatternRadius, c.Start);
                 EmitPieceFan(template, c, poly[..m], origin, sin, cos);
+                if (skips[k] && interior) {
+                    ReadOnlySpan<Vector2> chain = inner[(k == 0 ? 0 : innerEnds[k - 1])..innerEnds[k]];
+                    m = 0;
+                    poly[m++] = holes[k];
+                    poly[m++] = g2;
+                    for (int i = 0; i < chain.Length; i++) poly[m++] = chain[i];
+                    poly[m++] = g1;
+                    EmitInterior(origin, rotation, poly[..m], fill, aaSize);
+                }
             }
             return true;
         }

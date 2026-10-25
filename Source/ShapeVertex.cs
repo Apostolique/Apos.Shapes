@@ -333,7 +333,12 @@ namespace Apos.Shapes {
             /// The same outline solver as <see cref="Glyph"/>, filled by the even-odd rule
             /// instead. This is what an SVG element with <c>fill-rule="evenodd"</c> draws as.
             /// </summary>
-            EvenOdd = 14
+            EvenOdd = 14,
+            /// <summary>
+            /// The inside of a large shape with a flat fill, past its border and every fade. It is
+            /// the fill color and nothing else.
+            /// </summary>
+            Interior = 15
         }
 
         static VertexShape() {

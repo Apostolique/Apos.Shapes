@@ -1499,6 +1499,16 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
         return SampleBand(q0) + SampleCurve(q0) + SampleBlueNoise(q0) + SampleRamp(q0);
     }
 
+    // The inside of a large shape with a flat fill, which is the fill and nothing else. This is
+    // what the tail below arrives at there, without the distance it would work out on the way.
+    if (shape > 14.5) {
+        float4 inside = ToRgb(LerpColorPremul(UnpackColor(p.Fill.xy), UnpackColor(p.Fill.zw), 1.0, space), space);
+        inside.rgb *= inside.a;
+        inside *= clipAlpha;
+        inside.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
+        return inside;
+    }
+
     // Dash state. Strokes are cut into dashes through the SDF itself, from dashU along the
     // contour, dashV across it, and dashData, the (period, packed fraction and phase) pair
     // from the shape's spare channels. Closed outlines instead mask their border band with
