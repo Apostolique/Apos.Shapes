@@ -619,8 +619,9 @@ float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float star
     // The cut measured to the edge's own stretch across the stroke rather than to its infinite
     // plane: a plane carried across a joint turning more than a right angle comes back on the
     // wrong side of itself and takes the dash in half. The stroke's band straddles the spine, so
-    // the segment is bounded on both sides, by the band's half width where the edge stands - which both quads at a joint agree
-    // on, since past a segment's own span the taper saturates to the end it left from.
+    // the segment is bounded on both sides, by the band's half width where the edge stands. Both
+    // quads at a joint agree on that width, since past a segment's own span the taper saturates
+    // to the end it left from.
     float hwB = PathRadiusAt(de.y, uA, uB, rA, rB, lean) + aa;
     float hwA = PathRadiusAt(de.z, uA, uB, rA, rB, lean) + aa;
     float2 eb = Perp(nb);

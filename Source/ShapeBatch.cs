@@ -348,7 +348,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius1, radius1));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius1, radius1));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -477,7 +476,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -592,7 +590,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(width1, radius1));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius1, radius1));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -1434,7 +1431,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(size.X, size.Y));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-size.X, size.Y));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -1539,7 +1535,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(halfWidth1, circumcircle1));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-halfWidth1, circumcircle1));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -1692,7 +1687,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, bottomRight);
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, bottomLeft);
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -1775,7 +1769,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius3, radius4));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius3, radius4));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -1884,7 +1877,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -1968,7 +1960,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(reach, reach));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-reach, reach));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2024,7 +2015,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(reachX, reachY));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-reachX, reachY));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2078,7 +2068,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2131,7 +2120,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(half1.X, half1.Y));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-half1.X, half1.Y));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2204,7 +2192,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(front, half));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(back, half));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2271,7 +2258,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius3, radius3));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius3, radius3));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2368,7 +2354,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(radius3, radius3));
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(-radius3, radius3));
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -2449,7 +2434,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], wBottomRight, bottomRight);
             v.CopyTo(ref _vertices[_vertexCount + 3], wBottomLeft, bottomLeft);
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -3089,7 +3073,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, emBottomRight);
             v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, emBottomLeft);
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -3141,7 +3124,7 @@ namespace Apos.Shapes {
         }
 
         private void Flush() {
-            if (_triangleCount == 0) return;
+            if (_indexCount == 0) return;
 
             _viewProjection.SetValue(_worldToClip); // Begin already multiplied these.
             _halfViewportParam?.SetValue(_halfViewport);
@@ -3196,7 +3179,6 @@ namespace Apos.Shapes {
                 DrawRange(run.Texture, run.FirstIndex, end - run.FirstIndex);
             }
 
-            _triangleCount = 0;
             _vertexCount = 0;
             _indexCount = 0;
             _runCount = 0;
@@ -3548,7 +3530,6 @@ namespace Apos.Shapes {
                 template.CopyTo(ref _vertices[_vertexCount + 1], W(hole[At(j + 1)]), Vector2.Zero);
                 template.CopyTo(ref _vertices[_vertexCount + 2], W(hole[At(Math.Min(j + 2, n - 1))]), Vector2.Zero);
                 template.CopyTo(ref _vertices[_vertexCount + 3], W(hole[At(0)]), Vector2.Zero);
-                _triangleCount += 2;
                 _vertexCount += 4;
                 _indexCount += 6;
             }
@@ -3563,7 +3544,6 @@ namespace Apos.Shapes {
             v.CopyTo(ref _vertices[_vertexCount + 2], w2, l2);
             v.CopyTo(ref _vertices[_vertexCount + 3], w3, l3);
 
-            _triangleCount += 2;
             _vertexCount += 4;
             _indexCount += 6;
         }
@@ -3695,13 +3675,13 @@ namespace Apos.Shapes {
         // One quad per edge between two nested convex polygons with matching corner counts. Adjacent
         // quads share their mitre edges exactly so the frame is watertight. Corners must be listed
         // clockwise on screen.
-        private void EmitHollowFrame(Vector2 origin, float rotation, ReadOnlySpan<Vector2> outer, ReadOnlySpan<Vector2> inner, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d, int dash = 0) {
+        private void EmitHollowFrame(Vector2 origin, float rotation, ReadOnlySpan<Vector2> outer, ReadOnlySpan<Vector2> inner, VertexShape.Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float height, float aaSize, float rounded, float a, float b, float c, float d) {
             (float sinR, float cosR) = SinCos(rotation);
             Vector2 W(Vector2 l) => origin + new Vector2(l.X * cosR - l.Y * sinR, l.X * sinR + l.Y * cosR);
 
             for (int i = 0; i < outer.Length; i++) {
                 int j = i + 1 == outer.Length ? 0 : i + 1;
-                EmitHollowQuad(W(outer[i]), W(outer[j]), W(inner[j]), W(inner[i]), outer[i], outer[j], inner[j], inner[i], shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d, dash);
+                EmitHollowQuad(W(outer[i]), W(outer[j]), W(inner[j]), W(inner[i]), outer[i], outer[j], inner[j], inner[i], shape, fill, border, thickness, sdfSize, height, aaSize, rounded, a, b, c, d);
             }
         }
 
@@ -3982,7 +3962,6 @@ namespace Apos.Shapes {
                 PieceVertex(template, c, ref _vertices[_vertexCount + 1], poly[j + 1], origin, sin, cos);
                 PieceVertex(template, c, ref _vertices[_vertexCount + 2], poly[Math.Min(j + 2, poly.Length - 1)], origin, sin, cos);
                 PieceVertex(template, c, ref _vertices[_vertexCount + 3], poly[0], origin, sin, cos);
-                _triangleCount += 2;
                 _vertexCount += 4;
                 _indexCount += 6;
             }
@@ -4172,7 +4151,6 @@ namespace Apos.Shapes {
                     EllipseVertex(template, ref _vertices[_vertexCount + 1], outer[to] * sg, tall, center, sin, cos);
                     EllipseVertex(template, ref _vertices[_vertexCount + 2], inner[to] * sg, tall, center, sin, cos);
                     EllipseVertex(template, ref _vertices[_vertexCount + 3], inner[from] * sg, tall, center, sin, cos);
-                    _triangleCount += 2;
                     _vertexCount += 4;
                     _indexCount += 6;
                 }
@@ -4353,7 +4331,6 @@ namespace Apos.Shapes {
         private readonly GraphicsDevice _graphicsDevice;
         private VertexShape[] _vertices;
         private uint[] _indices;
-        private int _triangleCount = 0;
         private int _vertexCount = 0;
         private int _indexCount = 0;
 

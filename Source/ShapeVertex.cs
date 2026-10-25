@@ -197,7 +197,7 @@ namespace Apos.Shapes {
             dst.TextureCoordinate.Y = local.Y;
         }
 
-        /// <summary>Where this corner sits, in world units. Shapes live on the z = 0 plane.</summary>
+        /// <summary>Where this corner sits, in world units.</summary>
         public Vector2 Position;
         /// <summary>
         /// The corner in the shape's own frame in xy, the corner rounding in z, and the shape,
