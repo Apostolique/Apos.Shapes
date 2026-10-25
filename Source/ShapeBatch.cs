@@ -965,6 +965,32 @@ namespace Apos.Shapes {
                 : 0f;
             float lenPrev = Vector2.Distance(pts[0], pts[1]);
             Vector2 uPrev = (pts[1] - pts[0]) / lenPrev;
+            if (!dashed) {
+                // How far along each segment a joint's inner miter runs, which is how much of its
+                // segments a partition needs. A segment lends a joint whatever its other end leaves
+                // free, so a segment that ends in a cap lends all of it, while two joints that
+                // both want more than half split it.
+                for (int j = 0; j < jointCount; j++) {
+                    Vector2 a = pts[j];
+                    Vector2 joint = pts[(j + 1) % n];
+                    Vector2 c = pts[(j + 2) % n];
+                    Vector2 inc = joint - a;
+                    Vector2 outg = c - joint;
+                    float li = inc.Length();
+                    float lo = outg.Length();
+                    float c2 = Vector2.Dot(inc, outg) / (li * lo);
+                    float cHalf = MathF.Sqrt(MathF.Max((1f + c2) * 0.5f, 0f));
+                    float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
+                    float rJoint = R(radii, radius, (j + 1) % n);
+                    float h = radii.IsEmpty ? radius + aaOffset : MathF.Max(
+                        SegH(R(radii, radius, j), rJoint, li, aaOffset),
+                        SegH(rJoint, R(radii, radius, (j + 2) % n), lo, aaOffset));
+                    joints[j].Demand = h * sHalf / cHalf;
+                }
+            }
+            // What a segment of length len lends the joint at one end, with the other end's joint
+            // wanting other (0 for a cap).
+            static float Lend(float len, float other) => len - MathF.Min(other, len * 0.5f);
             for (int j = 0; j < jointCount; j++) {
                 // Joint j sits at the end of segment j. On a closed path the last one lands back on
                 // the first point and turns into the first segment.
@@ -1034,12 +1060,19 @@ namespace Apos.Shapes {
                     // without the AA margin, or zooming would flip it. Where the margin alone
                     // overruns half a segment, the inner point stops at the half instead and
                     // only that corner's inner AA fringe is clipped.
-                    float halfSeg = MathF.Min(lenPrev, len) * 0.5f;
-                    if ((dashed ? h0 * sHalf / cHalf : run) <= halfSeg
+                    float room = MathF.Min(lenPrev, len) * 0.5f;
+                    if (!dashed) {
+                        bool prevJoint = closed || j > 0;
+                        bool nextJoint = closed || j + 1 < jointCount;
+                        room = MathF.Min(
+                            Lend(lenPrev, prevJoint ? joints[(j + jointCount - 1) % jointCount].Demand : 0f),
+                            Lend(len, nextJoint ? joints[(j + 1) % jointCount].Demand : 0f));
+                    }
+                    if ((dashed ? h0 * sHalf / cHalf : run) <= room
                         && (dashed || TaperBite(rPrev, rJoint, rNext, lenPrev, len, jd.Theta)
                             <= _pathTaperBitePixels * _pixelSize)) {
                         jd.Mode = PathJointMode.Partition;
-                        jd.BIn = joint + m * (sign * MathF.Min(h, halfSeg * cHalf / MathF.Max(sHalf, 1e-6f)) / cHalf);
+                        jd.BIn = joint + m * (sign * MathF.Min(h, room * cHalf / MathF.Max(sHalf, 1e-6f)) / cHalf);
                         if (requested != PathJoin.Round && jd.Theta > 1e-4f) {
                             // A nearly straight bevel is a miter; its cut plane would run parallel
                             // to the stroke.
@@ -3948,6 +3981,7 @@ namespace Apos.Shapes {
             public int WedgePrev;   // Overlap wedges only: corners past the joint, see SharpCorner.
             public int WedgeNext;
             public float Theta;     // Turn angle of the joint.
+            public float Demand;    // Solid only: how far along each segment the inner miter runs.
             public float CHalf;     // Cosine and sine of half the turn angle.
             public float SHalf;
             public int Chords;
