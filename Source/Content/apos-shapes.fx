@@ -1648,11 +1648,12 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             float slope = (sd.z - sdfSize) / max(pFar.x, 1e-4);
             pRadius = float4(sdfSize, sd.z, max(pFar.x, 1e-4), abs(slope) < 1.0 ? rsqrt(1.0 - slope * slope) : 1.0);
             dashData = float2(sd.w, rounded);
-            // Miter and bevel tips reach past the joint disc, and a dash edge near the corner
-            // would sweep them as a needle. Out there the dash is bounded by the disc instead,
-            // and the tip only grows back once the dash covers the whole fan with margin to
-            // spare, which the dash's distance at the fan's middle measures.
-            if (pTau > 1e-4 && q.x < 0.0) {
+            // Miter and bevel tips reach past the joint disc. A butt cut runs straight on into
+            // the tip, the way an outline's does. A round dash would take the whole tip in at
+            // once as its cap crossed the corner, so it is bounded by the disc instead, and the
+            // tip only grows back once the dash covers the whole fan with margin to spare,
+            // which the dash's distance at the fan's middle measures.
+            if (pTau > 1e-4 && q.x < 0.0 && !butt) {
                 float mid = pTau * pRc * 0.5;
                 pCorner = length(q) - sdfSize + min(DashDistance(mid, dashData) + mid, 0.0) * 2.0;
             }

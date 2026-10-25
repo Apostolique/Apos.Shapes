@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Dashes on a path no longer move or pop when the camera zooms.
 - Butt dashes that end in a path's sharp corner have antialiased edges instead of hard, jagged ones.
+- Butt dashes crossing a path's miter or bevel join keep the join's corner instead of rounding it off, the way dashed outlines do.
 
 ## [0.9.0] - 2026-10-25
 
