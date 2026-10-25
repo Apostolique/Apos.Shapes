@@ -173,13 +173,22 @@ namespace Apos.Shapes {
         }
 #endif
 
-        // The shaders ship gzipped; see Shaders.targets.
+        // The shaders ship compressed; see Tools/ShaderPack for why KNI's are gzip.
         private static byte[] ReadEmbeddedBytes(string name) {
-            using var stream = typeof(ShapeBatch).Assembly.GetManifestResourceStream(name + ".gz")
-                ?? throw new InvalidOperationException($"Missing embedded resource \"{name}.gz\".");
-            using var gzip = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
+#if KNI
+            name += ".gz";
+#else
+            name += ".br";
+#endif
+            using var stream = typeof(ShapeBatch).Assembly.GetManifestResourceStream(name)
+                ?? throw new InvalidOperationException($"Missing embedded resource \"{name}\".");
+#if KNI
+            using var unpacked = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
+#else
+            using var unpacked = new System.IO.Compression.BrotliStream(stream, System.IO.Compression.CompressionMode.Decompress);
+#endif
             using var bytes = new System.IO.MemoryStream();
-            gzip.CopyTo(bytes);
+            unpacked.CopyTo(bytes);
             byte[] shader = bytes.ToArray();
             UseHighpFloats(shader);
             return shader;
@@ -3260,24 +3269,31 @@ namespace Apos.Shapes {
             _compiled[features] = true;
             return _techniques[features]!;
         }
-        private static int BitCount(int v) => (v & 1) + (v >> 1 & 1) + (v >> 2 & 1);
+        private static int BitCount(int v) => (v & 1) + (v >> 1 & 1) + (v >> 2 & 1) + (v >> 3 & 1);
 
-        // Which of the three features the techniques split on the quads in a stretch use, as the
-        // technique's index: dashes in bit 0, gradients beyond a flat color in bit 1, text in bit
-        // 2. Each quad's first vertex says, in the packed meta it carries for the shader and in
-        // the negated color lanes that flag a palette, a ramp or a color ramp.
+        // Which of the four features the techniques split on the quads in a stretch use, as the
+        // technique's index: dashes in bit 0, fill gradients beyond a flat color in bit 1, border
+        // gradients in bit 2, text in bit 3. Each quad's first vertex says, in the packed meta it
+        // carries for the shader and in the negated color lanes that flag a palette, a ramp or a
+        // color ramp. A border on the fill's own gradient reuses the fill's result in the shader,
+        // so only a border that differs needs its own.
         private int RangeFeatures(int firstIndex, int indexCount) {
+            const ulong flags = 0x8000800080008000ul;
             int features = 0;
-            for (int q = firstIndex / 6, end = (firstIndex + indexCount) / 6; q < end && features != 7; q++) {
+            for (int q = firstIndex / 6, end = (firstIndex + indexCount) / 6; q < end && features != 15; q++) {
                 ref VertexShape v = ref _vertices[q * 4];
                 int meta = (int)v.TextureCoordinate.W;
                 int shape = meta % 16;
-                int fillStyle = meta / 16 % 16;
-                int borderStyle = meta / 1024 % 16;
+                int fillStyle = meta / 16 % 64;
+                int borderStyle = meta / 1024 % 64;
                 int dash = meta / 262144 % 4;
                 if (dash != 0) features |= 1;
-                if (fillStyle != 0 || borderStyle != 0 || ((v.FillA | v.FillB | v.BorderA | v.BorderB) & 0x8000800080008000ul) != 0) features |= 2;
-                if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= 4;
+                if (fillStyle % 16 != 0 || ((v.FillA | v.FillB) & flags) != 0) features |= 2;
+                if ((borderStyle % 16 != 0 || ((v.BorderA | v.BorderB) & flags) != 0)
+                    && !(borderStyle == fillStyle && v.FillA == v.BorderA && v.FillB == v.BorderB && v.FillCoord == v.BorderCoord && v.Meta3.X == v.Meta3.Z && v.Meta3.Y == v.Meta3.W)) {
+                    features |= 4;
+                }
+                if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= 8;
             }
             return features;
         }
@@ -4367,9 +4383,9 @@ namespace Apos.Shapes {
         private readonly EffectParameter? _rampParam;
         // The built-in shader's techniques by the features they carry; null for a replacement
         // shader, which draws with its current technique.
-        private readonly EffectTechnique?[] _techniques = new EffectTechnique?[8];
+        private readonly EffectTechnique?[] _techniques = new EffectTechnique?[16];
         // Which techniques this batch has drawn with, and so has already paid to compile.
-        private readonly bool[] _compiled = new bool[8];
+        private readonly bool[] _compiled = new bool[16];
         // Set only while a warmup draws, to the features it was asked to compile.
         private int _warmupFeatures;
         private readonly Texture2D _blueNoise;

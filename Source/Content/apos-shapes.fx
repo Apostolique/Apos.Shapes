@@ -1432,11 +1432,11 @@ float2 SolveHorizPoly(float4 p12, float2 p3) {
         (a.x * t2 - b.x * 2.0) * t2 + p12.x);
 }
 
-// The whole pixel shader, built once per combination of the three features that cost the most
+// The whole pixel shader, built once per combination of the four features that cost the most
 // to compile. A variant without one holds that feature's inputs where they sit when nothing
 // uses it, and the compiler drops whatever they would have reached. See the techniques at the
 // end of the file.
-float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
+float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBorderGradient, bool useText) {
     float lineSize = p.Meta1.x;
     // A negative width asks for the fade to straddle the true edge instead of sitting outside
     // it, which is what makes a shape cover exactly the pixels its size claims. It rides in the
@@ -1464,10 +1464,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
     // Set when Meta1.y carries a world space blur instead of a screen space AA width.
     float blurred = meta;
     if (!useDash) dashType = 0.0;
-    if (!useGradient) {
-        fillStyles.x = 0.0;
-        borderStyles.x = 0.0;
-    }
+    // The border's style stays as it came: a border on the fill's own gradient reads the fill's
+    // result through sameGradient below, which compares the two, and never needs its own.
+    if (!useFillGradient) fillStyles.x = 0.0;
 
     float2 jx = ddx(p.Pos);
     float2 jy = ddy(p.Pos);
@@ -1889,16 +1888,16 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
     // The packed floats' signs are flags (see the vertex shader): y marks a ramp riding the
     // gradient, z and w carry a ramped stop pair's top row bits. The payloads come back
     // positive before anything unpacks them; x keeps its sign, PaletteColor reads it itself.
-    bool fillRamp = useGradient && p.Fill.y < -0.5;
+    bool fillRamp = useFillGradient && p.Fill.y < -0.5;
     bool fillZN = p.Fill.z < -0.5;
     bool fillWN = p.Fill.w < -0.5;
-    bool borderRamp = useGradient && p.Border.y < -0.5;
+    bool borderRamp = useBorderGradient && p.Border.y < -0.5;
     bool borderZN = p.Border.z < -0.5;
     bool borderWN = p.Border.w < -0.5;
     // The third lane's sign without the ramp flag beside it marks a color ramp; a ramped
     // stop pair only ever sets it with the ramp flag, so the pair can't collide.
-    bool fillLut = useGradient && fillZN && !fillRamp;
-    bool borderLut = useGradient && borderZN && !borderRamp;
+    bool fillLut = useFillGradient && fillZN && !fillRamp;
+    bool borderLut = useBorderGradient && borderZN && !borderRamp;
     float4 fillPk = float4(p.Fill.x,
                            fillRamp ? -p.Fill.y - 1.0 : p.Fill.y,
                            fillZN ? -p.Fill.z - 1.0 : p.Fill.z,
@@ -1944,7 +1943,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
     // A palette's unpacked stops are payload bits, not colors, so it never reads as a
     // transparent fill here, a ramped fill's alpha lanes carry row bits over the alpha, and
     // a color ramp's lanes are all payload, so those skip the shortcut too.
-    bool fillPal = useGradient && p.Fill.x < -0.5;
+    bool fillPal = useFillGradient && p.Fill.x < -0.5;
     bool borderOnly = !fillPal && !fillRamp && !fillLut && fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
     if (borderOnly && borderMix <= 0.0) {
         // Transparent fill: everything inside the border band contributes nothing.
@@ -1990,9 +1989,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
         br = fr;
     }
     if (!sameGradient && borderMix > 0.0) {
-        bool borderPal = useGradient && p.Border.x < -0.5;
+        bool borderPal = useBorderGradient && p.Border.x < -0.5;
         float tAa, wrapF;
-        float t = Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
+        float t = Gradient(useBorderGradient ? borderStyles : float2(0.0, 0.0), p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
         float4 c;
         float cSpace = space;
         if (borderPal) {
@@ -2029,18 +2028,26 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
     return result;
 }
 
-// One technique per combination of dashes (bit 0), gradients beyond a flat color (bit 1) and
-// text (bit 2), at the index those bits make, which is how ShapeBatch picks one. A technique's
-// shaders compile the first time something draws with it, so a game only waits on the ones it
-// uses.
-float4 ShapePixel0(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, false); }
-float4 ShapePixel1(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, false); }
-float4 ShapePixel2(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, false); }
-float4 ShapePixel3(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, false); }
-float4 ShapePixel4(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, true); }
-float4 ShapePixel5(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, true); }
-float4 ShapePixel6(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true); }
-float4 ShapePixel7(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true); }
+// One technique per combination of dashes (bit 0), fill gradients beyond a flat color (bit 1),
+// border gradients that differ from the fill's (bit 2) and text (bit 3), at the index those bits
+// make, which is how ShapeBatch picks one. A technique's shaders compile the first time
+// something draws with it, so a game only waits on the ones it uses.
+float4 ShapePixel0(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, false, false); }
+float4 ShapePixel1(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, false, false); }
+float4 ShapePixel2(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, false, false); }
+float4 ShapePixel3(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, false, false); }
+float4 ShapePixel4(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, true, false); }
+float4 ShapePixel5(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, true, false); }
+float4 ShapePixel6(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true, false); }
+float4 ShapePixel7(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, false); }
+float4 ShapePixel8(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, false, true); }
+float4 ShapePixel9(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, false, true); }
+float4 ShapePixel10(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, false, true); }
+float4 ShapePixel11(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, false, true); }
+float4 ShapePixel12(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, true, true); }
+float4 ShapePixel13(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, true, true); }
+float4 ShapePixel14(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true, true); }
+float4 ShapePixel15(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, true); }
 
 technique Shapes0 {
     pass {
@@ -2088,5 +2095,53 @@ technique Shapes7 {
     pass {
         VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
         PixelShader = compile PS_SHADERMODEL ShapePixel7();
+    }
+}
+technique Shapes8 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel8();
+    }
+}
+technique Shapes9 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel9();
+    }
+}
+technique Shapes10 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel10();
+    }
+}
+technique Shapes11 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel11();
+    }
+}
+technique Shapes12 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel12();
+    }
+}
+technique Shapes13 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel13();
+    }
+}
+technique Shapes14 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel14();
+    }
+}
+technique Shapes15 {
+    pass {
+        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
+        PixelShader = compile PS_SHADERMODEL ShapePixel15();
     }
 }

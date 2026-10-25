@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - `PushClip` and `PopClip` nest clips. Each one keeps its own rounding and rotation, and draws land where they all overlap.
-- `Warmup` takes `ShapeFeatures` to compile the shader version for dashes, gradients, text, or any mix of them ahead of time.
+- `Warmup` takes `ShapeFeatures` to compile the shader version for dashes, gradients, border gradients, text, or any mix of them ahead of time.
 
 ### Changed
 
@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A dash pattern now runs along the middle of the border, so its phase shifts slightly from before.
 - Every clip change now costs a draw call, while the batch still uploads once.
 - Switching textures in the middle of a batch costs a draw call instead of a whole new upload.
-- The assembly is about a third smaller.
+- The MonoGame assembly is about 40% smaller.
 - `VertexShape` is 28 bytes smaller. `Position` is a `Vector2` and the clip fields are gone, along with the constructor's `clip` parameter.
 
 ### Removed

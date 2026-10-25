@@ -11,11 +11,13 @@ namespace Apos.Shapes {
         None = 0,
         /// <summary>Any <see cref="DashStyle"/>.</summary>
         Dashes = 1,
-        /// <summary>A <see cref="Gradient"/> that isn't a flat color, which includes palettes and ramps.</summary>
+        /// <summary>A fill <see cref="Gradient"/> that isn't a flat color, which includes palettes and ramps.</summary>
         Gradients = 2,
+        /// <summary>A border <see cref="Gradient"/> that isn't a flat color and isn't the fill's own.</summary>
+        BorderGradients = 4,
         /// <summary>Text and SVG drawings.</summary>
-        Text = 4,
+        Text = 8,
         /// <summary>Everything.</summary>
-        All = Dashes | Gradients | Text
+        All = Dashes | Gradients | BorderGradients | Text
     }
 }
