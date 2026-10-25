@@ -15,7 +15,6 @@
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.5" />
     <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
     <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
-    <PackageReference Include="Apos.Camera" Version="0.4.1" />
     <PackageReference Include="Apos.Input" Version="2.5.0" />
 
     <ProjectReference Include="../../../Source/Apos.Shapes.csproj" />

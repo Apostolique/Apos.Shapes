@@ -9,7 +9,7 @@ This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.w
 
 Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions. The text follows Eric Lengyel's [Slug](https://sluglibrary.com) algorithm, by way of [Forme](https://github.com/AristurtleDev/Forme).
 
-![Shapes drawn with Apos.Shapes](./Images/example.png)
+![A small space scene drawn with Apos.Shapes](./Images/example.png)
 
 ## Features
 
