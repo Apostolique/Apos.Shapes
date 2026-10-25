@@ -974,7 +974,6 @@ namespace Apos.Shapes {
                 if (cHalf < 0.05f) {
                     // Near reversal the bisector degenerates; both sides fall back to overlapping round caps.
                     jd.Mode = PathJointMode.Reversal;
-                    jd.ThetaCode = 1024f;
                 } else {
                     float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
                     float sign = s2 >= 0f ? 1f : -1f;
@@ -1019,41 +1018,28 @@ namespace Apos.Shapes {
                         // blend inside the joint, where the stroke genuinely covers itself.
                         jd.Mode = PathJointMode.Overlap;
                     }
-                    if (dashed) {
-                        // For dashing the joint rounds the spine corner with a fillet arc tangent
-                        // to both segments, replacing the two tangent runs it rounds off. The
-                        // shader decodes the signed angle from an 11 bit code (1024 = 0); quantize
-                        // here so both length walks agree exactly. Overlap joints run the pattern
-                        // straight out instead: their segments are too short for the arc, and they
-                        // already overlap like separate shapes.
-                        if (jd.Mode == PathJointMode.Partition) {
-                            jd.ThetaCode = 1024f + MathF.Round(sign * jd.Theta / MathF.PI * 1023f);
-                            float thetaQ = MathF.Abs(jd.ThetaCode - 1024f) / 1023f * MathF.PI;
-                            float tanQ = MathF.Tan(thetaQ * 0.5f);
-                            // A fillet of exactly radius has an inward offset of zero: it collapses
-                            // to the point where the two inner offsets meet, which lies on the
-                            // stroke's inner edge, and every dash boundary in the fan runs out of
-                            // it. Widening the fillet lifts its center clear of the stroke so no two
-                            // boundaries meet anywhere that gets drawn. It may spend at most half of
-                            // each neighbouring segment, the same budget the inner miter run is
-                            // already known to fit in, so the fallback is never worse than radius.
-                            float fit = tanQ > 1e-6f ? MathF.Min(lenPrev, len) * 0.5f / tanQ : float.MaxValue;
-                            // Only basic dashes may widen it. A rounded dash is the capsule around
-                            // the spine, so the spine is its body and not just where its ends land;
-                            // move it off the real corner and the dash stops following the stroke.
-                            // They have no fan center to escape anyway: a rounded dash reaches it as
-                            // a half disc rather than tapering to a point.
-                            // The corner is the joint point's own half width on a tapered path, and
-                            // both segments read that same one from their shared end, so the two of
-                            // them still decode the fillet to the same arc.
-                            float rCorner = MathF.Max(rJoint, 1e-6f);
-                            float want = dash.Cap == DashCap.Round ? rCorner : 2f * rCorner;
-                            // The code spans [rCorner, 2 * rCorner]; the shader mirrors this mapping.
-                            jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, want) / rCorner - 1f) * 127f), 0f, 127f);
-                            jd.DashArc = (thetaQ - 2f * tanQ) * rCorner * (1f + jd.DashRadiusCode / 127f);
-                        } else {
-                            jd.ThetaCode = 1024f;
-                        }
+                    if (dashed && jd.Mode == PathJointMode.Partition && dash.Cap != DashCap.Round) {
+                        // A butt dash's cut through the corner is a ray out of the center of the
+                        // circle the pattern turns on, so the pattern rounds the spine's corner with
+                        // a circle tangent to both segments. At exactly the radius that center
+                        // lands on the stroke's inner edge, where every cut in the corner would
+                        // meet, so it widens to twice that, as far as half of each neighboring
+                        // segment allows. A round dash follows the spine's own corner, since its
+                        // ends are discs around the spine rather than cuts across it, and overlap
+                        // joints run the pattern straight through. The shader decodes the turn
+                        // from an 11 bit code and the radius from a 7 bit one over [r, 2r], so
+                        // both are quantized here and the pattern's walk agrees with it exactly.
+                        jd.TauCode = MathF.Round(jd.Theta / MathF.PI * 2047f);
+                        float tauQ = jd.TauCode / 2047f * MathF.PI;
+                        float tanQ = MathF.Tan(tauQ * 0.5f);
+                        float fit = tanQ > 1e-6f ? MathF.Min(lenPrev, len) * 0.5f / tanQ : float.MaxValue;
+                        float rCorner = MathF.Max(rJoint, 1e-6f);
+                        jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, 2f * rCorner) / rCorner - 1f) * 127f), 0f, 127f);
+                        float fr = rCorner * (1f + jd.DashRadiusCode / 127f);
+                        jd.DashTangent = fr * tanQ;
+                        jd.DashFan = tauQ * fr;
+                    } else if (dashed && jd.Mode == PathJointMode.Partition) {
+                        jd.TauCode = MathF.Round(jd.Theta / MathF.PI * 2047f);
                     }
                     // A miter tip already contains the whole join arc: both of its faces lie on the
                     // segments' own offset lines, which never come nearer the joint than h. In
@@ -1090,35 +1076,34 @@ namespace Apos.Shapes {
                 lenPrev = len;
             }
 
-            // The dash pattern runs along the polyline with each joint's corner rounded off for
-            // dashing (see PathDashCut in the shader); each quad carries the pattern already slid
-            // back by how far along the contour its segment starts, so dashes flow through the
-            // joints unbroken while the shader's contour coordinate stays local to one segment.
-            // Closed contours snap the period to a whole number of repeats, so the pattern meets
-            // itself at the wrap with no seam.
+            // The dash pattern runs along the spine, around each joint's circle where it has one,
+            // and each joint records where the pattern reaches its corner. Closed contours snap
+            // the period to a whole number of repeats, so the pattern meets itself at the wrap
+            // with no seam. Like the old straight walk, a closed one counts from the first point
+            // as if the wrap joint ran straight through it.
             ResolvedDash rd = default;
+            float dashEnd = 0f;
             if (dashed) {
-                float totalLen = 0f;
+                float dashStart = closed ? joints[jointCount - 1].DashTangent : 0f;
+                dashEnd = dashStart;
                 for (int i = 0; i < segs; i++) {
-                    totalLen += Vector2.Distance(pts[i], pts[(i + 1) % n]);
+                    bool hasStart = closed || i > 0;
+                    bool hasEnd = closed || i < segs - 1;
+                    int js = closed ? (i + jointCount - 1) % jointCount : i - 1;
+                    dashEnd += Vector2.Distance(pts[i], pts[(i + 1) % n]) - (hasStart ? joints[js].DashTangent : 0f) - (hasEnd ? joints[i].DashTangent : 0f);
+                    if (hasEnd) {
+                        joints[i].DashStart = dashEnd;
+                        dashEnd += joints[i].DashFan;
+                    }
                 }
-                for (int j = 0; j < jointCount; j++) {
-                    totalLen += joints[j].DashArc;
-                }
-                rd = dash.Resolve(totalLen, closed);
+                rd = dash.Resolve(dashEnd - dashStart, closed);
             }
 
             // Cross sections at each end: two corners at a cap, up to three points at a joint.
             // Every polygon is convex, so a fan from the first vertex triangulates it.
             bool tapered = !radii.IsEmpty;
             Span<Vector2> poly = stackalloc Vector2[6];
-            // How far along the contour each segment starts. A uniform path sends it as it stands
-            // and the shader adds it to the pixel's own coordinate; a tapered one has no slot left
-            // for it and slides the pattern's phase back by it instead, which is why that walk is
-            // kept inside one period: the phase is all it ends up being, and a long path's running
-            // total would spend most of a float on whole periods the shader's frac throws away.
-            float startLen = 0f;
-            float dashWalk = 0f;
+            Span<Vector2> half = stackalloc Vector2[5];
             for (int i = 0; i < segs; i++) {
                 Vector2 a = pts[i];
                 Vector2 b = pts[(i + 1) % n];
@@ -1215,6 +1200,7 @@ namespace Apos.Shapes {
                         }
                     }
                 }
+                int startCount = count;
                 // End end, walked from -nrm back to +nrm.
                 if (!hasEnd || squareEnd || joints[je].Mode == PathJointMode.Reversal) {
                     float ext = !hasEnd && capEnd == PathCap.Butt ? aaOffset : hB;
@@ -1268,14 +1254,46 @@ namespace Apos.Shapes {
                     }
                 }
 
+                if (rd.TypeDigit > 0) {
+                    // A dashed segment goes out as two halves split square across its middle, so
+                    // each half only has the joint or cap at its own end to dash around.
+                    PathEnd start = PathEndOf(hasStart ? joints[js] : default, hasStart, squareStart, capStart, 0f);
+                    PathEnd end = PathEndOf(hasEnd ? joints[je] : default, hasEnd, squareEnd, capEnd, dashEnd);
+                    PathPiece first = PathHalf(start, end, a, u, nrm, true, radiusA, radiusB, len, rd);
+                    PathPiece second = PathHalf(end, start, b, -u, nrm, false, radiusB, radiusA, len, rd);
+                    Vector2 mid = a + d * 0.5f;
+                    int m = 0;
+                    for (int k = 0; k < startCount; k++) half[m++] = poly[k];
+                    half[m++] = mid - nrm * hA;
+                    half[m++] = mid + nrm * hA;
+                    EmitPathPiece(first, half[..m], fill, border, thickness, aaSize, rd);
+                    m = 0;
+                    half[m++] = mid - nrm * hA;
+                    for (int k = startCount; k < count; k++) half[m++] = poly[k];
+                    half[m++] = mid + nrm * hA;
+                    EmitPathPiece(second, half[..m], fill, border, thickness, aaSize, rd);
+                    if (hasEnd && joints[je].Mode != PathJointMode.Reversal && joints[je].Join == PathJoin.Round && joints[je].Chords > 0) {
+                        ref PathJoint jd = ref joints[je];
+                        float baseAngle = MathF.Atan2(-jd.Sign * nrm.Y, -jd.Sign * nrm.X);
+                        float step = jd.Sign * jd.Theta / jd.Chords;
+                        float reach = hB * jd.Overshoot;
+                        for (int t = 0; t < jd.Chords; t += 2) {
+                            Vector2 v0 = PathFanVertex(jd, b, baseAngle, step, reach, t);
+                            Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
+                            Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
+                            half[0] = b;
+                            half[1] = jd.Sign > 0f ? v0 : v2;
+                            half[2] = v1;
+                            half[3] = jd.Sign > 0f ? v2 : v0;
+                            EmitPathPiece(second, half[..4], fill, border, thickness, aaSize, rd);
+                        }
+                    }
+                    continue;
+                }
+
                 float modes = modeStart + 8f * modeEnd;
-                float thetaCodeStart = hasStart ? joints[js].ThetaCode : 1024f;
-                float thetaCodeEnd = hasEnd ? joints[je].ThetaCode : 1024f;
-                float radiusCodeStart = hasStart ? joints[js].DashRadiusCode : 0f;
-                float radiusCodeEnd = hasEnd ? joints[je].DashRadiusCode : 0f;
-                ResolvedDash rs = tapered ? rd.AtOffset(dashWalk) : rd;
                 for (int k = 1; k + 1 < count; k += 2) {
-                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, tapered, rs);
+                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
                 }
 
                 // Round join: a fan around the joint covers the outer wedge between the two walls. Any
@@ -1290,18 +1308,11 @@ namespace Apos.Shapes {
                         Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
                         Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
                         if (jd.Sign > 0f) {
-                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, tapered, rs);
+                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f);
                         } else {
-                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f, thetaCodeStart, thetaCodeEnd, radiusCodeStart, radiusCodeEnd, startLen, tapered, rs);
+                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f);
                         }
                     }
-                }
-
-                float walked = len + (hasEnd ? joints[je].DashArc : 0f);
-                startLen += walked;
-                if (rd.TypeDigit > 0) {
-                    dashWalk += walked;
-                    dashWalk -= MathF.Floor(dashWalk / rd.Period) * rd.Period;
                 }
             }
         }
@@ -3612,9 +3623,86 @@ namespace Apos.Shapes {
             public float SHalf;
             public int Chords;
             public float Overshoot; // Chord vertices circumscribe the join arc by this factor.
-            public float ThetaCode; // Signed turn angle as the shader's 11 bit code, 1024 = 0. Dashed only.
-            public float DashRadiusCode; // Fillet radius as a 7 bit code over [radius, 2 * radius]. Dashed only.
-            public float DashArc;   // Pattern length the joint's fan consumes. Dashed only.
+            // Dashed only, from here on.
+            public float TauCode;   // Turn angle as an 11 bit code over [0, pi].
+            public float DashRadiusCode; // The pattern's circle as a 7 bit code over [radius, 2 * radius].
+            public float DashTangent; // How far back along each segment the pattern meets that circle.
+            public float DashFan;   // Pattern length around the circle.
+            public float DashStart; // Where the pattern reaches the circle.
+        }
+
+        // What a dashed half needs from one end of its segment. Sign is the joint's own, which
+        // says where the inside of its turn is, and stays 0 where the pattern runs straight.
+        private struct PathEnd {
+            public float Mode;
+            public float TauCode;
+            public float RadiusCode;
+            public float Sign;
+            public float Start;     // Where the pattern reaches the end's circle.
+        }
+
+        private static PathEnd PathEndOf(in PathJoint jd, bool joint, bool square, PathCap cap, float capStart) {
+            if (!joint) return new PathEnd { Mode = (float)cap, Start = capStart };
+            if (square || jd.Mode != PathJointMode.Partition) return new PathEnd { Start = jd.DashStart };
+            return new PathEnd {
+                Mode = jd.Join == PathJoin.Miter ? 3f : jd.Join == PathJoin.Bevel ? 4f : 0f,
+                TauCode = jd.TauCode,
+                RadiusCode = jd.DashRadiusCode,
+                Sign = jd.Sign,
+                Start = jd.DashStart,
+            };
+        }
+
+        // One half of a dashed path segment. Its frame puts the joint or cap at its own end at
+        // the origin, with x running into the segment and y on the outer side of the joint's turn.
+        private struct PathPiece {
+            public Vector2 Origin;
+            public Vector2 X;
+            public Vector2 Y;
+            public float Radius;    // Half width at the origin.
+            public float RadiusFar; // Half width at the segment's other end.
+            public float Length;    // Of the whole segment, negative for the half that leaves a joint.
+            public float Turns;     // The two ends' turns as 11 bit codes, this end's above.
+            public float Codes;     // End mode, the far circle's side, then both circles' codes.
+            public float FracPhase; // The pattern, with its phase counted from this end's circle.
+        }
+
+        // nrm is the segment's left normal. Both halves of a segment and both halves at a joint
+        // share an end's pattern position exactly, so each counts its phase from its own end.
+        private static PathPiece PathHalf(in PathEnd own, in PathEnd far, Vector2 origin, Vector2 x, Vector2 nrm, bool leaving, float radius, float radiusFar, float len, in ResolvedDash rd) {
+            // A joint's inner side is +Sign along the left normal.
+            Vector2 y = own.Sign != 0f ? -own.Sign * nrm : nrm;
+            float farSide = far.Sign * Vector2.Dot(nrm, y) < 0f ? 1f : 0f;
+            float phase = rd.Phase - own.Start / rd.Period;
+            phase -= MathF.Floor(phase);
+            return new PathPiece {
+                Origin = origin,
+                X = x,
+                Y = y,
+                Radius = radius,
+                RadiusFar = radiusFar,
+                Length = leaving ? -len : len,
+                Turns = own.TauCode * 2048f + far.TauCode,
+                Codes = own.Mode + 8f * (farSide + 2f * (own.RadiusCode + 128f * far.RadiusCode)),
+                FracPhase = DashStyle.Pack11(rd.Frac, phase),
+            };
+        }
+
+        // A dashed path's half as a fan of quads from its first vertex. The rounding slot carries
+        // the pattern's fraction and phase, which a path never rounds with, and the four spare
+        // channels carry the turns, the codes, the far half width and the period.
+        private void EmitPathPiece(in PathPiece pc, ReadOnlySpan<Vector2> poly, in Gradient fill, in Gradient border, float thickness, float aaSize, in ResolvedDash rd) {
+            for (int k = 1; k + 1 < poly.Length; k += 2) {
+                Vector2 w0 = poly[0];
+                Vector2 w1 = poly[k];
+                Vector2 w2 = poly[k + 1];
+                Vector2 w3 = poly[Math.Min(k + 2, poly.Length - 1)];
+                EmitHollowQuad(w0, w1, w2, w3, PieceLocal(pc, w0), PieceLocal(pc, w1), PieceLocal(pc, w2), PieceLocal(pc, w3), VertexShape.Shape.Path, fill, border, thickness, pc.Radius, pc.Length, aaSize, pc.FracPhase, pc.Turns, pc.Codes, pc.RadiusFar, rd.Period, rd.TypeDigit);
+            }
+        }
+        private static Vector2 PieceLocal(in PathPiece pc, Vector2 w) {
+            Vector2 r = w - pc.Origin;
+            return new Vector2(Vector2.Dot(r, pc.X), Vector2.Dot(r, pc.Y));
         }
 
         // The radius a butt dash pattern turns a corner on, which runs wider than the shape's
@@ -3647,29 +3735,15 @@ namespace Apos.Shapes {
         }
 
         // A path quad's local coordinates live in its segment's frame: x along the segment, y across it.
-        // Meta2 carries the packed end modes and the bevel plane angles for StrokeSDF. Dashed paths
-        // instead pack each end's signed turn angle as two 11 bit codes, from which the shader derives
-        // the bevel planes, to make room for the period, and put the fraction and phase in the unused
-        // rounding slot. Each end's fillet radius code rides above the end modes, which only need six
-        // bits, and a flag saying what the third slot holds rides above those, keeping that value well
-        // under 2^22. That slot is the segment's start length while the width is uniform, exactly as
-        // it always was, and the far half width once the stroke tapers and needs somewhere to put it;
-        // a tapered one hands the segment's start to the pattern's phase instead, which is the only
-        // thing that rounds, and only for the strokes that ask to taper.
-        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float radiusEnd, float aaSize, float modes, float angStart, float angEnd, float thetaCodeStart, float thetaCodeEnd, float radiusCodeStart, float radiusCodeEnd, float startLen, bool tapered, in ResolvedDash rd) {
+        // Meta2 carries the packed end modes, the bevel plane angles for StrokeSDF, and the far end's
+        // half width, which equals radius on a uniform path and tells the shader to take the plain
+        // capsule.
+        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float radiusEnd, float aaSize, float modes, float angStart, float angEnd) {
             Vector2 Local(Vector2 w) {
                 Vector2 r = w - origin;
                 return new Vector2(Vector2.Dot(r, u), Vector2.Dot(r, nrm));
             }
-            if (rd.TypeDigit > 0) {
-                float angs = thetaCodeStart * 2048f + thetaCodeEnd;
-                float packed = modes + 64f * (radiusCodeStart + 128f * (radiusCodeEnd + 128f * (tapered ? 1f : 0f)));
-                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, rd.FracPhase, packed, angs, tapered ? radiusEnd : startLen, rd.Period, rd.TypeDigit);
-            } else {
-                // The last slot carries the far end's half width; equal to radius on a uniform
-                // path, which is how the shader knows to take the plain capsule.
-                EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, radiusEnd);
-            }
+            EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, radiusEnd);
         }
 
         // One quad per edge between two nested convex polygons with matching corner counts. Adjacent

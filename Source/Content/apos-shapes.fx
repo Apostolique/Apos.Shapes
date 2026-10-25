@@ -480,183 +480,6 @@ float4 DashEdges(float u, float2 data) {
     return float4((abs(t) - h) * data.x, u - db * data.x, u + da * data.x, 2.0 * h * data.x);
 }
 
-float2 Perp(float2 v) {
-    return float2(-v.y, v.x);
-}
-
-// Distance to the segment that leaves a along the unit direction d and runs len.
-float SegRun(float2 q, float2 a, float2 d, float len) {
-    float2 f = q - a;
-    return length(f - d * clamp(dot(f, d), 0.0, max(len, 0.0)));
-}
-
-// Spine point crossed by the dash edge at contour position ue: on this segment in the
-// linear zone, on the corner arc through the arc spans, and on the neighbor past them. Also
-// returns the unit direction the contour coordinate grows in there, which is the edge's own
-// normal, since a dash edge is exactly the set of points at one contour position: the spine's
-// own direction on a straight run, and the tangent to the fillet arc through a corner fan,
-// where the edge is a ray out of the fillet center and every point on it shares its angle.
-// fr is each end's fillet radius, which is not the stroke radius; see PathDashCut.
-float2 PathEdgeFrame(float ue, float2 fr, float startLen, float thA, float thB, float uA, float uB, float2 cA, float2 cB, out float2 n) {
-    float aA = abs(thA);
-    float aB = abs(thB);
-    if (ue > uB && aB > 1e-4) {
-        float sB = sign(thB);
-        float se = ue - uB - aB * fr.y;
-        if (se > 0.0) {
-            float2 nb;
-            sincos(thB, nb.y, nb.x);
-            n = nb;
-            return cB + float2(sin(aB), -sB * cos(aB)) * fr.y + nb * se;
-        }
-        float psi = (ue - uB) / fr.y;
-        n = float2(cos(psi), sB * sin(psi));
-        return cB + float2(sin(psi), -sB * cos(psi)) * fr.y;
-    }
-    if (ue < uA && aA > 1e-4) {
-        float sA = sign(thA);
-        float se = uA - aA * fr.x - ue;
-        if (se > 0.0) {
-            float2 pv = float2(cos(thA), -sin(thA));
-            n = pv;
-            return cA + float2(-sin(aA), -sA * cos(aA)) * fr.x - pv * se;
-        }
-        float psi = (uA - ue) / fr.x;
-        n = float2(cos(psi), -sA * sin(psi));
-        return cA + float2(-sin(psi), -sA * cos(psi)) * fr.x;
-    }
-    n = float2(1.0, 0.0);
-    return float2(ue - startLen, 0.0);
-}
-
-// Half the stroke's width at a contour position. A joint's fan is one width all the way round -
-// the joint point's own - so both quads sharing it agree everywhere in it, and the taper runs
-// between the fans over the straight middle. Uniform strokes answer rA everywhere.
-// lean is the cosine of the taper over that middle, where the stroke's wall is the two end
-// circles' common tangent and so stands 1 / lean further out than the radius. A rounded dash is
-// built as a capsule around the spine, and a capsule of the plain radius would cut the stroke
-// narrow by exactly that factor, so the radius it reaches with is the one that lands on the
-// wall. The fans keep the plain radius: their own boundary is the joint's disc, not a tangent.
-float PathRadiusAt(float ue, float uA, float uB, float rA, float rB, float lean) {
-    float r = lerp(rA, rB, saturate((ue - uA) / max(uB - uA, 1e-6)));
-    return ue > uA && ue < uB ? r / lean : r;
-}
-
-// Dash cut for a path segment, negative inside a dash. For dashing, each joint rounds the
-// spine corner with a fillet arc tangent to both segments, and the pattern runs at unit
-// speed along that rounded spine. The fillet radius, fr per end, is deliberately NOT the
-// stroke radius: at exactly the stroke radius the fillet's inward offset collapses to a
-// single point that lies on the stroke's own inner edge, every dash boundary in the fan is
-// a ray out of that point, so all of them meet there and the gaps pinch shut to nothing.
-// Whatever is done about it downstream, the anti-aliasing blur around that point still
-// paints a speck adrift in the gap. A wider fillet puts its center clear of the stroke, so
-// no two dash boundaries meet anywhere that gets drawn and the degeneracy is gone rather
-// than patched. The CPU picks the radius per joint and sends it quantized, so both quads at
-// the joint derive the same field and the partition seam stays invisible.
-// Flat dashes measure the world distance to the two bounding dash edges themselves, which is
-// what keeps edges, borders and AA at their true width right through the corner fans. Every
-// dash edge is a straight line - perpendicular to a straight run, or a ray out of the fillet
-// center - so the distance to one is exact from any point on it and its unit tangent, which
-// is what PathEdgeFrame returns.
-// Rounded dashes are the exact capsule around the rounded spine, built from the bounding
-// edges' spine points. thA and thB are the signed turn angles at the ends, zero at caps and
-// at collinear, overlapping, and reversed joints, where the pattern just runs straight out,
-// matching the line shape.
-// The stroke's half width runs from rA at this end to rB at the far one, and every place the
-// pattern needs a width - the fillets it rounds corners with, the discs that bound a tip, a
-// rounded dash's body and caps - takes the width where it stands rather than one for the whole
-// segment. A uniform stroke passes the same radius twice and every one of them collapses.
-// type >= 1.5 selects rounded dashes.
-float PathDashCut(float2 q, float len, float rA, float rB, float2 fr, float startLen, float thA, float thB, float2 data, float type, float aa) {
-    float aA = abs(thA);
-    float aB = abs(thB);
-    float sA = sign(thA);
-    float sB = sign(thB);
-    float tA = aA > 1e-4 ? fr.x * tan(aA * 0.5) : 0.0;
-    float tB = aB > 1e-4 ? fr.y * tan(aB * 0.5) : 0.0;
-    float uA = startLen + tA;
-    float uB = startLen + len - tB;
-    float2 cA = float2(tA, sA * fr.x);
-    float2 cB = float2(len - tB, sB * fr.y);
-    // The taper the dash sees over the straight middle, and the cosine that goes with it. Past a
-    // slope of one the tangent stops existing - one end's circle has swallowed the other - and
-    // there is nothing sensible to lean, so it stays upright.
-    float slope = (rB - rA) / max(uB - uA, 1e-6);
-    float lean = abs(slope) < 1.0 ? sqrt(1.0 - slope * slope) : 1.0;
-
-    // The pixel's own contour coordinate, which is what puts it between a pair of dash edges.
-    // Inside a fan it is the angle around the fillet center, so the coordinate never folds:
-    // the center sits clear of the stroke, so nothing that gets drawn reaches it.
-    float u = startLen + q.x;
-    float v = q.y;
-    if (aB > 1e-4 && q.x > len - tB) {
-        float2 w = q - cB;
-        u = uB + clamp(atan2(w.x, -sB * w.y), 0.0, aB) * fr.y;
-        v = length(w) - fr.y;
-    } else if (aA > 1e-4 && q.x < tA) {
-        float2 w = q - cA;
-        u = uA - clamp(atan2(-w.x, -sA * w.y), 0.0, aA) * fr.x;
-        v = length(w) - fr.x;
-    }
-
-    float4 de = DashEdges(u, data);
-
-    // The exact capsule around the rounded spine: inside the dash's span the distance to the
-    // spine, and nothing else is needed there.
-    if (type >= 1.5 && de.x < 0.0) {
-        return abs(v) - PathRadiusAt(u, uA, uB, rA, rB, lean);
-    }
-
-    float2 nb, na;
-    float2 pb = PathEdgeFrame(de.y, fr, startLen, thA, thB, uA, uB, cA, cB, nb);
-    float2 pa = PathEdgeFrame(de.z, fr, startLen, thA, thB, uA, uB, cA, cB, na);
-    if (type >= 1.5) {
-        // Past the dash's span the capsule is the distance to the nearer of the two cap circles,
-        // each one as wide as the stroke is where it sits.
-        return min(length(q - pb) - PathRadiusAt(de.y, uA, uB, rA, rB, lean),
-                   length(q - pa) - PathRadiusAt(de.z, uA, uB, rA, rB, lean));
-    }
-    // The cut measured to the edge's own stretch across the stroke rather than to its infinite
-    // plane: a plane carried across a joint turning more than a right angle comes back on the
-    // wrong side of itself and takes the dash in half. The stroke's band straddles the spine, so
-    // the segment is bounded on both sides, by the band's half width where the edge stands. Both
-    // quads at a joint agree on that width, since past a segment's own span the taper saturates
-    // to the end it left from.
-    float hwB = PathRadiusAt(de.y, uA, uB, rA, rB, lean) + aa;
-    float hwA = PathRadiusAt(de.z, uA, uB, rA, rB, lean) + aa;
-    float2 eb = Perp(nb);
-    float2 ea = Perp(na);
-    float m = min(SegRun(q, pb - eb * hwB, eb, 2.0 * hwB),
-                  SegRun(q, pa - ea * hwA, ea, 2.0 * hwA));
-    float du = de.x >= 0.0 ? m : -m;
-
-    // Miter and bevel tips reach past the joint disc. A dash edge near the corner would
-    // sweep them as a needle, so out there the dash is bounded by the disc instead and
-    // the tip only grows back out, receding edge first, as the dash covers the whole
-    // corner span with margin to spare. The margin comes from the exact maximum of the
-    // sawtooth over the span, so the growth animates smoothly.
-    float corner = -1e6;
-    if (aB > 1e-4 && q.x > len) {
-        float wB = aB * fr.y * 0.5;
-        corner = length(q - float2(len, 0.0)) - rB + min(DashDistance(uB + wB, data) + wB, 0.0) * 2.0;
-    } else if (aA > 1e-4 && q.x < 0.0) {
-        float wA = aA * fr.x * 0.5;
-        corner = length(q) - rA + min(DashDistance(uA - wA, data) + wA, 0.0) * 2.0;
-    }
-    return max(du, corner);
-}
-
-// A dashed outline arrives cut into pieces at its corners, and each piece is one corner of the
-// border band or a straight run of it. The local frame puts the corner's fillet center at the
-// origin with the incoming edge's outward normal on x and the direction of travel on y, so the
-// outgoing edge's normal sits tau further round. A straight run is the same thing with tau = 0.
-// The pattern turns the corner on a circle of its own around piv, which is rc out from the band's
-// centerline. For butt caps that circle runs wider than the corner itself: every cut through the
-// fan is a ray out of its center, and the wider circle puts that center past the band's inner
-// edge, where the rays meeting is never drawn.
-//
-// Spine point at pattern position ue: straight along the incoming edge before the fan, around
-// the pattern circle through it, and straight along the outgoing edge after it.
 // A square corner at the origin, inside where x and y are both negative, cut straight across c
 // back along both edges. It is symmetric across y = x, so one cut end and one edge remain.
 float CutCornerSDF(float2 q, float c) {
@@ -668,13 +491,55 @@ float CutCornerSDF(float2 q, float c) {
     return v.y >= v.x ? across : length(v);
 }
 
-float2 PieceSpine(float ue, float u0, float arc, float rc, float2 piv, float2 n2) {
-    float s = ue - u0;
-    if (s < 0.0) return piv + float2(rc, s);
-    if (s > arc) return piv + n2 * rc + float2(-n2.y, n2.x) * (s - arc);
+// A dashed outline arrives cut into pieces at its corners, and each piece is one corner of the
+// border band or a straight run of it. A dashed path arrives as half segments, each with the
+// joint or cap at its end. Either way the pattern turns the piece's corner in a frame with the
+// corner at the origin, the incoming edge's outward normal on x and the direction of travel on
+// y, so the outgoing edge's normal sits tau further round. A straight run is the same thing with
+// tau = 0. The pattern turns the corner on a circle of its own around piv, of radius rc where it
+// crosses the band's centerline. For butt caps that circle runs wider than the corner itself:
+// every cut through the fan is a ray out of its center, and the wider circle puts that center
+// past the band's inner edge, where the rays meeting is never drawn.
+//
+// A half segment lies along the incoming edge, and the joint at the segment's far end turns the
+// pattern again. far is how long the straight run between the two circles is, the far circle's
+// radius and turn, and which side of x it sits on. A piece of an outline has no far end.
+//
+// The centerline point at pattern position v, counted from where the fan starts, and the
+// direction the pattern runs there, which is the normal of the dash edge through it.
+float2 PieceEdge(float v, float arc, float rc, float2 piv, float2 n2, float4 far, out float2 n) {
+    float2 t2 = float2(-n2.y, n2.x);
+    if (v > arc) {
+        n = t2;
+        return piv + n2 * rc + t2 * (v - arc);
+    }
     float2 cs;
-    sincos(s / max(rc, 1e-4), cs.y, cs.x);
-    return piv + cs * rc;
+    if (v >= 0.0) {
+        sincos(v / max(rc, 1e-4), cs.y, cs.x);
+        n = float2(-cs.y, cs.x);
+        return piv + cs * rc;
+    }
+    float2 back = piv + float2(rc, v);
+    n = float2(0.0, 1.0);
+    if (v >= -far.x) return back;
+    // Back around the far circle, then on along the segment before it.
+    float psi = (-far.x - v) / max(far.y, 1e-4);
+    float2 center = piv + float2(rc + far.w * far.y, -far.x);
+    sincos(min(psi, far.z), cs.y, cs.x);
+    n = float2(-far.w * cs.y, cs.x);
+    return center - far.y * float2(far.w * cs.x, cs.y) + n * min(v + far.x + far.z * far.y, 0.0);
+}
+
+// Half the band's width at pattern position v: a taper runs between the two circles, and its
+// wall leans by the slope, which stands it 1 / c.w further out than the radius.
+float PieceRadius(float v, float4 c) {
+    return lerp(c.x, c.y, saturate(-v / c.z)) * c.w;
+}
+
+// Distance to the segment that leaves a along the unit direction d and runs len.
+float SegRun(float2 q, float2 a, float2 d, float len) {
+    float2 f = q - a;
+    return length(f - d * clamp(dot(f, d), 0.0, len));
 }
 
 float LinearToGamma(float c) {
@@ -1522,6 +1387,22 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     float dashR = 0.0;
     float2 dashData = float2(1.0, 0.0);
     bool dashStroke = false;
+    // A dashed outline's piece and a dashed path's half segment share the walk around their
+    // corner, below the shapes; see PieceSpine for the frame they set up here.
+    bool piece = false;
+    bool piecePath = false;
+    float2 pq = q;
+    float pTau = 0.0;
+    float2 pH = float2(1.0, 0.0); // Cosine and sine of half the turn.
+    float2 pN2 = float2(1.0, 0.0);
+    float2 pPiv = float2(0.0, 0.0);
+    float pRc = 0.0;
+    float pU0 = 0.0;
+    float pBand = 0.0;
+    float4 pFar = float4(1e30, 0.0, 0.0, 1.0);
+    float4 pRadius = float4(0.0, 0.0, 1.0, 1.0);
+    bool pLeaving = false;
+    float pCorner = -1e6;
 
     // A glyph is coverage rather than a distance field, so it stands where a shape's SDF would
     // and hands the tail below its coverage in place of the edge fade. The 1 is what every other
@@ -1708,119 +1589,163 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             dashStroke = true;
         }
     } else if (shape < 10.5) {
-        // One piece of a dashed outline; see PieceSpine. Meta2 is the turn, the outline's own
-        // corner radius, the radius the pattern turns on, and the pattern position where its fan
-        // starts. The pattern itself rides in the two size slots, which a piece has no use for. A
-        // chamfer's square corner cut by less than its pattern circle arrives with the cut as a
-        // negative radius.
-        float tau = p.Meta2.x;
+        // One piece of a dashed outline. Meta2 is the turn, the outline's own corner radius, the
+        // radius the pattern turns on, and the pattern position where its fan starts. The pattern
+        // itself rides in the two size slots, which a piece has no use for. A chamfer's square
+        // corner cut by less than its pattern circle arrives with the cut as a negative radius.
+        pTau = p.Meta2.x;
         float ro = max(p.Meta2.y, 0.0);
-        float rp = p.Meta2.z;
-        float u0 = p.Meta2.w;
         float rd = lineSize * 0.5;
-        float2 h;
-        sincos(tau * 0.5, h.y, h.x);
-        float2 n2 = float2(h.x * h.x - h.y * h.y, 2.0 * h.x * h.y);
+        sincos(pTau * 0.5, pH.y, pH.x);
+        pN2 = float2(pH.x * pH.x - pH.y * pH.y, 2.0 * pH.x * pH.y);
         // The rounded corner: the fillet's circle across its own cone, the two edges either side.
-        bool cone = tau > 0.0 && q.y >= 0.0 && q.x * n2.y - q.y * n2.x >= 0.0;
-        d = p.Meta2.y < 0.0 ? CutCornerSDF(q, -p.Meta2.y) : cone ? length(q) - ro : max(q.x, dot(q, n2)) - ro;
-
-        float2 piv = -h * ((rp - ro) / max(h.x, 1e-4));
-        float rc = rp - rd;
-        float arc = tau * max(rc, 0.0);
-        float2 w = q - piv;
-        float u;
-        float stretch = 1.0; // How much wider the fan is at this pixel than on the centerline.
-        bool before = w.y < 0.0;
-        bool after = tau <= 0.0 || w.x * n2.y - w.y * n2.x < 0.0;
-        // Behind the pivot both edges are candidates, and the nearer one is the one whose own
-        // coordinate is larger, which is a test against the bisector.
-        bool fold = before && after;
-        if (fold) {
-            before = w.x >= dot(w, n2);
-            after = !before;
-        }
-        if (before) {
-            u = u0 + w.y;
-        } else if (after) {
-            u = u0 + arc + dot(w, float2(-n2.y, n2.x));
-        } else {
-            u = u0 + atan2(w.y, w.x) * max(rc, 0.0);
-            stretch = length(w) / max(rc, 1e-4);
-        }
-        float4 de = DashEdges(u, float2(sdfSize, p.Meta1.w));
-        if (dashType >= 1.5) {
-            // Round caps are the capsule around the centerline. A pixel's own position along the
-            // pattern is its nearest centerline point's, so inside a dash the nearest spine point
-            // is inside it too and the band is the answer; in a gap it is one of the two caps.
-            float band = abs(d + rd) - rd;
-            float caps = min(length(q - PieceSpine(de.y, u0, arc, rc, piv, n2)),
-                             length(q - PieceSpine(de.z, u0, arc, rc, piv, n2))) - rd;
-            dashCut = de.x < 0.0 ? band : max(band, caps);
-            if (fold) {
-                // Behind the pivot the centerline folds, and the run the pixel didn't pick can
-                // hold a dash that reaches it all the same, so that run's capsule counts too.
-                float2 t2 = float2(-n2.y, n2.x);
-                float uo = before ? u0 + arc + dot(w, t2) : u0 + w.y;
-                float lo = before ? abs(dot(w, n2) - rc) : abs(w.x - rc);
-                float4 eo = DashEdges(uo, float2(sdfSize, p.Meta1.w));
-                float co = eo.x < 0.0 ? lo - rd : min(length(q - PieceSpine(eo.y, u0, arc, rc, piv, n2)),
-                                                       length(q - PieceSpine(eo.z, u0, arc, rc, piv, n2))) - rd;
-                dashCut = min(dashCut, max(band, co));
-            }
-        } else {
-            dashCut = de.x * stretch;
-        }
+        bool cone = pTau > 0.0 && q.y >= 0.0 && q.x * pN2.y - q.y * pN2.x >= 0.0;
+        d = p.Meta2.y < 0.0 ? CutCornerSDF(q, -p.Meta2.y) : cone ? length(q) - ro : max(q.x, dot(q, pN2)) - ro;
+        piece = true;
+        pPiv = -pH * ((p.Meta2.z - ro) / max(pH.x, 1e-4));
+        pRc = p.Meta2.z - rd;
+        pU0 = p.Meta2.w;
+        dashData = float2(sdfSize, p.Meta1.w);
+        pBand = abs(d + rd) - rd;
+        pRadius = float4(rd, rd, 1.0, 1.0);
     } else if (shape > 11.5) {
         d = ChamferBoxSDF(q, float2(sdfSize, p.Meta1.w), p.Meta2);
     } else {
         float4 sd = p.Meta2;
-        float pathCut = -1e6;
+        float pathLen = p.Meta1.w;
         if (dashType >= 0.5) {
-            // Dashed paths pack each end's signed turn angle into Meta2.y as two 11 bit codes
-            // (1024 = 0, meaning caps and collinear joints), freeing Meta2.z and Meta2.w. The
-            // rounding slot carries the packed fraction and phase; paths never use it for
-            // rounding. The bevel plane directions derive from the turn angles, so nothing else
-            // needs to travel. Each end's fillet radius rides above the end modes in Meta2.x as
-            // a 7 bit fraction of that end's own stroke radius over [1, 2], and a flag bit above
-            // those says what Meta2.z holds; that keeps the packed value under 2^21, well inside
-            // what a ps_3_0 interpolator carries exactly, unlike the two 11 bit codes which
-            // already sit at the ceiling.
-            // A uniform path puts the segment's start length there and takes its far radius off
-            // sdfSize. A tapering one needs the slot for that radius, so the pattern's phase
-            // arrives already slid back by the start instead and the contour coordinate is the
-            // segment's own. Only the taper pays for that, which is a phase rounded to one part
-            // in 2047 of a period rather than a length carried exactly.
-            float ma = sd.y;
-            float thB = (DecodeDigit(ma, 2048.0) - 1024.0) / 1023.0 * 3.1415926536;
-            float thA = (ma - 1024.0) / 1023.0 * 3.1415926536;
-            float mr = sd.x;
-            float modeBits = DecodeDigit(mr, 64.0);
-            float frCodeA = DecodeDigit(mr, 128.0);
-            float frCodeB = DecodeDigit(mr, 128.0);
-            float tapered = mr;
-            float rEnd = tapered >= 0.5 ? sd.z : sdfSize;
-            float startLen = tapered >= 0.5 ? 0.0 : sd.z;
-            // Each end's fillet is a multiple of the width there, so the two quads at a joint
-            // read it off the same radius and walk the corner to the same arc length.
-            float2 fr = float2(sdfSize, rEnd) * (1.0 + float2(frCodeA, frCodeB) / 127.0);
-            float2 hA;
-            sincos(thA * 0.5, hA.y, hA.x);
-            float2 hB;
-            sincos(thB * 0.5, hB.y, hB.x);
-            float sA = sign(thA);
-            float sB = sign(thB);
-            sd = float4(modeBits, atan2(-sA * hA.x, -sA * hA.y), atan2(-sB * hB.x, sB * hB.y), rEnd);
-            pathCut = PathDashCut(q, p.Meta1.w, sdfSize, rEnd, fr, startLen, thA, thB, float2(p.Meta2.w, rounded), dashType, footprint.y * aaPixels);
+            // Half of a dashed path's segment, in a frame with the joint or cap at its own end at
+            // the origin, x running into the segment and y on the outer side of the turn. The
+            // half that leaves the joint carries a negative length. The walk reads every half as
+            // the one arriving at its joint, which for the leaving half mirrors it across the
+            // bisector, and turns the pattern around instead. Meta2.x is the two ends' turns as
+            // 11 bit codes over [0, pi], this end's above, and Meta2.y packs the end mode, which
+            // side the far circle sits on, then both circles as 7 bit codes over [r, 2r]. Then
+            // come the far end's half width and the period, with the fraction and the phase,
+            // counted from this end's circle, in the rounding slot. A round dash follows the
+            // spine's own corners.
+            float t = sd.x;
+            float tauFar = DecodeDigit(t, 2048.0) / 2047.0 * 3.1415926536;
+            pTau = t / 2047.0 * 3.1415926536;
+            float m = sd.y;
+            float mode = DecodeDigit(m, 8.0);
+            float farSide = DecodeDigit(m, 2.0);
+            float codeOwn = DecodeDigit(m, 128.0);
+            pLeaving = pathLen < 0.0;
+            pathLen = abs(pathLen);
+            sincos(pTau * 0.5, pH.y, pH.x);
+            pN2 = float2(pH.x * pH.x - pH.y * pH.y, 2.0 * pH.x * pH.y);
+            pq = float2(q.y, -q.x);
+            bool butt = dashType < 1.5;
+            pRc = butt ? sdfSize * (1.0 + codeOwn / 127.0) : 0.0;
+            pPiv = -pH * (pRc / max(pH.x, 1e-4));
+            float frFar = butt ? sd.z * (1.0 + m / 127.0) : 0.0;
+            float2 hf;
+            sincos(tauFar * 0.5, hf.y, hf.x);
+            pFar = float4(pathLen + pPiv.y - frFar * hf.y / max(hf.x, 1e-4), frFar, tauFar, farSide > 0.5 ? -1.0 : 1.0);
+            float slope = (sd.z - sdfSize) / max(pFar.x, 1e-4);
+            pRadius = float4(sdfSize, sd.z, max(pFar.x, 1e-4), abs(slope) < 1.0 ? rsqrt(1.0 - slope * slope) : 1.0);
+            dashData = float2(sd.w, rounded);
+            // Miter and bevel tips reach past the joint disc, and a dash edge near the corner
+            // would sweep them as a needle. Out there the dash is bounded by the disc instead,
+            // and the tip only grows back once the dash covers the whole fan with margin to
+            // spare, which the dash's distance at the fan's middle measures.
+            if (pTau > 1e-4 && q.x < 0.0) {
+                float mid = pTau * pRc * 0.5;
+                pCorner = length(q) - sdfSize + min(DashDistance(mid, dashData) + mid, 0.0) * 2.0;
+            }
+            // The far end runs on open, since this half never reaches it, and a bevel cuts square
+            // across the bisector.
+            sd = float4(mode + 24.0, 1.5707963 + pTau * 0.5, 0.0, sd.z);
             rounded = 0.0;
-            dashType = 0.0;
+            piece = true;
+            piecePath = true;
         }
         // Solid paths carry the far end's half width in Meta2.w so a stroke can taper. It
         // equals sdfSize on a uniform path, which takes the plain capsule and keeps those
         // pixels exactly as they were.
-        d = max(sd.w == sdfSize
-                ? StrokeSDF(q, p.Meta1.w, sdfSize, sd)
-                : StrokeConeSDF(q, p.Meta1.w, sdfSize, sd.w, sd), pathCut);
+        d = sd.w == sdfSize
+            ? StrokeSDF(q, pathLen, sdfSize, sd)
+            : StrokeConeSDF(q, pathLen, sdfSize, sd.w, sd);
+        pBand = d;
+    }
+
+    if (piece) {
+        // The pixel's place along the pattern: straight along the incoming edge before the fan,
+        // the angle around the pattern circle through it, and straight along the outgoing edge
+        // after it.
+        float arc = pTau * max(pRc, 0.0);
+        float2 w = pq - pPiv;
+        float2 t2 = float2(-pN2.y, pN2.x);
+        float v;
+        bool before = w.y < 0.0;
+        bool after = pTau <= 0.0 || w.x * pN2.y - w.y * pN2.x < 0.0;
+        // Behind the pivot both edges are candidates, and the nearer one is the one whose own
+        // coordinate is larger, which is a test against the bisector.
+        bool fold = before && after;
+        if (fold) {
+            before = w.x >= dot(w, pN2);
+            after = !before;
+        }
+        if (before) {
+            v = w.y;
+        } else if (after) {
+            v = arc + dot(w, t2);
+        } else {
+            v = atan2(w.y, w.x) * max(pRc, 0.0);
+        }
+        float4 de = DashEdges(pU0 + (pLeaving ? arc - v : v), dashData);
+        float v1 = de.y - pU0;
+        float v2 = de.z - pU0;
+        v1 = pLeaving ? arc - v1 : v1;
+        v2 = pLeaving ? arc - v2 : v2;
+        float2 n1, n2;
+        float2 e1 = PieceEdge(v1, arc, pRc, pPiv, pN2, pFar, n1);
+        float2 e2 = PieceEdge(v2, arc, pRc, pPiv, pN2, pFar, n2);
+        float r1 = PieceRadius(v1, pRadius);
+        float r2 = PieceRadius(v2, pRadius);
+        float cut;
+        if (dashType >= 1.5) {
+            // Round caps are the capsule around the centerline. A pixel's own position along the
+            // pattern is its nearest centerline point's, so inside a dash the nearest spine point
+            // is inside it too and the band is the answer; in a gap it is one of the two caps.
+            cut = de.x < 0.0 ? pBand : max(pBand, min(length(pq - e1) - r1, length(pq - e2) - r2));
+            if (fold) {
+                // Behind the pivot the centerline folds, and the run the pixel didn't pick can
+                // hold a dash that reaches it all the same, so that run's capsule counts too.
+                float vo = before ? arc + dot(w, t2) : w.y;
+                float lo = before ? abs(dot(w, pN2) - pRc) : abs(w.x - pRc);
+                float4 eo = DashEdges(pU0 + (pLeaving ? arc - vo : vo), dashData);
+                float o1 = eo.y - pU0;
+                float o2 = eo.z - pU0;
+                o1 = pLeaving ? arc - o1 : o1;
+                o2 = pLeaving ? arc - o2 : o2;
+                float co = eo.x < 0.0 ? lo - PieceRadius(vo, pRadius)
+                                      : min(length(pq - PieceEdge(o1, arc, pRc, pPiv, pN2, pFar, n1)) - PieceRadius(o1, pRadius),
+                                            length(pq - PieceEdge(o2, arc, pRc, pPiv, pN2, pFar, n2)) - PieceRadius(o2, pRadius));
+                cut = min(cut, max(pBand, co));
+            }
+        } else {
+            // A butt dash ends on a straight cut across the band, square to the direction the
+            // pattern runs there. The cut stops at the band's inner edge, since a line carried
+            // round a corner turning more than a right angle comes back on the wrong side of
+            // itself, while an outline's runs on past the outer edge to reach a corner's tip.
+            float aa = footprint.y * aaPixels;
+            float2 c1 = float2(n1.y, -n1.x);
+            float2 c2 = float2(n2.y, -n2.x);
+            // A path's stroke is bounded past its outer edge by the joint disc instead.
+            float reach1 = piecePath ? 2.0 * (r1 + aa) : 1e6;
+            float reach2 = piecePath ? 2.0 * (r2 + aa) : 1e6;
+            float run = min(SegRun(pq, e1 - c1 * (r1 + aa), c1, reach1), SegRun(pq, e2 - c2 * (r2 + aa), c2, reach2));
+            cut = de.x < 0.0 ? -run : run;
+        }
+        if (piecePath) {
+            // A path's dash cuts the whole stroke, so every dash gets its own edges and border.
+            d = max(max(d, cut), pCorner);
+            dashType = 0.0;
+        } else {
+            dashCut = cut;
+        }
     }
 
     d -= rounded;
