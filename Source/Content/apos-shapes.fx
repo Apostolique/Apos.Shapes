@@ -1620,7 +1620,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             // the one arriving at its joint, which for the leaving half mirrors it across the
             // bisector, and turns the pattern around instead. Meta2.x is the two ends' turns as
             // 11 bit codes over [0, pi], this end's above, and Meta2.y packs the end mode, which
-            // side the far circle sits on, then both circles as 7 bit codes over [r, 2r]. Then
+            // side the far circle sits on, then both circles as 7 bit codes over [0, 2r]. Then
             // come the far end's half width and the period, with the fraction and the phase,
             // counted from this end's circle, in the rounding slot. A round dash follows the
             // spine's own corners.
@@ -1637,9 +1637,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             pN2 = float2(pH.x * pH.x - pH.y * pH.y, 2.0 * pH.x * pH.y);
             pq = float2(q.y, -q.x);
             bool butt = dashType < 1.5;
-            pRc = butt ? sdfSize * (1.0 + codeOwn / 127.0) : 0.0;
+            pRc = butt ? sdfSize * codeOwn / 63.5 : 0.0;
             pPiv = -pH * (pRc / max(pH.x, 1e-4));
-            float frFar = butt ? sd.z * (1.0 + m / 127.0) : 0.0;
+            float frFar = butt ? sd.z * m / 63.5 : 0.0;
             float2 hf;
             sincos(tauFar * 0.5, hf.y, hf.x);
             pFar = float4(pathLen + pPiv.y - frFar * hf.y / max(hf.x, 1e-4), frFar, tauFar, farSide > 0.5 ? -1.0 : 1.0);

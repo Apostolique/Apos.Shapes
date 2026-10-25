@@ -1021,21 +1021,25 @@ namespace Apos.Shapes {
                     if (dashed && jd.Mode == PathJointMode.Partition && dash.Cap != DashCap.Round) {
                         // A butt dash's cut through the corner is a ray out of the center of the
                         // circle the pattern turns on, so the pattern rounds the spine's corner with
-                        // a circle tangent to both segments. At exactly the radius that center
-                        // lands on the stroke's inner edge, where every cut in the corner would
-                        // meet, so it widens to twice that, as far as half of each neighboring
-                        // segment allows. A round dash follows the spine's own corner, since its
-                        // ends are discs around the spine rather than cuts across it, and overlap
-                        // joints run the pattern straight through. The shader decodes the turn
-                        // from an 11 bit code and the radius from a 7 bit one over [r, 2r], so
-                        // both are quantized here and the pattern's walk agrees with it exactly.
+                        // a circle tangent to both segments. At the stroke's radius that center
+                        // lands on the inner edge, where every cut in the corner would meet, so it
+                        // widens to twice that, as far as half of each neighboring segment allows.
+                        // Overlap joints run the pattern straight through, which is this walk with
+                        // no circle at all, so the circle shrinks to nothing on the way to that
+                        // switch, where the inner miter reaches half a segment. Otherwise every
+                        // dash on the path would jump there. A round dash follows the spine's own
+                        // corner, since its ends are discs around the spine rather than cuts
+                        // across it. The shader decodes the turn from an 11 bit code and the
+                        // radius from a 7 bit one over [0, 2r], so both are quantized here and the
+                        // pattern's walk agrees with it exactly.
                         jd.TauCode = MathF.Round(jd.Theta / MathF.PI * 2047f);
                         float tauQ = jd.TauCode / 2047f * MathF.PI;
                         float tanQ = MathF.Tan(tauQ * 0.5f);
                         float fit = tanQ > 1e-6f ? MathF.Min(lenPrev, len) * 0.5f / tanQ : float.MaxValue;
                         float rCorner = MathF.Max(rJoint, 1e-6f);
-                        jd.DashRadiusCode = Math.Clamp(MathF.Round((MathF.Min(fit, 2f * rCorner) / rCorner - 1f) * 127f), 0f, 127f);
-                        float fr = rCorner * (1f + jd.DashRadiusCode / 127f);
+                        float want = MathF.Max(MathF.Min(MathF.Min(fit, 2f * rCorner), 2f * (fit - h)), 0f);
+                        jd.DashRadiusCode = Math.Clamp(MathF.Floor(want / rCorner * 63.5f), 0f, 127f);
+                        float fr = rCorner * jd.DashRadiusCode / 63.5f;
                         jd.DashTangent = fr * tanQ;
                         jd.DashFan = tauQ * fr;
                     } else if (dashed && jd.Mode == PathJointMode.Partition) {
@@ -3625,7 +3629,7 @@ namespace Apos.Shapes {
             public float Overshoot; // Chord vertices circumscribe the join arc by this factor.
             // Dashed only, from here on.
             public float TauCode;   // Turn angle as an 11 bit code over [0, pi].
-            public float DashRadiusCode; // The pattern's circle as a 7 bit code over [radius, 2 * radius].
+            public float DashRadiusCode; // The pattern's circle as a 7 bit code over [0, 2 * radius].
             public float DashTangent; // How far back along each segment the pattern meets that circle.
             public float DashFan;   // Pattern length around the circle.
             public float DashStart; // Where the pattern reaches the circle.

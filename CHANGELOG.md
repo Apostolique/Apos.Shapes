@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Round dashes on chamfers and narrow triangles no longer break apart at the corners.
 - Dashes on an ellipse no longer jump when its width and height trade places as the larger one.
+- Butt dashes on a path no longer jump as a joint turns sharper, and no longer stretch into long wedges at sharp joints.
 - Blue noise dithering works on OpenGL in batches without a ramp, and no longer turns to blocks after text grows the glyph tables.
 
 ## [0.8.7] - 2026-10-23
