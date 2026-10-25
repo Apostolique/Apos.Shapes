@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.9.0] - 2026-10-25
+
 ### Added
 
 - `PushClip` and `PopClip` nest clips. Each one keeps its own rounding and rotation, and draws land where they all overlap.
@@ -458,7 +462,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.7...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.7...v0.9.0
 [0.8.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.4...v0.8.5
