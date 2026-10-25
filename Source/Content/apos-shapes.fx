@@ -1725,7 +1725,8 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
         bool after = tau <= 0.0 || w.x * n2.y - w.y * n2.x < 0.0;
         // Behind the pivot both edges are candidates, and the nearer one is the one whose own
         // coordinate is larger, which is a test against the bisector.
-        if (before && after) {
+        bool fold = before && after;
+        if (fold) {
             before = w.x >= dot(w, n2);
             after = !before;
         }
@@ -1746,6 +1747,17 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useGradient, bool useText) {
             float caps = min(length(q - PieceSpine(de.y, u0, arc, rc, piv, n2)),
                              length(q - PieceSpine(de.z, u0, arc, rc, piv, n2))) - rd;
             dashCut = de.x < 0.0 ? band : max(band, caps);
+            if (fold) {
+                // Behind the pivot the centerline folds, and the run the pixel didn't pick can
+                // hold a dash that reaches it all the same, so that run's capsule counts too.
+                float2 t2 = float2(-n2.y, n2.x);
+                float uo = before ? u0 + arc + dot(w, t2) : u0 + w.y;
+                float lo = before ? abs(dot(w, n2) - rc) : abs(w.x - rc);
+                float4 eo = DashEdges(uo, float2(sdfSize, p.Meta1.w));
+                float co = eo.x < 0.0 ? lo - rd : min(length(q - PieceSpine(eo.y, u0, arc, rc, piv, n2)),
+                                                       length(q - PieceSpine(eo.z, u0, arc, rc, piv, n2))) - rd;
+                dashCut = min(dashCut, max(band, co));
+            }
         } else {
             dashCut = de.x * stretch;
         }
