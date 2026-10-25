@@ -61,7 +61,7 @@
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.knifx&quot; --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <!-- See Tools/ShaderPack for why the two packages compress differently. -->
-    <Exec Command="dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- gzip $(AposShaderDir)apos-shapes.knifx $(AposShaderDir)apos-shapes.kni.dx11.mgfx" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- gzip &quot;$(AposShaderDir)apos-shapes.knifx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
   </Target>
 
   <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders
