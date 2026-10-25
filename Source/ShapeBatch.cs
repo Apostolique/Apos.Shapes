@@ -973,6 +973,11 @@ namespace Apos.Shapes {
                 float h = radii.IsEmpty ? radius + aaOffset : MathF.Max(
                     SegH(rPrev, rJoint, lenPrev, aaOffset),
                     SegH(rJoint, rNext, len, aaOffset));
+                // The same reach without the AA margin, which is measured in pixels. Anything the
+                // dash pattern is built from uses this one, so the dashes stay put under zoom.
+                float h0 = radii.IsEmpty ? radius : MathF.Max(
+                    SegH(rPrev, rJoint, lenPrev, 0f),
+                    SegH(rJoint, rNext, len, 0f));
 
                 float c2 = Vector2.Dot(uPrev, u);
                 float s2 = uPrev.X * u.Y - uPrev.Y * u.X;
@@ -999,11 +1004,17 @@ namespace Apos.Shapes {
                     // overlapping slabs each walk the pattern from their own end, so the joint
                     // comes out with the dashes drawn twice over at two different phases, which
                     // is a worse thing to look at than the wedge.
-                    if (run <= MathF.Min(lenPrev, len) * 0.5f
+                    //
+                    // A dashed path walks a different pattern in each mode, so it picks the mode
+                    // without the AA margin, or zooming would flip it. Where the margin alone
+                    // overruns half a segment, the inner point stops at the half instead and
+                    // only that corner's inner AA fringe is clipped.
+                    float halfSeg = MathF.Min(lenPrev, len) * 0.5f;
+                    if ((dashed ? h0 * sHalf / cHalf : run) <= halfSeg
                         && (dashed || TaperBite(rPrev, rJoint, rNext, lenPrev, len, jd.Theta)
                             <= _pathTaperBitePixels * _pixelSize)) {
                         jd.Mode = PathJointMode.Partition;
-                        jd.BIn = joint + m * (sign * h / cHalf);
+                        jd.BIn = joint + m * (sign * MathF.Min(h, halfSeg * cHalf / MathF.Max(sHalf, 1e-6f)) / cHalf);
                         PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
                         if (requested != PathJoin.Round && jd.Theta > 1e-4f) {
                             PathJoin effective = requested;
@@ -1043,7 +1054,7 @@ namespace Apos.Shapes {
                         float tanQ = MathF.Tan(tauQ * 0.5f);
                         float fit = tanQ > 1e-6f ? MathF.Min(lenPrev, len) * 0.5f / tanQ : float.MaxValue;
                         float rCorner = MathF.Max(rJoint, 1e-6f);
-                        float want = MathF.Max(MathF.Min(MathF.Min(fit, 2f * rCorner), 2f * (fit - h)), 0f);
+                        float want = MathF.Max(MathF.Min(MathF.Min(fit, 2f * rCorner), 2f * (fit - h0)), 0f);
                         jd.DashRadiusCode = Math.Clamp(MathF.Floor(want / rCorner * 63.5f), 0f, 127f);
                         float fr = rCorner * jd.DashRadiusCode / 63.5f;
                         jd.DashTangent = fr * tanQ;
