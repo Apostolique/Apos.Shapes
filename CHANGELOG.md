@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - The shader compiles much faster the first time a game starts, and fastest for games that only use flat colors.
-- Shapes draw faster, most of all large ones that are dashed or have both a fill and a border.
+- Shapes draw faster, most of all large ones.
 - A dash pattern now runs along the middle of the border, so its phase shifts slightly from before.
 - Every clip change now costs a draw call, while the batch still uploads once.
 - Switching textures in the middle of a batch costs a draw call instead of a whole new upload.
