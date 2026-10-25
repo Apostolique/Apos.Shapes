@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Changed
+
+- Text and SVG fills have sharper edges and come out at their true weight instead of looking bold.
 
 ## [0.9.0] - 2026-10-25
 

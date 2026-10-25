@@ -1497,7 +1497,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         float coverage = max(
             abs(px * xwgt + py * ywgt) / max(xwgt + ywgt, 0.0001),
             min(abs(px), abs(py)));
-        glyphFade = sqrt(saturate(coverage));
+        // Coverage is the pixel's area inside the outline, so it goes on as is. Boosting it
+        // (a square root, say) spreads every edge outward and the text reads bold and soft.
+        glyphFade = saturate(coverage);
     } else if (shape < 0.5) {
         d = CircleSDF(q, sdfSize);
     } else if (shape < 1.5) {
