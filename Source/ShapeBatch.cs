@@ -3191,7 +3191,7 @@ namespace Apos.Shapes {
                     _clipSizeParam?.SetValue(_clipSizes);
                     _clipCountParam?.SetValue((float)run.ClipCount);
                 }
-                DrawRange(run.Texture, run.FirstIndex, end - run.FirstIndex);
+                DrawSplit(run.Texture, run.FirstIndex, end - run.FirstIndex);
             }
 
             _vertexCount = 0;
@@ -3205,10 +3205,67 @@ namespace Apos.Shapes {
             _glyphs.Flushed();
         }
 
-        // Draws a stretch of the index buffer with the cheapest technique that has every feature
-        // its quads use.
-        private void DrawRange(Texture2D? texture, int firstIndex, int indexCount) {
-            EffectTechnique technique = PickTechnique(RangeFeatures(firstIndex, indexCount) | _warmupFeatures);
+        // Draws a run with the cheapest techniques that have already compiled. A stretch of quads
+        // that needs fewer features than the run as a whole and covers enough of the screen
+        // draws on its own with a smaller technique. The rest goes with its neighbors, so a few
+        // dashed quads among solid ones don't each cost a draw call.
+        private void DrawSplit(Texture2D? texture, int firstIndex, int indexCount) {
+            // Stretches of quads with the same features, by first quad.
+            int count = 0, all = _warmupFeatures;
+            int endQuad = (firstIndex + indexCount) / 6;
+            for (int q = firstIndex / 6; q < endQuad; q++) {
+                int f = QuadFeatures(q);
+                if (count > 0 && _stretches[count - 1].Features == f) continue;
+                if (count == _stretches.Length) Array.Resize(ref _stretches, count * 2);
+                _stretches[count++] = new Stretch { Start = q, Features = f };
+                all |= f;
+            }
+            int whole = PickTechnique(all);
+            if (count == 1 || whole <= 0 || _warmupFeatures != 0) {
+                DrawRange(texture, whole, firstIndex, indexCount);
+                return;
+            }
+
+            // Stretches that can't go smaller or are too small to pay for a draw call merge with
+            // the ones around them into gaps. What's left are the anchors.
+            int kept = 0;
+            for (int i = 0; i < count; i++) {
+                Stretch stretch = _stretches[i];
+                int stretchEnd = i + 1 < count ? _stretches[i + 1].Start : endQuad;
+                int t = SmallestCompiled(stretch.Features);
+                bool anchor = t != whole && ScreenArea(stretch.Start, stretchEnd) >= _splitArea;
+                if (!anchor && kept > 0 && _stretches[kept - 1].Technique < 0) {
+                    _stretches[kept - 1].Features |= stretch.Features;
+                    continue;
+                }
+                _stretches[kept++] = new Stretch { Start = stretch.Start, Features = stretch.Features, Technique = anchor ? t : -1 };
+            }
+            // A gap draws with an anchor next to it when that one covers it, which saves the draw
+            // call between them.
+            for (int i = 0; i < kept; i++) {
+                ref Stretch gap = ref _stretches[i];
+                if (gap.Technique >= 0) continue;
+                int previous = i > 0 ? _stretches[i - 1].Technique : -1;
+                int next = i + 1 < kept ? _stretches[i + 1].Technique : -1;
+                if (previous >= 0 && (previous & gap.Features) == gap.Features) gap.Technique = previous;
+                else if (next >= 0 && (next & gap.Features) == gap.Features) gap.Technique = next;
+                else gap.Technique = SmallestCompiled(gap.Features);
+            }
+
+            for (int i = 0; i < kept;) {
+                int j = i + 1;
+                while (j < kept && _stretches[j].Technique == _stretches[i].Technique) j++;
+                int from = _stretches[i].Start * 6;
+                int to = j < kept ? _stretches[j].Start * 6 : firstIndex + indexCount;
+                DrawRange(texture, _stretches[i].Technique, from, to - from);
+                i = j;
+            }
+        }
+
+        // Draws a stretch of the index buffer with a technique, by index. -1 means a replacement
+        // shader's current technique.
+        private void DrawRange(Texture2D? texture, int techniqueIndex, int firstIndex, int indexCount) {
+            EffectTechnique technique = techniqueIndex < 0 ? _effect.CurrentTechnique : _techniques[techniqueIndex]!;
             if (_blueNoiseParam != null) {
                 // The built-in shader names its textures, and each technique's shader may keep
                 // them on different units, so they go over by name and Apply places them.
@@ -3250,49 +3307,75 @@ namespace Apos.Shapes {
             }
         }
 
-        // The technique for a stretch that uses these features. One that hasn't drawn yet would
-        // stall on its first compile, so while some technique that has drawn covers them, that
-        // one stands in instead, the smallest of them if there are several. A warmup asks for
-        // exactly what it names, since compiling that is the point of it.
-        private EffectTechnique PickTechnique(int features) {
-            if (_techniques[features] == null) return _effect.CurrentTechnique;
+        // The technique for a stretch that uses these features, by index, or -1 for a
+        // replacement shader. One that hasn't drawn yet would stall on its first compile, so
+        // while some technique that has drawn covers them, that one stands in instead. A warmup
+        // asks for exactly what it names, since compiling that is the point of it.
+        private int PickTechnique(int features) {
+            if (_techniques[features] == null) return -1;
             if (!_compiled[features] && _warmupFeatures == 0) {
-                int best = -1;
-                for (int i = 0; i < _techniques.Length; i++) {
-                    if (_compiled[i] && (i & features) == features && (best < 0 || BitCount(i) < BitCount(best))) best = i;
-                }
-                if (best >= 0) return _techniques[best]!;
+                int best = SmallestCompiled(features);
+                if (best >= 0) return best;
             }
             _compiled[features] = true;
-            return _techniques[features]!;
+            return features;
+        }
+
+        // The smallest technique that has drawn and covers these features, or -1 if none has.
+        private int SmallestCompiled(int features) {
+            int best = -1;
+            for (int i = 0; i < _techniques.Length; i++) {
+                if (_compiled[i] && (i & features) == features && (best < 0 || BitCount(i) < BitCount(best))) best = i;
+            }
+            return best;
         }
         private static int BitCount(int v) => (v & 1) + (v >> 1 & 1) + (v >> 2 & 1) + (v >> 3 & 1);
 
-        // Which of the four features the techniques split on the quads in a stretch use, as the
-        // technique's index: dashes in bit 0, fill gradients beyond a flat color in bit 1, border
-        // gradients in bit 2, text in bit 3. Each quad's first vertex says, in the packed meta it
-        // carries for the shader and in the negated color lanes that flag a palette, a ramp or a
-        // color ramp. A border on the fill's own gradient reuses the fill's result in the shader,
-        // so only a border that differs needs its own.
-        private int RangeFeatures(int firstIndex, int indexCount) {
+        // Which of the four features the techniques split on a quad uses, as the technique's
+        // index: dashes in bit 0, fill gradients beyond a flat color in bit 1, border gradients
+        // in bit 2, text in bit 3. The quad's first vertex says, in the packed meta it carries
+        // for the shader and in the negated color lanes that flag a palette, a ramp or a color
+        // ramp. A border on the fill's own gradient reuses the fill's result in the shader, so
+        // only a border that differs needs its own.
+        private int QuadFeatures(int q) {
             const ulong flags = 0x8000800080008000ul;
+            ref VertexShape v = ref _vertices[q * 4];
+            int meta = (int)v.TextureCoordinate.W;
+            int shape = meta % 16;
+            int fillStyle = meta / 16 % 64;
+            int borderStyle = meta / 1024 % 64;
+            int dash = meta / 262144 % 4;
             int features = 0;
-            for (int q = firstIndex / 6, end = (firstIndex + indexCount) / 6; q < end && features != 15; q++) {
-                ref VertexShape v = ref _vertices[q * 4];
-                int meta = (int)v.TextureCoordinate.W;
-                int shape = meta % 16;
-                int fillStyle = meta / 16 % 64;
-                int borderStyle = meta / 1024 % 64;
-                int dash = meta / 262144 % 4;
-                if (dash != 0) features |= 1;
-                if (fillStyle % 16 != 0 || ((v.FillA | v.FillB) & flags) != 0) features |= 2;
-                if ((borderStyle % 16 != 0 || ((v.BorderA | v.BorderB) & flags) != 0)
-                    && !(borderStyle == fillStyle && v.FillA == v.BorderA && v.FillB == v.BorderB && v.FillCoord == v.BorderCoord && v.Meta3.X == v.Meta3.Z && v.Meta3.Y == v.Meta3.W)) {
-                    features |= 4;
-                }
-                if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= 8;
+            if (dash != 0) features |= 1;
+            if (fillStyle % 16 != 0 || ((v.FillA | v.FillB) & flags) != 0) features |= 2;
+            if ((borderStyle % 16 != 0 || ((v.BorderA | v.BorderB) & flags) != 0)
+                && !(borderStyle == fillStyle && v.FillA == v.BorderA && v.FillB == v.BorderB && v.FillCoord == v.BorderCoord && v.Meta3.X == v.Meta3.Z && v.Meta3.Y == v.Meta3.W)) {
+                features |= 4;
             }
+            if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= 8;
             return features;
+        }
+
+        // How many pixels a stretch of quads covers, overlaps counted twice, up to the split
+        // threshold. A quad's corners go around it in order, so half the cross product of its
+        // diagonals is its area.
+        private float ScreenArea(int firstQuad, int endQuad) {
+            float area = 0f;
+            for (int q = firstQuad; q < endQuad && area < _splitArea; q++) {
+                Vector2 a = ToScreen(_vertices[q * 4].Position);
+                Vector2 b = ToScreen(_vertices[q * 4 + 1].Position);
+                Vector2 c = ToScreen(_vertices[q * 4 + 2].Position);
+                Vector2 d = ToScreen(_vertices[q * 4 + 3].Position);
+                area += MathF.Abs((c.X - a.X) * (d.Y - b.Y) - (c.Y - a.Y) * (d.X - b.X)) * 0.5f;
+            }
+            return area;
+        }
+        private Vector2 ToScreen(Vector2 p) {
+            float cx = p.X * _worldToClip.M11 + p.Y * _worldToClip.M21 + _worldToClip.M41;
+            float cy = p.X * _worldToClip.M12 + p.Y * _worldToClip.M22 + _worldToClip.M42;
+            float cw = p.X * _worldToClip.M14 + p.Y * _worldToClip.M24 + _worldToClip.M44;
+            float iw = 1f / MathF.Max(cw, 1e-6f);
+            return new Vector2(cx * iw * _halfViewport.X, cy * iw * _halfViewport.Y);
         }
 
         // Brings the two glyph textures up to date with the table's arenas, then hands the
@@ -4443,6 +4526,16 @@ namespace Apos.Shapes {
         private readonly bool[] _compiled = new bool[16];
         // Set only while a warmup draws, to the features it was asked to compile.
         private int _warmupFeatures;
+        // A run's stretches of quads while it splits by technique. Technique is -1 for a gap.
+        private struct Stretch {
+            public int Start;
+            public int Features;
+            public int Technique;
+        }
+        private Stretch[] _stretches = new Stretch[16];
+        // How many pixels a stretch needs before a smaller technique pays for the draw calls
+        // around it, about two full HD screens.
+        private const float _splitArea = 4194304f;
         private readonly Texture2D _blueNoise;
         private readonly Texture2D _placeholder;
         // This batch's own ramp table and the atlas that mirrors it lazily by row generation,
