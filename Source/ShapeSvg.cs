@@ -608,6 +608,7 @@ namespace Apos.Shapes {
                         shape.StrokeRadius = radius;
                         shape.Cap = style.Cap;
                         shape.Join = style.Join;
+                        shape.MiterClip = style.MiterClip;
                         shape.MiterLimit = style.MiterLimit;
                         Dash(shape, style, pen * inv);
                     }

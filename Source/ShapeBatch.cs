@@ -625,8 +625,8 @@ namespace Apos.Shapes {
         /// Draws a polyline through the given points as one continuous shape. Translucent strokes blend
         /// once instead of stacking where segments meet, and gradients span the whole stroke. Joins can
         /// be round, miter, or bevel and caps can be round, butt, or square; capEnd styles the end of the
-        /// path separately. Miter joins sharper than the miter limit, measured like SVG's miterlimit,
-        /// fall back to bevel. A path that crosses over itself still overlaps like separate shapes would.
+        /// path separately. A miter join that reaches past the miter limit is cut flat there, like SVG's
+        /// miter-clip. A path that crosses over itself still overlaps like separate shapes would.
         /// Setting closed joins the last point back to the first, which makes the wrap an ordinary joint
         /// and leaves the cap styles unused.
         /// </summary>
@@ -638,11 +638,15 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine, corners and joints included.</param>
         public void DrawPath(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness = 1f, PathJoin join = PathJoin.Round, PathCap cap = PathCap.Round, PathCap? capEnd = null, float miterLimit = 4f, float aaSize = 1.5f, bool closed = false, DashStyle dash = default) {
+            DrawPathUniform(points, radius, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash, false);
+        }
+        // miterBevel turns a miter past the limit into a bevel, the way SVG's miter join does.
+        private void DrawPathUniform(ReadOnlySpan<Vector2> points, float radius, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap cap, PathCap capEnd, float miterLimit, float aaSize, bool closed, DashStyle dash, bool miterBevel) {
             // Every segment needs a direction, so drop consecutive duplicates.
             Span<Vector2> pts = points.Length <= _pathStackPoints ? stackalloc Vector2[points.Length] : Scratch(ref _scratchPoints, points.Length);
             int n = 0;
@@ -651,7 +655,7 @@ namespace Apos.Shapes {
             }
             // A closed path already returns to its first point, so a repeat of it is a duplicate too.
             if (closed && n > 1 && Vector2.DistanceSquared(pts[n - 1], pts[0]) <= 1e-12f) n--;
-            DrawPathCore(pts[..n], default, radius, default, fill, border, thickness, join, cap, capEnd ?? cap, miterLimit, aaSize, closed, dash);
+            DrawPathCore(pts[..n], default, radius, default, fill, border, thickness, join, cap, capEnd, miterLimit, aaSize, closed, dash, miterBevel);
         }
         /// <summary>
         /// Draws a path whose width varies, with a radius per point: the stroke runs between the two
@@ -668,7 +672,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine, corners and joints included.</param>
@@ -706,7 +710,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint, until a point sets a different one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         /// <exception cref="InvalidOperationException">A path is already open.</exception>
@@ -734,7 +738,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint, until a point sets a different one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         /// <exception cref="InvalidOperationException">A path is already open.</exception>
@@ -748,7 +752,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint, until a point sets a different one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
         /// <exception cref="InvalidOperationException">A path is already open.</exception>
@@ -849,7 +853,7 @@ namespace Apos.Shapes {
         }
         // joins holds the effective join per point (empty for a uniform path); the joint at the end of
         // segment j reads entry j + 1, wrapping with the segments when the path is closed.
-        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default) {
+        private void DrawPathCore(ReadOnlySpan<Vector2> pts, ReadOnlySpan<PathJoin> joins, float radius, ReadOnlySpan<float> radii, Gradient fill, Gradient border, float thickness, PathJoin join, PathCap capStart, PathCap capEnd, float miterLimit, float aaSize, bool closed = false, DashStyle dash = default, bool miterBevel = false) {
             int n = pts.Length;
             if (n == 0) return;
             bool dashed = dash.IsEnabled;
@@ -937,6 +941,10 @@ namespace Apos.Shapes {
                 _pixelSize = worst;
             }
             float aaOffset = AaOffset(aaSize); // Quads reach the outer AA edge.
+            // The shader reads the miter limit back in quarter steps past 1, up to 16.75, so the
+            // clip switches on at the same limit it cuts at. NaN lands on the top step.
+            float clipCode = miterLimit < 17f ? Math.Clamp(MathF.Round((miterLimit - 1f) * 4f), 0f, 63f) : 63f;
+            float limitQ = 1f + clipCode * 0.25f;
 
             // One anchor for the whole path so gradients run seamlessly across segments.
             if (IsLocal(fill, border)) GradientToWorld(ref fill, ref border, pts[0], Vector2.Zero, MathF.Atan2(pts[1].Y - pts[0].Y, pts[1].X - pts[0].X));
@@ -982,7 +990,11 @@ namespace Apos.Shapes {
                 float c2 = Vector2.Dot(uPrev, u);
                 float s2 = uPrev.X * u.Y - uPrev.Y * u.X;
                 float cHalf = MathF.Sqrt(MathF.Max((1f + c2) * 0.5f, 0f));
-                if (cHalf < 0.05f) {
+                PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
+                // A solid miter or bevel keeps its shape all the way to a full reversal, where it
+                // ends square or flat, so only round and dashed joints need the round caps.
+                bool sharp = requested != PathJoin.Round && !dashed;
+                if (cHalf < 0.05f && !sharp) {
                     // Near reversal the bisector degenerates; both sides fall back to overlapping round caps.
                     jd.Mode = PathJointMode.Reversal;
                 } else {
@@ -993,6 +1005,19 @@ namespace Apos.Shapes {
                     jd.CHalf = cHalf;
                     jd.SHalf = sHalf;
                     jd.Theta = 2f * MathF.Atan2(sHalf, cHalf);
+                    PathJoin effective = requested;
+                    bool clip = false;
+                    if (effective == PathJoin.Miter) {
+                        // An SVG miter turns into a bevel past the limit, measured as 1 / cos of the
+                        // half turn. Any other miter is clipped flat at the limit instead, a cut that
+                        // only starts to bite once the tip passes it, so the corner never jumps.
+                        if (!miterBevel) clip = true;
+                        else if (1f > cHalf * miterLimit) effective = PathJoin.Bevel;
+                    }
+                    // Where the bevel or clip line's AA edge crosses the bisector, past the joint.
+                    float cutReach = effective == PathJoin.Bevel ? rJoint * cHalf + aaOffset + _pixelSize
+                        : clip ? limitQ * rJoint + aaOffset + _pixelSize
+                        : float.PositiveInfinity;
                     // The bisector, pointing at the inner miter. Also names the outer miter tip,
                     // which a round joint may borrow instead of fanning; see below.
                     Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
@@ -1015,25 +1040,35 @@ namespace Apos.Shapes {
                             <= _pathTaperBitePixels * _pixelSize)) {
                         jd.Mode = PathJointMode.Partition;
                         jd.BIn = joint + m * (sign * MathF.Min(h, halfSeg * cHalf / MathF.Max(sHalf, 1e-6f)) / cHalf);
-                        PathJoin requested = joins.IsEmpty ? join : joins[(j + 1) % n];
                         if (requested != PathJoin.Round && jd.Theta > 1e-4f) {
-                            PathJoin effective = requested;
-                            // SVG semantics: the miter ratio is 1 / cos of the half turn.
-                            if (effective == PathJoin.Miter && 1f > cHalf * miterLimit) effective = PathJoin.Bevel;
-                            // A nearly straight bevel is a miter; its cut plane would run parallel to the stroke.
-                            if (effective == PathJoin.Bevel && sHalf < 0.01f) effective = PathJoin.Miter;
+                            // A nearly straight bevel is a miter; its cut plane would run parallel
+                            // to the stroke.
+                            if (effective == PathJoin.Bevel && sHalf < 0.01f) {
+                                effective = PathJoin.Miter;
+                                cutReach = float.PositiveInfinity;
+                            }
                             jd.Join = effective;
-                            // Miter: the h-offset lines' outer intersection. Bevel: just past the cut
-                            // plane's AA, which stands off by the joint point's own half width.
-                            jd.MOut = effective == PathJoin.Miter
-                                ? joint - m * (sign * h / cHalf)
-                                : joint - m * (sign * (rJoint * cHalf + aaOffset + _pixelSize));
+                            jd.Clip = clip;
+                            // Miter: the h-offset lines' outer intersection, unless the clip cuts
+                            // short of it. Bevel: just past the cut plane's AA, which stands off by
+                            // the joint point's own half width.
+                            if (effective == PathJoin.Miter && !(cutReach * cHalf < h)) {
+                                jd.MOut = joint - m * (sign * h / cHalf);
+                            } else {
+                                jd.Cut = true;
+                                jd.Reach = cutReach;
+                                jd.MOut = joint - m * (sign * cutReach);
+                            }
                         }
                     } else {
                         // Either the inner miter outruns a short segment, or the taper would lose a
                         // visible wedge to the cut. Overlapping slabs stay hole-free and only double
                         // blend inside the joint, where the stroke genuinely covers itself.
                         jd.Mode = PathJointMode.Overlap;
+                        if (sharp && jd.Theta > 1e-4f) {
+                            jd.Join = effective;
+                            jd.Clip = clip;
+                        }
                     }
                     if (dashed && jd.Mode == PathJointMode.Partition && dash.Cap != DashCap.Round) {
                         // A butt dash's cut through the corner is a ray out of the center of the
@@ -1079,6 +1114,10 @@ namespace Apos.Shapes {
                         jd.FlatCut = true;
                         jd.Chords = 0;
                         jd.MOut = joint - m * (sign * h / cHalf);
+                    } else if (jd.Mode == PathJointMode.Overlap && jd.Join != PathJoin.Round) {
+                        jd.Chords = 0;
+                        SharpCorner(joint, uPrev, u, sign, cHalf, sHalf, rPrev, rJoint, rNext, lenPrev, len, h, aaOffset, cutReach,
+                            out jd.E1Prev, out jd.E1Next, out jd.MOut, out jd.WPrev, out jd.WNext, out jd.WedgePrev, out jd.WedgeNext);
                     } else if (jd.Theta > 1e-4f) {
                         // Same sagitta rule as EmitHollowAnnulus: chords circumscribe the join arc.
                         float phi = radii.IsEmpty ? uniformPhi : MathF.Acos(MathF.Max(1f - _hollowMaxSagPixels * _pixelSize / h, 0f));
@@ -1160,10 +1199,13 @@ namespace Apos.Shapes {
                 // a bitten edge. So those ends get squared off over the segment's own cone instead.
                 // They are the joints that already overlap, so nothing is lost by it — but only the
                 // joints that actually change width pay for it, since squaring costs the fill rate
-                // the partition was there to save.
+                // the partition was there to save. A miter or bevel keeps its own corner instead,
+                // since a squared end would round it.
                 bool squareStart = tapered && hasStart && joints[js].Mode == PathJointMode.Overlap
+                    && joints[js].Join == PathJoin.Round
                     && !(radiusA == radiusB && radiusA == R(radii, radius, (i - 1 + n) % n));
                 bool squareEnd = tapered && hasEnd && joints[je].Mode == PathJointMode.Overlap
+                    && joints[je].Join == PathJoin.Round
                     && !(radiusA == radiusB && radiusB == R(radii, radius, (i + 2) % n));
 
                 // Start end, walked from +nrm to -nrm so the polygon winds clockwise on screen.
@@ -1187,8 +1229,25 @@ namespace Apos.Shapes {
                             poly[count++] = jd.MOut;
                             poly[count++] = jd.BIn;
                         }
-                    } else if (jd.Join == PathJoin.Miter) {
-                        modeStart = 3f;
+                    } else if (jd.Mode == PathJointMode.Partition && jd.Join == PathJoin.Miter && jd.Cut) {
+                        modeStart = 5f;
+                        angStart = MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf);
+                        // Where the clip line's AA edge leaves the outer offset line, held to the tip.
+                        Vector2 x0 = a - u * ClipRun(jd, hA) - nrm * (jd.Sign * hA);
+                        if (jd.Sign > 0f) {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = x0;
+                        } else {
+                            poly[count++] = x0;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        }
+                    } else if (jd.Mode == PathJointMode.Partition && jd.Join == PathJoin.Miter) {
+                        // A clip short of the tip still rides along, so its AA fades in as the tip
+                        // closes on the limit.
+                        modeStart = jd.Clip ? 5f : 3f;
+                        angStart = jd.Clip ? MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf) : 0f;
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.BIn;
                             poly[count++] = jd.MOut;
@@ -1196,7 +1255,7 @@ namespace Apos.Shapes {
                             poly[count++] = jd.MOut;
                             poly[count++] = jd.BIn;
                         }
-                    } else if (jd.Join == PathJoin.Bevel) {
+                    } else if (jd.Mode == PathJointMode.Partition && jd.Join == PathJoin.Bevel) {
                         modeStart = 4f;
                         angStart = MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf);
                         // Where the cut plane's AA edge leaves the outer offset line.
@@ -1212,6 +1271,12 @@ namespace Apos.Shapes {
                         }
                     } else {
                         Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : a + nrm * (jd.Sign * hA);
+                        if (jd.Join != PathJoin.Round) {
+                            // An overlap joint's cut, which spares the segment's own body, so the
+                            // slab and its wedge agree on every pixel either side of the seam.
+                            modeStart = JoinEndMode(jd);
+                            if (modeStart > 3.5f) angStart = MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf);
+                        }
                         if (jd.Sign > 0f) {
                             poly[count++] = inner;
                             poly[count++] = a;
@@ -1241,8 +1306,22 @@ namespace Apos.Shapes {
                             poly[count++] = jd.BIn;
                             poly[count++] = jd.MOut;
                         }
-                    } else if (jd.Join == PathJoin.Miter) {
-                        modeEnd = 3f;
+                    } else if (jd.Mode == PathJointMode.Partition && jd.Join == PathJoin.Miter && jd.Cut) {
+                        modeEnd = 5f;
+                        angEnd = MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf);
+                        Vector2 x1 = b + u * ClipRun(jd, hB) - nrm * (jd.Sign * hB);
+                        if (jd.Sign > 0f) {
+                            poly[count++] = x1;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = jd.BIn;
+                        } else {
+                            poly[count++] = jd.BIn;
+                            poly[count++] = jd.MOut;
+                            poly[count++] = x1;
+                        }
+                    } else if (jd.Mode == PathJointMode.Partition && jd.Join == PathJoin.Miter) {
+                        modeEnd = jd.Clip ? 5f : 3f;
+                        angEnd = jd.Clip ? MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf) : 0f;
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.MOut;
                             poly[count++] = jd.BIn;
@@ -1250,7 +1329,7 @@ namespace Apos.Shapes {
                             poly[count++] = jd.BIn;
                             poly[count++] = jd.MOut;
                         }
-                    } else if (jd.Join == PathJoin.Bevel) {
+                    } else if (jd.Mode == PathJointMode.Partition && jd.Join == PathJoin.Bevel) {
                         modeEnd = 4f;
                         angEnd = MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf);
                         Vector2 x1 = b + u * ((aaOffset * (1f - jd.CHalf) + _pixelSize) / jd.SHalf) - nrm * (jd.Sign * hB);
@@ -1265,6 +1344,10 @@ namespace Apos.Shapes {
                         }
                     } else {
                         Vector2 inner = jd.Mode == PathJointMode.Partition ? jd.BIn : b + nrm * (jd.Sign * hB);
+                        if (jd.Join != PathJoin.Round) {
+                            modeEnd = JoinEndMode(jd);
+                            if (modeEnd > 3.5f) angEnd = MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf);
+                        }
                         if (jd.Sign > 0f) {
                             poly[count++] = jd.E1Prev;
                             poly[count++] = b;
@@ -1286,8 +1369,8 @@ namespace Apos.Shapes {
                     // The first segment counts the wrap joint from before the walk began, so an
                     // unsnapped pattern's seam lands on that joint, not halfway along.
                     if (closed && i == 0) start.Start -= dashLoop;
-                    PathPiece first = PathHalf(start, end, a, u, nrm, true, radiusA, radiusB, len, rd);
-                    second = PathHalf(end, start, b, -u, nrm, false, radiusB, radiusA, len, rd);
+                    PathPiece first = PathHalf(start, end, a, u, nrm, true, radiusA, radiusB, len, rd, clipCode);
+                    second = PathHalf(end, start, b, -u, nrm, false, radiusB, radiusA, len, rd, clipCode);
                     Vector2 mid = a + d * 0.5f;
                     int m = 0;
                     for (int k = 0; k < startCount; k++) half[m++] = poly[k];
@@ -1300,7 +1383,7 @@ namespace Apos.Shapes {
                     half[m++] = mid + nrm * hA;
                     EmitPathPiece(second, half[..m], fill, border, thickness, aaSize, rd);
                 } else {
-                    float modes = modeStart + 8f * modeEnd;
+                    float modes = modeStart + 8f * modeEnd + 64f * clipCode;
                     for (int k = 1; k + 1 < count; k += 2) {
                         EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
                     }
@@ -1331,6 +1414,130 @@ namespace Apos.Shapes {
                         }
                     }
                 }
+
+                // A miter or bevel whose slabs overlap: each segment runs on past the joint over its
+                // own half of the outer corner, up to the bisector, open at the far end.
+                if (hasStart && !squareStart && joints[js].Mode == PathJointMode.Overlap && joints[js].WedgeNext > 0) {
+                    ref PathJoint jd = ref joints[js];
+                    int m = 0;
+                    half[m++] = a;
+                    half[m++] = jd.MOut;
+                    if (jd.WedgeNext > 2) half[m++] = jd.WNext;
+                    half[m++] = jd.E1Next;
+                    float mode = JoinEndMode(jd);
+                    float ang = mode > 3.5f ? MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf) : 0f;
+                    EmitPathWedge(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, mode + 24f + 64f * clipCode, ang, 0f);
+                }
+                if (hasEnd && !squareEnd && joints[je].Mode == PathJointMode.Overlap && joints[je].WedgePrev > 0) {
+                    ref PathJoint jd = ref joints[je];
+                    int m = 0;
+                    half[m++] = b;
+                    half[m++] = jd.E1Prev;
+                    if (jd.WedgePrev > 2) half[m++] = jd.WPrev;
+                    half[m++] = jd.MOut;
+                    float mode = JoinEndMode(jd);
+                    float ang = mode > 3.5f ? MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf) : 0f;
+                    EmitPathWedge(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, 3f + 8f * mode + 64f * clipCode, 0f, ang);
+                }
+            }
+        }
+
+        // The shader's end mode for a sharp joint: open for a miter that reaches its tip, 4 for a
+        // bevel, 5 for a miter with its clip line along.
+        private static float JoinEndMode(in PathJoint jd) {
+            return jd.Join == PathJoin.Bevel ? 4f : jd.Clip ? 5f : 3f;
+        }
+
+        // The outer corner of a miter or bevel whose slabs overlap, which each segment covers half
+        // of by running its slab on past the joint. The halves meet where the two outer walls stand
+        // equally far, on the line from the joint to where the walls cross: both walls touch the
+        // joint's circle, so that line halves the angle between them, and each half's own wall is
+        // the one that bounds it. Without a taper it is the spine's bisector, measured here from
+        // the walls' directions so that it still holds at a full reversal.
+        //
+        // h is how far the segments' own quads reach, margin the AA fringe past each wall, and
+        // cutReach where the bevel or clip line's fringe crosses the spine's bisector, which is that
+        // line's normal (infinite for a miter that reaches its tip). The incoming segment's half
+        // runs from its wall corner e1Prev, through wPrev where the cut leaves its wall when
+        // prevCount is 3, to corner, on the seam; the outgoing half from corner, through wNext
+        // when nextCount is 3, to e1Next. A taper can lean one wall so far out that the other
+        // bounds the whole corner, and then that half has nothing to cover and its count is 0.
+        internal static void SharpCorner(Vector2 joint, Vector2 uPrev, Vector2 u, float sign, float cHalf, float sHalf, float rPrev, float rJoint, float rNext, float lenPrev, float len, float h, float margin, float cutReach,
+            out Vector2 e1Prev, out Vector2 e1Next, out Vector2 corner, out Vector2 wPrev, out Vector2 wNext, out int prevCount, out int nextCount) {
+            static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
+            Vector2 outPrev = new Vector2(uPrev.Y, -uPrev.X) * sign;
+            Vector2 outNext = new Vector2(u.Y, -u.X) * sign;
+            e1Prev = joint + outPrev * h;
+            e1Next = joint + outNext * h;
+            Vector2 bisector = (uPrev - u) / (2f * sHalf);
+            // Each wall leans off its spine by the slope of its segment's width: an outward normal
+            // and a direction along it, running into the corner for the incoming wall and out of
+            // it for the outgoing one.
+            float bPrev = Math.Clamp((rPrev - rJoint) / lenPrev, -1f, 1f);
+            float bNext = Math.Clamp((rJoint - rNext) / len, -1f, 1f);
+            float aPrev = MathF.Sqrt(1f - bPrev * bPrev);
+            float aNext = MathF.Sqrt(1f - bNext * bNext);
+            Vector2 nPrev = uPrev * bPrev + outPrev * aPrev;
+            Vector2 tPrev = uPrev * aPrev - outPrev * bPrev;
+            Vector2 nNext = u * bNext + outNext * aNext;
+            Vector2 tNext = u * aNext - outNext * bNext;
+            Vector2 seam = tPrev - tNext;
+            float seamLength = seam.Length();
+            seam = seamLength > 1e-6f ? seam / seamLength : bisector;
+
+            float hw = rJoint + margin;
+            float wallCos = Vector2.Dot(nPrev, seam);
+            float tip = wallCos > 1e-6f ? hw / wallCos : float.PositiveInfinity;
+            // Held off the perpendicular so a seam that lies along the cut stays finite.
+            float cut = cutReach / MathF.Max(Vector2.Dot(seam, bisector), 0.05f);
+            corner = joint + seam * MathF.Min(tip, cut);
+            prevCount = 2;
+            nextCount = 2;
+            // Past one wall corner, the seam is on the other segment's side the whole way.
+            float half = MathF.Atan2(sHalf, cHalf);
+            float side = Cross(bisector, outPrev) >= 0f ? 1f : -1f;
+            float lean = side * MathF.Atan2(Cross(bisector, seam), Vector2.Dot(bisector, seam));
+            if (lean > half) {
+                prevCount = 0;
+                corner = e1Prev;
+            } else if (lean < -half) {
+                nextCount = 0;
+                corner = e1Next;
+            }
+
+            // Where the cut crosses each wall's fringe, kept only where it lies between that
+            // half's wall corner and the seam, which is where it is a corner of the shape.
+            wPrev = corner;
+            wNext = corner;
+            if (prevCount > 0 && WallCut(joint, nPrev * hw, tPrev, bisector, cutReach, e1Prev, corner, out wPrev)) prevCount = 3;
+            if (nextCount > 0 && WallCut(joint, nNext * hw, -tNext, bisector, cutReach, corner, e1Next, out wNext)) nextCount = 3;
+
+            static bool WallCut(Vector2 joint, Vector2 foot, Vector2 along, Vector2 normal, float reach, Vector2 from, Vector2 to, out Vector2 w) {
+                float slope = Vector2.Dot(along, normal);
+                w = to;
+                if (MathF.Abs(slope) < 1e-6f || float.IsInfinity(reach)) return false;
+                w = joint + foot + along * ((reach - Vector2.Dot(foot, normal)) / slope);
+                Vector2 f = from - joint;
+                Vector2 t = to - joint;
+                Vector2 c = w - joint;
+                float turn = Cross(f, t);
+                return Cross(f, c) * turn > 0f && Cross(c, t) * turn > 0f;
+            }
+        }
+
+        // How far past the joint a clipped miter's cut leaves an outer wall that stands h off the
+        // spine, held to the tip.
+        private static float ClipRun(in PathJoint jd, float h) {
+            return Math.Clamp((jd.Reach - h * jd.CHalf) / jd.SHalf, 0f, h * jd.SHalf / jd.CHalf);
+        }
+
+        // One half of an overlap joint's outer corner, in its segment's frame. The corners come
+        // in either winding, depending on the side the joint turns to, and go out clockwise on
+        // screen.
+        private void EmitPathWedge(Vector2 a, Vector2 u, Vector2 nrm, float len, Span<Vector2> poly, in Gradient fill, in Gradient border, float thickness, float radiusA, float radiusB, float aaSize, float modes, float angStart, float angEnd) {
+            if (PolygonArea(poly) < 0f) poly.Reverse();
+            for (int k = 1; k + 1 < poly.Length; k += 2) {
+                EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, poly.Length - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
             }
         }
         /// <summary>Fills a path, with no border. See the DrawPath overload.</summary>
@@ -1340,7 +1547,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
@@ -1355,7 +1562,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
@@ -1369,7 +1576,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
@@ -1384,7 +1591,7 @@ namespace Apos.Shapes {
         /// <param name="join">How segments connect at a joint.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
@@ -2860,7 +3067,7 @@ namespace Apos.Shapes {
                 for (int j = 0; j < line.Length; j++) {
                     pts[j] = SvgToWorld(line[j], position, origin, size, sin, cos);
                 }
-                FillPath(pts, radius, paint, s.Join, s.Cap, null, s.MiterLimit, aaSize, s.StrokeClosed[i], dash);
+                DrawPathUniform(pts, radius, paint, paint, 0f, s.Join, s.Cap, s.Cap, s.MiterLimit, aaSize, s.StrokeClosed[i], dash, !s.MiterClip);
             }
         }
 
@@ -3726,13 +3933,20 @@ namespace Apos.Shapes {
         }
         private struct PathJoint {
             public PathJointMode Mode;
-            public PathJoin Join;   // Effective join; non-round styles fall back to Round outside Partition mode.
+            public PathJoin Join;   // Effective join; dashed non-round styles fall back to Round outside Partition mode.
+            public bool Clip;       // A miter clipped flat at the miter limit, end mode 5.
+            public bool Cut;        // Partition only: MOut stops short of the miter tip, on the bevel or clip line's AA edge.
+            public float Reach;     // How far MOut stands from the joint along the bisector, when Cut.
             public float Sign;      // Which side of the incoming segment the inner miter is on.
             public Vector2 BIn;     // Inner miter point, on both offset lines (Partition mode only).
-            public Vector2 MOut;    // Outer miter tip, or the bevel cut's far corner on the bisector.
+            public Vector2 MOut;    // Outer miter tip, or the bevel or clip cut's far corner on the bisector.
             public bool FlatCut;    // Round joint cut straight across the bisector, from BIn to MOut.
             public Vector2 E1Prev;  // Outer wall corner of the incoming segment; first fan vertex.
             public Vector2 E1Next;  // Outer wall corner of the outgoing segment; last fan vertex.
+            public Vector2 WPrev;   // Overlap wedges only: where the cut leaves each outer wall.
+            public Vector2 WNext;
+            public int WedgePrev;   // Overlap wedges only: corners past the joint, see SharpCorner.
+            public int WedgeNext;
             public float Theta;     // Turn angle of the joint.
             public float CHalf;     // Cosine and sine of half the turn angle.
             public float SHalf;
@@ -3760,7 +3974,7 @@ namespace Apos.Shapes {
             if (!joint) return new PathEnd { Mode = (float)cap, Start = capStart };
             if (square || jd.Mode != PathJointMode.Partition) return new PathEnd { Start = jd.DashStart };
             return new PathEnd {
-                Mode = jd.Join == PathJoin.Miter ? 3f : jd.Join == PathJoin.Bevel ? 4f : 0f,
+                Mode = jd.Join == PathJoin.Round ? 0f : JoinEndMode(jd),
                 TauCode = jd.TauCode,
                 RadiusCode = jd.DashRadiusCode,
                 Sign = jd.Sign,
@@ -3778,13 +3992,15 @@ namespace Apos.Shapes {
             public float RadiusFar; // Half width at the segment's other end.
             public float Length;    // Of the whole segment, negative for the half that leaves a joint.
             public float Turns;     // The two ends' turns as 11 bit codes, this end's above.
-            public float Codes;     // End mode, the far circle's side, then both circles' codes.
+            public float Codes;     // End mode, the far circle's side, both circles' codes, then the miter limit.
             public float FracPhase; // The pattern, with its phase counted from this end's circle.
         }
 
         // nrm is the segment's left normal. Both halves of a segment and both halves at a joint
         // share an end's pattern position exactly, so each counts its phase from its own end.
-        private static PathPiece PathHalf(in PathEnd own, in PathEnd far, Vector2 origin, Vector2 x, Vector2 nrm, bool leaving, float radius, float radiusFar, float len, in ResolvedDash rd) {
+        // clipCode is the path's miter limit as the shader reads it, which tops the codes off at
+        // 2^24, as far as a float counts exactly.
+        private static PathPiece PathHalf(in PathEnd own, in PathEnd far, Vector2 origin, Vector2 x, Vector2 nrm, bool leaving, float radius, float radiusFar, float len, in ResolvedDash rd, float clipCode) {
             // A joint's inner side is +Sign along the left normal.
             Vector2 y = own.Sign != 0f ? -own.Sign * nrm : nrm;
             float farSide = far.Sign * Vector2.Dot(nrm, y) < 0f ? 1f : 0f;
@@ -3798,7 +4014,7 @@ namespace Apos.Shapes {
                 RadiusFar = radiusFar,
                 Length = leaving ? -len : len,
                 Turns = own.TauCode * 2048f + far.TauCode,
-                Codes = own.Mode + 8f * (farSide + 2f * (own.RadiusCode + 128f * far.RadiusCode)),
+                Codes = own.Mode + 8f * (farSide + 2f * (own.RadiusCode + 128f * (far.RadiusCode + 128f * clipCode))),
                 FracPhase = DashStyle.Pack11(rd.Frac, phase),
             };
         }
@@ -4706,7 +4922,7 @@ namespace Apos.Shapes {
         /// <param name="join">Join style before the first point that sets one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
@@ -4721,7 +4937,7 @@ namespace Apos.Shapes {
         /// <param name="join">Join style before the first point that sets one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
@@ -4737,7 +4953,7 @@ namespace Apos.Shapes {
         /// <param name="join">Join style before the first point that sets one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>
@@ -4760,7 +4976,7 @@ namespace Apos.Shapes {
         /// <param name="join">Join style before the first point that sets one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
@@ -4775,7 +4991,7 @@ namespace Apos.Shapes {
         /// <param name="join">Join style before the first point that sets one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine.</param>
@@ -4791,7 +5007,7 @@ namespace Apos.Shapes {
         /// <param name="join">Join style before the first point that sets one.</param>
         /// <param name="cap">How the path starts, and how it ends unless <paramref name="capEnd"/> says otherwise.</param>
         /// <param name="capEnd">How the path ends, or null to end the way it started.</param>
-        /// <param name="miterLimit">Miters sharper than this fall back to bevel, measured like SVG's miterlimit.</param>
+        /// <param name="miterLimit">How far a miter reaches past its joint before it's cut flat, in stroke radii, like SVG's miterlimit. It goes in steps of 0.25, up to 16.75.</param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
         /// <param name="closed">Joins the last point back to the first, which leaves the cap styles unused.</param>
         /// <param name="dash">Cuts the stroke into dashes along the spine, each one outlined on its own.</param>

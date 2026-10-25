@@ -32,6 +32,7 @@ namespace Apos.Shapes {
         internal float StrokeRadius;
         internal PathCap Cap;
         internal PathJoin Join;
+        internal bool MiterClip;
         internal float MiterLimit;
 
         // The dash pattern in em units along the contour, and the offset in periods. Only a two

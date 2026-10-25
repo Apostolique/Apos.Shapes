@@ -394,9 +394,7 @@ namespace Apos.Shapes {
                     Vector2 d = c - b;
                     float len = d.Length();
                     PathJoin requested = joins.IsEmpty ? join : joins[(i + 1) % n];
-                    if (MiterTip(u, lenPrev, d / len, len, b, radiusA, radiusB, radiusC, requested, miterLimit, out Vector2 tip)) {
-                        bb.Add(tip);
-                    }
+                    AddMiter(ref bb, u, lenPrev, d / len, len, b, radiusA, radiusB, radiusC, requested, miterLimit);
                 } else if (capEnd == PathCap.Square) {
                     AddSquareCap(ref bb, b, u, radiusB);
                 }
@@ -408,69 +406,46 @@ namespace Apos.Shapes {
         }
 
         /// <summary>
-        /// Where a joint's outer corner lands, when it lands outside the disc the joint point
-        /// already contributed. Only a miter does: a round join's fan and a bevel's cut both stay
-        /// within the stroke's own half width, and the field carves them back to it. A miter end
-        /// leaves that field open, so the corner the mesh reaches for is the corner the shape has.
+        /// Adds a joint's outer corner, when it lands outside the disc the joint point already
+        /// contributed. Only a miter does: a round join's fan and a bevel's cut both stay within
+        /// the stroke's own half width, and the field carves them back to it. A miter end leaves
+        /// that field open, so the corner the walls run out to is the corner the shape has, up to
+        /// the line the miter limit clips it at.
         ///
-        /// Mirrors the joint classification in ShapeBatch.DrawPathCore. The half width here is the
-        /// stroke's rather than the stroke's plus its fringe, which only ever moves the answer the
-        /// safe way: every threshold below is one this narrower corner passes at least as easily,
-        /// so a miter that gets drawn is a miter that gets measured.
+        /// Shares its geometry with ShapeBatch.DrawPathCore, which keeps a miter a miter whatever
+        /// the segments' lengths and however far the joint turns. The half width here is the
+        /// stroke's rather than the stroke's plus its fringe.
         /// </summary>
-        private static bool MiterTip(Vector2 uPrev, float lenPrev, Vector2 u, float len, Vector2 joint, float rPrev, float rJoint, float rNext, PathJoin requested, float miterLimit, out Vector2 tip) {
-            tip = default;
-            if (requested != PathJoin.Miter) return false;
+        private static void AddMiter(ref Bounds bb, Vector2 uPrev, float lenPrev, Vector2 u, float len, Vector2 joint, float rPrev, float rJoint, float rNext, PathJoin requested, float miterLimit) {
+            if (requested != PathJoin.Miter) return;
 
             float c2 = Vector2.Dot(uPrev, u);
             float cHalf = MathF.Sqrt(MathF.Max((1f + c2) * 0.5f, 0f));
-            // Near reversal the bisector degenerates and both sides fall back to round caps.
-            if (cHalf < 0.05f) return false;
-            // SVG semantics: the miter ratio is 1 / cos of the half turn. Past the limit the joint
-            // is bevelled, and a bevel cuts the corner off rather than reaching for it.
-            if (1f > cHalf * miterLimit) return false;
-
             float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
-            // The corner is built from whichever of the two segments reaches further, so that half
-            // width is what decides whether the inner miter fits, exactly as DrawPathCore has it.
-            float h = MathF.Max(SegHalfWidth(rPrev, rJoint, lenPrev), SegHalfWidth(rJoint, rNext, len));
-            // The inner miter outruns a short segment, so the joint overlaps instead of mitering.
-            if (h * sHalf / cHalf > MathF.Min(lenPrev, len) * 0.5f) return false;
             // Straight through: there is no corner to speak of.
-            if (2f * MathF.Atan2(sHalf, cHalf) <= 1e-4f) return false;
-
-            // Both walls run tangent to the circle at the joint, so each stands the joint's own half
-            // width off it however the rest of the stroke tapers, and the tip is where they cross:
-            // rJoint / cos of half the angle between them. That angle is the turn while the width
-            // holds. A taper leans each wall off its spine by asin of its slope, toward the narrow
-            // end, so a joint the stroke bulges at has both walls leaning apart and opens out past
-            // the turn, while one it tapers straight through has them leaning the same way and
-            // partly cancelling.
-            //
-            // The mesh caps it either way: a miter's quad runs to h / cos of the half turn and
-            // stops, so nothing past that is drawn whatever the walls do.
-            float slopePrev = lenPrev > 0f ? (rPrev - rJoint) / lenPrev : 0f;
-            float slopeNext = len > 0f ? (rJoint - rNext) / len : 0f;
-            float reach;
-            if (slopePrev == 0f && slopeNext == 0f) {
-                reach = rJoint / cHalf;
-            } else if (MathF.Abs(slopePrev) >= 1f || MathF.Abs(slopeNext) >= 1f) {
-                // One end circle swallows the other, so that segment has no walls and no corner.
-                // Whatever is drawn is inside the circle the point already contributed.
-                return false;
-            } else {
-                float half = MathF.Atan2(sHalf, cHalf) + 0.5f * (MathF.Asin(slopeNext) - MathF.Asin(slopePrev));
-                float cosHalf = MathF.Cos(half);
-                float walls = cosHalf > 1e-3f ? rJoint / cosHalf : float.MaxValue;
-                reach = MathF.Min(walls, h / cHalf);
-            }
+            if (2f * MathF.Atan2(sHalf, cHalf) <= 1e-4f) return;
+            // One end circle swallows the other, so that segment has no walls and no corner.
+            // Whatever is drawn is inside the circle the point already contributed.
+            if (MathF.Abs(rPrev - rJoint) >= lenPrev || MathF.Abs(rJoint - rNext) >= len) return;
 
             float s2 = uPrev.X * u.Y - uPrev.Y * u.X;
             float sign = s2 >= 0f ? 1f : -1f;
-            // The bisector, pointing at the inner miter; the outer tip is the other way along it.
-            Vector2 m = (new Vector2(-uPrev.Y, uPrev.X) + new Vector2(-u.Y, u.X)) / (2f * cHalf);
-            tip = joint - m * (sign * reach);
-            return true;
+            // The quads reach whichever of the two segments' walls stands further out, exactly
+            // as DrawPathCore has it.
+            float h = MathF.Max(SegHalfWidth(rPrev, rJoint, lenPrev), SegHalfWidth(rJoint, rNext, len));
+            // The limit in the quarter steps the shader reads it in.
+            float limit = 1f + (miterLimit < 17f ? Math.Clamp(MathF.Round((miterLimit - 1f) * 4f), 0f, 63f) : 63f) * 0.25f;
+            ShapeBatch.SharpCorner(joint, uPrev, u, sign, cHalf, sHalf, rPrev, rJoint, rNext, lenPrev, len, h, 0f, limit * rJoint,
+                out Vector2 e1Prev, out Vector2 e1Next, out Vector2 corner, out Vector2 wPrev, out Vector2 wNext, out int prevCount, out int nextCount);
+            bb.Add(corner);
+            if (prevCount > 2) bb.Add(wPrev);
+            if (nextCount > 2) bb.Add(wNext);
+            // A tapered wall can stand past the joint's circle where it crosses the joint's
+            // perpendicular. The quads' own corners there are further out still.
+            if (rPrev != rJoint || rNext != rJoint) {
+                bb.Add(e1Prev);
+                bb.Add(e1Next);
+            }
         }
 
         // Half the stroke's width at a point. A uniform path answers with the one radius it was given.

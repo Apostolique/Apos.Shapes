@@ -356,13 +356,15 @@ float DecodeDigit(inout float m, float radix) {
 }
 // Stroked path segment from (0, 0) to (len, 0) with half thickness r. Each end is round
 // (arc, also used for round joins), butt (sharp face at the endpoint), square (sharp face
-// pushed out by r), open (the slab runs on so quad geometry can shape a miter tip), or cut
-// by a bevel plane through the joint. data.x packs the two end modes in base 8, data.y and
-// data.z are the bevel plane directions as angles in the local frame.
+// pushed out by r), open (the slab runs on so quad geometry can shape a miter tip), cut by
+// a bevel plane through the joint, or a miter clipped flat by that plane moved out to the
+// miter limit. data.x packs the two end modes in base 8, then the limit in quarter steps past
+// 1; data.y and data.z are the planes' directions as angles in the local frame.
 float StrokeSDF(float2 p, float len, float r, float4 data) {
     float m = data.x;
     float modeA = DecodeDigit(m, 8.0);
-    float modeB = m;
+    float modeB = DecodeDigit(m, 8.0);
+    float limit = 1.0 + m * 0.25;
     float ay = abs(p.y);
     float xa = -p.x;
     float xb = p.x - len;
@@ -383,12 +385,12 @@ float StrokeSDF(float2 p, float len, float r, float4 data) {
     if (modeA >= 3.5) {
         float2 dir;
         sincos(data.y, dir.y, dir.x);
-        d = max(d, dot(p, dir) - r * abs(dir.y));
+        d = max(d, dot(p, dir) - r * (modeA >= 4.5 ? limit : abs(dir.y)));
     }
     if (modeB >= 3.5) {
         float2 dir;
         sincos(data.z, dir.y, dir.x);
-        d = max(d, dot(p - float2(len, 0.0), dir) - r * abs(dir.y));
+        d = max(d, dot(p - float2(len, 0.0), dir) - r * (modeB >= 4.5 ? limit : abs(dir.y)));
     }
     return d;
 }
@@ -401,7 +403,8 @@ float StrokeSDF(float2 p, float len, float r, float4 data) {
 float StrokeConeSDF(float2 p, float len, float rA, float rB, float4 data) {
     float m = data.x;
     float modeA = DecodeDigit(m, 8.0);
-    float modeB = m;
+    float modeB = DecodeDigit(m, 8.0);
+    float limit = 1.0 + m * 0.25;
     float ay = abs(p.y);
     float xa = -p.x;
     float xb = p.x - len;
@@ -442,12 +445,12 @@ float StrokeConeSDF(float2 p, float len, float rA, float rB, float4 data) {
     if (modeA >= 3.5) {
         float2 dir;
         sincos(data.y, dir.y, dir.x);
-        d = max(d, dot(p, dir) - rA * abs(dir.y));
+        d = max(d, dot(p, dir) - rA * (modeA >= 4.5 ? limit : abs(dir.y)));
     }
     if (modeB >= 3.5) {
         float2 dir;
         sincos(data.z, dir.y, dir.x);
-        d = max(d, dot(p - float2(len, 0.0), dir) - rB * abs(dir.y));
+        d = max(d, dot(p - float2(len, 0.0), dir) - rB * (modeB >= 4.5 ? limit : abs(dir.y)));
     }
     return d;
 }
@@ -1633,7 +1636,8 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             // the one arriving at its joint, which for the leaving half mirrors it across the
             // bisector, and turns the pattern around instead. Meta2.x is the two ends' turns as
             // 11 bit codes over [0, pi], this end's above, and Meta2.y packs the end mode, which
-            // side the far circle sits on, then both circles as 7 bit codes over [0, 2r]. Then
+            // side the far circle sits on, both circles as 7 bit codes over [0, 2r], and the
+            // miter limit as StrokeSDF reads it. Then
             // come the far end's half width and the period, with the fraction and the phase,
             // counted from this end's circle, in the rounding slot. A round dash follows the
             // spine's own corners.
@@ -1644,6 +1648,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             float mode = DecodeDigit(m, 8.0);
             float farSide = DecodeDigit(m, 2.0);
             float codeOwn = DecodeDigit(m, 128.0);
+            float codeFar = DecodeDigit(m, 128.0);
             pLeaving = pathLen < 0.0;
             pathLen = abs(pathLen);
             sincos(pTau * 0.5, pH.y, pH.x);
@@ -1652,7 +1657,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             bool butt = dashType < 1.5;
             pRc = butt ? sdfSize * codeOwn / 63.5 : 0.0;
             pPiv = -pH * (pRc / max(pH.x, 1e-4));
-            float frFar = butt ? sd.z * m / 63.5 : 0.0;
+            float frFar = butt ? sd.z * codeFar / 63.5 : 0.0;
             float2 hf;
             sincos(tauFar * 0.5, hf.y, hf.x);
             pFar = float4(pathLen + pPiv.y - frFar * hf.y / max(hf.x, 1e-4), frFar, tauFar, farSide > 0.5 ? -1.0 : 1.0);
@@ -1665,9 +1670,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             if (pTau > 1e-4 && q.x < 0.0 && !butt) {
                 pCorner = CornerHold(q, 0.0, sdfSize, pH.x, DashDistance(0.0, dashData));
             }
-            // The far end runs on open, since this half never reaches it, and a bevel cuts square
-            // across the bisector.
-            sd = float4(mode + 24.0, 1.5707963 + pTau * 0.5, 0.0, sd.z);
+            // The far end runs on open, since this half never reaches it, and a bevel or a
+            // clipped miter cuts square across the bisector.
+            sd = float4(mode + 24.0 + 64.0 * m, 1.5707963 + pTau * 0.5, 0.0, sd.z);
             rounded = 0.0;
             piece = true;
             piecePath = true;

@@ -66,6 +66,9 @@ namespace Apos.Shapes {
         internal float StrokeWidth;
         internal PathCap Cap;
         internal PathJoin Join;
+        // miter-clip rather than miter: past the limit the corner is cut flat at the limit
+        // instead of falling back to bevel.
+        internal bool MiterClip;
         internal float MiterLimit;
         internal float[]? Dash;
         internal float DashOffset;
@@ -127,11 +130,11 @@ namespace Apos.Shapes {
             v = a.Get("stroke-linejoin");
             if (v != null) {
                 switch (v.Trim().ToLowerInvariant()) {
-                    case "miter": s.Join = PathJoin.Miter; break;
+                    case "miter": s.Join = PathJoin.Miter; s.MiterClip = false; break;
+                    case "miter-clip": s.Join = PathJoin.Miter; s.MiterClip = true; break;
                     case "round": s.Join = PathJoin.Round; break;
                     case "bevel": s.Join = PathJoin.Bevel; break;
-                    // miter-clip and arcs have no equivalent in the stroke renderer.
-                    case "miter-clip": s.Join = PathJoin.Miter; skipped++; break;
+                    // arcs has no equivalent in the stroke renderer.
                     case "arcs": s.Join = PathJoin.Round; skipped++; break;
                 }
             }

@@ -143,7 +143,7 @@ _sb.FillPath(points, radii, Color.White);
 
 A stroke with a varying width dashes like any other path. The pattern still walks the spine, and each dash comes out as wide as the stroke is where it lands, caps included.
 
-Miter joins sharper than the `miterLimit` parameter, measured like SVG's `miterlimit` with a default of 4, fall back to bevel. A path that crosses over itself overlaps like two separate shapes would. The same happens at a joint whose segments are shorter than the stroke is wide.
+A miter join is cut flat where it reaches `miterLimit` stroke radii past its joint, like SVG's `miter-clip` with a default limit of 4. The limit goes in steps of 0.25, up to 16.75. A path that crosses over itself overlaps like two separate shapes would. The same happens at a joint whose segments are shorter than the stroke is wide.
 
 Pass `closed: true` to join the last point back to the first. The wrap is an ordinary joint rather than two caps, so it takes the same join styles and a translucent loop still blends exactly once all the way around. The `cap` parameters go unused. When the path is built one point at a time, finish it with `ClosePath()` instead of `EndPath()`:
 
@@ -276,7 +276,7 @@ A measure asks for geometry only. There's no `thickness`, because a border grows
 
 What the rectangle leaves out is the anti-aliasing edge. That's `aaSize` pixels wide, 1.5 by default, so how far it reaches in world units depends on the zoom, which is exactly what a bound that travels with the shape can't depend on. It's under a pixel and a half either way, and smaller than any margin a camera wants. At a sharp corner it stretches: an offset of `aa` on both faces of a wedge moves the tip out by `aa` over the cosine of the half turn, so a spiky miter can carry several pixels of it.
 
-The rectangle is tight for most shapes. Three cases leave more room. A bevel join, or a miter past its limit, reserves the corner the bevel cuts off. A butt cap reserves the round cap's radius past the end of a path. And a dashed shape is measured as the solid one, so every gap in the pattern is room the box keeps.
+The rectangle is tight for most shapes. Three cases leave more room. A bevel join reserves the corner its cut takes off. A butt cap reserves the round cap's radius past the end of a path. And a dashed shape is measured as the solid one, so every gap in the pattern is room the box keeps.
 
 Blurred shapes measure with their own family: `Measure.CircleBlurred`, `Measure.EllipseBlurred`, `Measure.RectangleBlurred`, `Measure.ChamferBlurred`, and `Measure.LineBlurred`. A blur is authored in world units and it reaches far, so unlike the anti-aliasing edge it does go in the box. See the [Blur](../blur/README.md) guide.
 

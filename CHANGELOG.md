@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Changed
+
+- A miter join past its miter limit is cut flat at the limit, like SVG's `miter-clip`, instead of turning into a bevel.
+- SVG `stroke-linejoin="miter-clip"` is supported. `miter` still turns into a bevel past the limit.
+
+### Fixed
+
+- Miter and bevel joins stay sharp or flat on short segments, sharp turns and tapered paths instead of turning round. Dashed paths still round those joints.
 
 ## [0.9.1] - 2026-10-25
 

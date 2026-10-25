@@ -28,14 +28,14 @@ namespace Apos.Shapes {
     }
 
     /// <summary>
-    /// How a path's segments connect at a joint. Joints whose segments are shorter than the stroke
-    /// radius, that fold back on themselves, or that change width fast enough for a shared corner
-    /// to cut into the stroke, fall back to round.
+    /// How a path's segments connect at a joint. On a dashed path, joints whose segments are shorter
+    /// than the stroke radius, that fold back on themselves, or that change width fast enough for a
+    /// shared corner to cut into the stroke, fall back to round.
     /// </summary>
     public enum PathJoin {
         /// <summary>The outer corner is filled by an arc of the stroke radius.</summary>
         Round = 0,
-        /// <summary>Sharp corner. Falls back to bevel past the miter limit, like SVG.</summary>
+        /// <summary>Sharp corner, cut flat where it reaches the miter limit, like SVG's miter-clip.</summary>
         Miter = 1,
         /// <summary>The outer corner is cut flat between the two edges.</summary>
         Bevel = 2
