@@ -4121,7 +4121,7 @@ namespace Apos.Shapes {
             // tightest curvature, at the ends of the major axis.
             double depth = thickness + aaOffset + 2f * _pixelSize;
             float minHole = 2f * _hollowMinHolePixels * _pixelSize;
-            bool hollow = IsTransparent(fill) && depth < 0.9 * b * b / a && Math.PI * (a - depth) * (b - depth) > minHole * minHole;
+            bool hollow = Hollows(fill, thickness, out bool interior) && depth < 0.9 * b * b / a && Math.PI * (a - depth) * (b - depth) > minHole * minHole;
             for (int i = 0; hollow && i <= k; i++) {
                 (double nx, double ny) = EllipseNormal(a, b, cuts[i]);
                 double qx = a * Math.Cos(cuts[i]) - axis[i].X;
@@ -4160,6 +4160,16 @@ namespace Apos.Shapes {
                     _vertexCount += 4;
                     _indexCount += 6;
                 }
+            }
+            if (hollow && interior) {
+                // The hole's ring, once round: each quadrant shares its last point with the next.
+                Span<Vector2> ring = stackalloc Vector2[4 * k];
+                int m = 0;
+                for (int q = 0; q < 4; q++) {
+                    Vector2 sg = new(q == 1 || q == 2 ? -1f : 1f, q >= 2 ? -1f : 1f);
+                    for (int j = 0; j < k; j++) ring[m++] = hole[q % 2 == 1 ? k - j : j] * sg;
+                }
+                EmitInterior(center, tall ? rotation + MathF.PI * 0.5f : rotation, ring, fill, aaSize);
             }
             return true;
         }
