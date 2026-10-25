@@ -542,6 +542,17 @@ float SegRun(float2 q, float2 a, float2 d, float len) {
     return length(f - d * clamp(dot(f, d), 0.0, len));
 }
 
+// A round dash's hold on a sharp corner, as a distance past it. Every pixel across the corner
+// reads the same place along a sharp centerline, so the band's tip there would come in whole as
+// a cap crossed it. The dash is held to the disc around the centerline's turn instead, w from
+// its center, and the disc grows out to the band's corner as the dash runs on past the turn's
+// middle, reaching it once the dash covers the turn by a whole cap. covered is the dash's
+// distance to its nearer end at that middle, negative inside.
+float CornerHold(float2 w, float rc, float r, float cosHalf, float covered) {
+    float grow = saturate(-covered / max(r, 1e-4));
+    return length(w) - (rc + r) * (1.0 + grow * (1.0 / max(cosHalf, 1e-4) - 1.0));
+}
+
 float LinearToGamma(float c) {
     return c >= 0.0031308 ? pow(abs(c), 1.0 / 2.4) * 1.055 - 0.055 : 12.92 * c;
 }
@@ -1649,13 +1660,10 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             pRadius = float4(sdfSize, sd.z, max(pFar.x, 1e-4), abs(slope) < 1.0 ? rsqrt(1.0 - slope * slope) : 1.0);
             dashData = float2(sd.w, rounded);
             // Miter and bevel tips reach past the joint disc. A butt cut runs straight on into
-            // the tip, the way an outline's does. A round dash would take the whole tip in at
-            // once as its cap crossed the corner, so it is bounded by the disc instead, and the
-            // tip only grows back once the dash covers the whole fan with margin to spare,
-            // which the dash's distance at the fan's middle measures.
+            // the tip, the way an outline's does, while a round dash is held to the disc until
+            // it covers the joint; see CornerHold.
             if (pTau > 1e-4 && q.x < 0.0 && !butt) {
-                float mid = pTau * pRc * 0.5;
-                pCorner = length(q) - sdfSize + min(DashDistance(mid, dashData) + mid, 0.0) * 2.0;
+                pCorner = CornerHold(q, 0.0, sdfSize, pH.x, DashDistance(0.0, dashData));
             }
             // The far end runs on open, since this half never reaches it, and a bevel cuts square
             // across the bisector.
@@ -1727,6 +1735,11 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
                                       : min(length(pq - PieceEdge(o1, arc, pRc, pPiv, pN2, pFar, n1)) - PieceRadius(o1, pRadius),
                                             length(pq - PieceEdge(o2, arc, pRc, pPiv, pN2, pFar, n2)) - PieceRadius(o2, pRadius));
                 cut = min(cut, max(pBand, co));
+            }
+            if (!piecePath && !before && !after) {
+                // An outline's corner holds a round dash the way a path's joint does.
+                float mid = arc * 0.5;
+                cut = max(cut, CornerHold(w, max(pRc, 0.0), pRadius.x, pH.x, DashDistance(pU0 + mid, dashData) + mid));
             }
         } else {
             // A butt dash ends on a straight cut across the band, square to the direction the
