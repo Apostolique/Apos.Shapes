@@ -89,10 +89,13 @@ namespace Apos.Shapes {
             RasterizerState rasterizerState = _graphicsDevice.RasterizerState;
 
             _warmupFeatures = (int)features;
-            Begin();
-            FillCircle(new Vector2(-8f, -8f), 1f, Color.White); // Outside the viewport, so it writes no pixels.
-            End();
-            _warmupFeatures = 0;
+            try {
+                Begin();
+                FillCircle(new Vector2(-8f, -8f), 1f, Color.White); // Outside the viewport, so it writes no pixels.
+                End();
+            } finally {
+                _warmupFeatures = 0;
+            }
 
             _graphicsDevice.BlendState = blendState;
             _graphicsDevice.SamplerStates[0] = samplerState;
@@ -116,7 +119,10 @@ namespace Apos.Shapes {
         /// bound, since the present isn't ours.
         /// </remarks>
         /// <param name="features">The features to compile the shader with.</param>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="features"/> isn't a mix of <see cref="ShapeFeatures"/> values.</exception>
+        /// <exception cref="InvalidOperationException">Called between <see cref="Begin"/> and <see cref="End"/>.</exception>
         public void Warmup(ShapeFeatures features = ShapeFeatures.None) {
+            if ((features & ~ShapeFeatures.All) != 0) throw new ArgumentOutOfRangeException(nameof(features));
             if (_graphicsDevice.GetRenderTargets().Length > 0) return;
 
             WarmupDraw(features);
@@ -1087,6 +1093,7 @@ namespace Apos.Shapes {
             // as if the wrap joint ran straight through it.
             ResolvedDash rd = default;
             float dashEnd = 0f;
+            float dashLoop = 0f;
             if (dashed) {
                 float dashStart = closed ? joints[jointCount - 1].DashTangent : 0f;
                 dashEnd = dashStart;
@@ -1100,7 +1107,8 @@ namespace Apos.Shapes {
                         dashEnd += joints[i].DashFan;
                     }
                 }
-                rd = dash.Resolve(dashEnd - dashStart, closed);
+                dashLoop = dashEnd - dashStart;
+                rd = dash.Resolve(dashLoop, closed);
             }
 
             // Cross sections at each end: two corners at a cap, up to three points at a joint.
@@ -1258,13 +1266,17 @@ namespace Apos.Shapes {
                     }
                 }
 
+                PathPiece second = default;
                 if (rd.TypeDigit > 0) {
                     // A dashed segment goes out as two halves split square across its middle, so
                     // each half only has the joint or cap at its own end to dash around.
                     PathEnd start = PathEndOf(hasStart ? joints[js] : default, hasStart, squareStart, capStart, 0f);
                     PathEnd end = PathEndOf(hasEnd ? joints[je] : default, hasEnd, squareEnd, capEnd, dashEnd);
+                    // The first segment counts the wrap joint from before the walk began, so an
+                    // unsnapped pattern's seam lands on that joint, not halfway along.
+                    if (closed && i == 0) start.Start -= dashLoop;
                     PathPiece first = PathHalf(start, end, a, u, nrm, true, radiusA, radiusB, len, rd);
-                    PathPiece second = PathHalf(end, start, b, -u, nrm, false, radiusB, radiusA, len, rd);
+                    second = PathHalf(end, start, b, -u, nrm, false, radiusB, radiusA, len, rd);
                     Vector2 mid = a + d * 0.5f;
                     int m = 0;
                     for (int k = 0; k < startCount; k++) half[m++] = poly[k];
@@ -1276,32 +1288,16 @@ namespace Apos.Shapes {
                     for (int k = startCount; k < count; k++) half[m++] = poly[k];
                     half[m++] = mid + nrm * hA;
                     EmitPathPiece(second, half[..m], fill, border, thickness, aaSize, rd);
-                    if (hasEnd && joints[je].Mode != PathJointMode.Reversal && joints[je].Join == PathJoin.Round && joints[je].Chords > 0) {
-                        ref PathJoint jd = ref joints[je];
-                        float baseAngle = MathF.Atan2(-jd.Sign * nrm.Y, -jd.Sign * nrm.X);
-                        float step = jd.Sign * jd.Theta / jd.Chords;
-                        float reach = hB * jd.Overshoot;
-                        for (int t = 0; t < jd.Chords; t += 2) {
-                            Vector2 v0 = PathFanVertex(jd, b, baseAngle, step, reach, t);
-                            Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
-                            Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
-                            half[0] = b;
-                            half[1] = jd.Sign > 0f ? v0 : v2;
-                            half[2] = v1;
-                            half[3] = jd.Sign > 0f ? v2 : v0;
-                            EmitPathPiece(second, half[..4], fill, border, thickness, aaSize, rd);
-                        }
+                } else {
+                    float modes = modeStart + 8f * modeEnd;
+                    for (int k = 1; k + 1 < count; k += 2) {
+                        EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
                     }
-                    continue;
-                }
-
-                float modes = modeStart + 8f * modeEnd;
-                for (int k = 1; k + 1 < count; k += 2) {
-                    EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
                 }
 
                 // Round join: a fan around the joint covers the outer wedge between the two walls. Any
                 // point there is nearest the shared joint, so this segment's SDF is exact for the arc.
+                // A dashed path's fan belongs to the half that arrives at the joint.
                 if (hasEnd && joints[je].Mode != PathJointMode.Reversal && joints[je].Join == PathJoin.Round && joints[je].Chords > 0) {
                     ref PathJoint jd = ref joints[je];
                     float baseAngle = MathF.Atan2(-jd.Sign * nrm.Y, -jd.Sign * nrm.X);
@@ -1311,10 +1307,16 @@ namespace Apos.Shapes {
                         Vector2 v0 = PathFanVertex(jd, b, baseAngle, step, reach, t);
                         Vector2 v1 = PathFanVertex(jd, b, baseAngle, step, reach, t + 1);
                         Vector2 v2 = PathFanVertex(jd, b, baseAngle, step, reach, Math.Min(t + 2, jd.Chords));
-                        if (jd.Sign > 0f) {
-                            EmitPathQuad(a, u, nrm, len, b, v0, v1, v2, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f);
+                        Vector2 fanStart = jd.Sign > 0f ? v0 : v2;
+                        Vector2 fanEnd = jd.Sign > 0f ? v2 : v0;
+                        if (rd.TypeDigit > 0) {
+                            half[0] = b;
+                            half[1] = fanStart;
+                            half[2] = v1;
+                            half[3] = fanEnd;
+                            EmitPathPiece(second, half[..4], fill, border, thickness, aaSize, rd);
                         } else {
-                            EmitPathQuad(a, u, nrm, len, b, v2, v1, v0, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f);
+                            EmitPathQuad(a, u, nrm, len, b, fanStart, v1, fanEnd, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f);
                         }
                     }
                 }
@@ -2944,16 +2946,17 @@ namespace Apos.Shapes {
             }
         }
 
-        // The clips that still cut anything, innermost last: one that holds another adds nothing
-        // over it, and only the innermost four fit. They go to the end of _clipSets as four
+        // The clips that still cut anything, innermost last: one that holds a clip pushed after
+        // it adds nothing over that one, and only the innermost four fit. They go to the end of _clipSets as four
         // frames and then four sizes, and the count comes back.
         private int ResolveClips() {
             int count = 0;
             for (int i = _clips.Count - 1; i >= 0 && count < _clipFrames.Length; i--) {
                 bool redundant = false;
-                for (int j = 0; j < _clips.Count && !redundant; j++) {
-                    // Of two clips that hold each other, the inner one stays.
-                    redundant = j != i && _clips[i].Holds(_clips[j]) && (j > i || !_clips[j].Holds(_clips[i]));
+                // Only a clip pushed after this one counts, since that one has already been kept
+                // or skipped for one that holds still less. An earlier one might not fit.
+                for (int j = i + 1; j < _clips.Count && !redundant; j++) {
+                    redundant = _clips[i].Holds(_clips[j]);
                 }
                 if (redundant) continue;
                 Clip c = _clips[i];
@@ -3042,6 +3045,7 @@ namespace Apos.Shapes {
                 // drawing them is what makes room. A flush unpins everything, so the reseat
                 // only fails when one glyph alone is larger than both arenas hold.
                 Flush();
+                PrepareQuad();
                 at = g.Seat(_glyphs);
                 if (at < 0) return;
             }
@@ -3210,6 +3214,10 @@ namespace Apos.Shapes {
         // draws on its own with a smaller technique. The rest goes with its neighbors, so a few
         // dashed quads among solid ones don't each cost a draw call.
         private void DrawSplit(Texture2D? texture, int firstIndex, int indexCount) {
+            if (_techniques[0] == null) {
+                DrawRange(texture, -1, firstIndex, indexCount);
+                return;
+            }
             // Stretches of quads with the same features, by first quad.
             int count = 0, all = _warmupFeatures;
             int endQuad = (firstIndex + indexCount) / 6;
@@ -3232,7 +3240,7 @@ namespace Apos.Shapes {
             for (int i = 0; i < count; i++) {
                 Stretch stretch = _stretches[i];
                 int stretchEnd = i + 1 < count ? _stretches[i + 1].Start : endQuad;
-                int t = SmallestCompiled(stretch.Features);
+                int t = Cover(stretch.Features, whole);
                 bool anchor = t != whole && ScreenArea(stretch.Start, stretchEnd) >= _splitArea;
                 if (!anchor && kept > 0 && _stretches[kept - 1].Technique < 0) {
                     _stretches[kept - 1].Features |= stretch.Features;
@@ -3249,7 +3257,7 @@ namespace Apos.Shapes {
                 int next = i + 1 < kept ? _stretches[i + 1].Technique : -1;
                 if (previous >= 0 && (previous & gap.Features) == gap.Features) gap.Technique = previous;
                 else if (next >= 0 && (next & gap.Features) == gap.Features) gap.Technique = next;
-                else gap.Technique = SmallestCompiled(gap.Features);
+                else gap.Technique = Cover(gap.Features, whole);
             }
 
             for (int i = 0; i < kept;) {
@@ -3266,13 +3274,14 @@ namespace Apos.Shapes {
         // shader's current technique.
         private void DrawRange(Texture2D? texture, int techniqueIndex, int firstIndex, int indexCount) {
             EffectTechnique technique = techniqueIndex < 0 ? _effect.CurrentTechnique : _techniques[techniqueIndex]!;
+            if (techniqueIndex >= 0) _compiled[techniqueIndex] = true;
             if (_blueNoiseParam != null) {
                 // The built-in shader names its textures, and each technique's shader may keep
                 // them on different units, so they go over by name and Apply places them.
                 // A table that doesn't exist yet gets a texel of its own rather than another
                 // texture: GL keeps sampling settings on the texture, so sharing one would hand
                 // the noise the ramp's clamping. The shader never reads it in that case.
-                if (texture != null) _textureParam?.SetValue(texture);
+                _textureParam?.SetValue(texture ?? _placeholder);
                 _bandParam?.SetValue(_glyphAtlas?.Band ?? _placeholder);
                 _curveParam?.SetValue(_glyphAtlas?.Curve ?? _placeholder);
                 _blueNoiseParam.SetValue(_blueNoise);
@@ -3313,12 +3322,17 @@ namespace Apos.Shapes {
         // asks for exactly what it names, since compiling that is the point of it.
         private int PickTechnique(int features) {
             if (_techniques[features] == null) return -1;
-            if (!_compiled[features] && _warmupFeatures == 0) {
+            if (_warmupFeatures == 0) {
                 int best = SmallestCompiled(features);
                 if (best >= 0) return best;
             }
-            _compiled[features] = true;
             return features;
+        }
+        // The smallest compiled technique for a stretch of a run that draws with whole, or whole
+        // itself, which is about to compile if it hasn't.
+        private int Cover(int features, int whole) {
+            int best = SmallestCompiled(features);
+            return best >= 0 ? best : whole;
         }
 
         // The smallest technique that has drawn and covers these features, or -1 if none has.
@@ -3551,12 +3565,14 @@ namespace Apos.Shapes {
         // The gradient-taking form also seats the rows the quad's ramps and color ramps need,
         // before anything packs. Rows pin from first pack to flush, so a table refusing means
         // this batch referenced 256 distinct curves since its last flush, and drawing them is
-        // what makes room; after the flush nothing is pinned and the repin can't fail.
+        // what makes room; after the flush nothing is pinned and the repin can't fail. The
+        // flush also ends every run, so the quad starts a new one.
         private void PrepareQuad(in Gradient fill, in Gradient border) {
             PrepareQuad();
             if (fill.R != null || fill.Colors != null || border.R != null || border.Colors != null) {
                 if (!PinRamps(fill, border)) {
                     Flush();
+                    PrepareQuad();
                     PinRamps(fill, border);
                 }
             }
@@ -3567,6 +3583,7 @@ namespace Apos.Shapes {
             if (fill.R != null || fill.Colors != null) {
                 if (!PinRamps(fill)) {
                     Flush();
+                    PrepareQuad();
                     PinRamps(fill);
                 }
             }
@@ -4207,7 +4224,7 @@ namespace Apos.Shapes {
                     splits[n] = sOut;
                     cornerCuts[n] = c;
                     patternRadii[n] = 0f;
-                    inner[m++] = square || meetOnOut ? (square ? Vector2.Zero : meet) : Vector2.Zero;
+                    inner[m++] = !square && meetOnOut ? meet : Vector2.Zero;
                     if (!square) inner[m++] = meetOnOut ? Vector2.Zero : meet;
                     innerEnds[n] = m;
                     n++;
