@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Text and SVG fills have sharper edges and come out at their true weight instead of looking bold.
 
+### Fixed
+
+- Dashes on a path no longer move or pop when the camera zooms.
+- Butt dashes that end in a path's sharp corner have antialiased edges instead of hard, jagged ones.
+
 ## [0.9.0] - 2026-10-25
 
 ### Added

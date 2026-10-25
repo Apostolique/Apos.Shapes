@@ -1731,14 +1731,14 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             // A butt dash ends on a straight cut across the band, square to the direction the
             // pattern runs there. The cut stops at the band's inner edge, since a line carried
             // round a corner turning more than a right angle comes back on the wrong side of
-            // itself, while an outline's runs on past the outer edge to reach a corner's tip.
+            // itself. Outward it never stops: in a corner the cut is a ray out of the pattern
+            // circle's center, deep inside the stroke, and the stroke's outer edge can lie far
+            // along it. A cut that stopped short would leave a hard edge past its end, where the
+            // pixel flips between dash and gap with no distance to fade over.
             float aa = footprint.y * aaPixels;
             float2 c1 = float2(n1.y, -n1.x);
             float2 c2 = float2(n2.y, -n2.x);
-            // A path's stroke is bounded past its outer edge by the joint disc instead.
-            float reach1 = piecePath ? 2.0 * (r1 + aa) : 1e6;
-            float reach2 = piecePath ? 2.0 * (r2 + aa) : 1e6;
-            float run = min(SegRun(pq, e1 - c1 * (r1 + aa), c1, reach1), SegRun(pq, e2 - c2 * (r2 + aa), c2, reach2));
+            float run = min(SegRun(pq, e1 - c1 * (r1 + aa), c1, 1e6), SegRun(pq, e2 - c2 * (r2 + aa), c2, 1e6));
             cut = de.x < 0.0 ? -run : run;
         }
         if (piecePath) {
