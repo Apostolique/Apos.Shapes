@@ -3902,10 +3902,17 @@ namespace Apos.Shapes {
         // listed from its outgoing split around to its incoming one. A corner can also be a square
         // one cut straight across, and can be handed the circle its pattern turns on; both stay
         // empty for everything but a chamfer. Returns false when the pattern comes out solid.
-        private bool EmitDashedOutline(Vector2 origin, float rotation, ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, ReadOnlySpan<Vector2> inner, ReadOnlySpan<int> innerEnds, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash, ReadOnlySpan<float> cuts = default, ReadOnlySpan<float> patternRadii = default) {
+        private bool EmitDashedOutline(Vector2 origin, float rotation, ReadOnlySpan<Vector2> vertices, ReadOnlySpan<float> radii, ReadOnlySpan<Vector2> splits, ReadOnlySpan<Vector2> inner, ReadOnlySpan<int> innerEnds, Gradient fill, Gradient border, float thickness, float aaOffset, float aaSize, DashStyle dash, ReadOnlySpan<float> cuts = default, ReadOnlySpan<float> patternRadii = default, bool startMidCorner = false) {
             int n = vertices.Length;
             Span<OutlineCorner> corners = stackalloc OutlineCorner[n];
             float length = ResolveOutline(vertices, radii, cuts, patternRadii, splits, thickness, dash.Cap == DashCap.Round, corners, out float perimeter);
+            if (startMidCorner) {
+                // The pattern counts from the middle of the last corner's circle rather than from
+                // where it leaves it.
+                ref OutlineCorner last = ref corners[n - 1];
+                float shift = last.Turn * MathF.Max(last.PatternRadius - thickness * 0.5f, 0f) * 0.5f;
+                for (int k = 0; k < n; k++) corners[k].Start += shift;
+            }
             ResolvedDash pattern = dash.Resolve(length, closed: true, fit: perimeter);
             if (pattern.TypeDigit == 0) return false;
 
@@ -4191,6 +4198,16 @@ namespace Apos.Shapes {
             Span<float> patternRadii = stackalloc float[8];
             Span<Vector2> inner = stackalloc Vector2[16];
             Span<int> innerEnds = stackalloc int[8];
+            // The same handover from the other side: two cut corners whose side between them runs
+            // shorter than that turn as the square corner their two diagonals make, with the side
+            // as its cut. At the handover the two diagonals' circles both touch the side at its
+            // middle, so they are already that corner's one circle.
+            Span<bool> merged = stackalloc bool[4];
+            for (int q = 0; q < 4; q++) {
+                int q1 = (q + 1) & 3;
+                float side = 2f * (q % 2 == 0 ? half.Y : half.X) - cuts[q] - cuts[q1];
+                merged[q] = cuts[q] > split && cuts[q1] > split && side * 0.70710678f < split;
+            }
             int n = 0;
             int m = 0;
             // Quadrants in travel order from the top right. Each one is entered along one side and
@@ -4205,31 +4222,69 @@ namespace Apos.Shapes {
                 bool meetOnOut = (q % 2 == 0) == wide;
                 float c = cuts[q];
                 if (c > split) {
-                    outline[n] = corner - tIn * c;
-                    outline[n + 1] = corner + tOut * c;
-                    splits[n] = (outline[n] + outline[n + 1]) * 0.5f;
-                    splits[n + 1] = sOut;
-                    cornerCuts[n] = 0f;
-                    cornerCuts[n + 1] = 0f;
-                    patternRadii[n] = rpSquare;
-                    patternRadii[n + 1] = rpSquare;
-                    if (square) {
-                        inner[m++] = Vector2.Zero;
+                    Vector2 a = corner - tIn * c;
+                    Vector2 b = corner + tOut * c;
+                    // The diagonal's own corner where it starts, unless the corner before took it
+                    // in. Its piece closes on the inner points from its split around to sOut's.
+                    if (!merged[(q + 3) & 3]) {
+                        outline[n] = a;
+                        splits[n] = (a + b) * 0.5f;
+                        cornerCuts[n] = 0f;
+                        patternRadii[n] = rpSquare;
+                        if (square) {
+                            inner[m++] = Vector2.Zero;
+                        } else if (meetOnOut) {
+                            inner[m++] = meet;
+                            inner[m++] = Vector2.Zero;
+                        } else {
+                            inner[m++] = meet;
+                        }
                         innerEnds[n] = m;
-                        inner[m++] = Vector2.Zero;
-                    } else if (meetOnOut) {
-                        inner[m++] = meet;
-                        inner[m++] = Vector2.Zero;
-                        innerEnds[n] = m;
-                        inner[m++] = meet;
-                    } else {
-                        inner[m++] = meet;
-                        innerEnds[n] = m;
-                        inner[m++] = Vector2.Zero;
-                        inner[m++] = meet;
+                        n++;
                     }
-                    innerEnds[n + 1] = m;
-                    n += 2;
+                    if (!merged[q]) {
+                        outline[n] = b;
+                        splits[n] = sOut;
+                        cornerCuts[n] = 0f;
+                        patternRadii[n] = rpSquare;
+                        if (square) {
+                            inner[m++] = Vector2.Zero;
+                        } else if (meetOnOut) {
+                            inner[m++] = meet;
+                        } else {
+                            inner[m++] = Vector2.Zero;
+                            inner[m++] = meet;
+                        }
+                    } else {
+                        // The square corner past the side, which reaches it at the side's middle
+                        // pushed out by half the side, and runs on along the next diagonal to
+                        // that diagonal's split. Its piece is the two pieces either side of sOut
+                        // made one, so it closes on the next diagonal's inner points and then
+                        // this one's.
+                        int q1 = (q + 1) & 3;
+                        Vector2 tOut1 = -tIn;
+                        Vector2 corner1 = (tOut - tOut1) * half;
+                        Vector2 a1 = corner1 - tOut * cuts[q1];
+                        Vector2 b1 = corner1 + tOut1 * cuts[q1];
+                        float side = Vector2.Distance(b, a1);
+                        outline[n] = (b + a1) * 0.5f + tIn * (side * 0.5f);
+                        splits[n] = (a1 + b1) * 0.5f;
+                        cornerCuts[n] = side * 0.70710678f;
+                        patternRadii[n] = rpSquare;
+                        Vector2 meet1 = wide ? new Vector2(MathF.Sign(corner1.X) * (half.X - half.Y), 0f) : new Vector2(0f, MathF.Sign(corner1.Y) * (half.Y - half.X));
+                        if (square) {
+                            inner[m++] = Vector2.Zero;
+                        } else if (meetOnOut) {
+                            // The next quadrant's diagonal ends on its meet, which is this one's.
+                            inner[m++] = meet;
+                        } else {
+                            inner[m++] = meet1;
+                            inner[m++] = Vector2.Zero;
+                            inner[m++] = meet;
+                        }
+                    }
+                    innerEnds[n] = m;
+                    n++;
                 } else {
                     outline[n] = corner;
                     splits[n] = sOut;
@@ -4242,7 +4297,9 @@ namespace Apos.Shapes {
                 }
             }
             radii[..n].Clear();
-            return EmitDashedOutline(center, rotation, outline[..n], radii[..n], splits[..n], inner[..m], innerEnds[..n], fill, border, thickness, aaOffset, aaSize, dash, cornerCuts[..n], patternRadii[..n]);
+            // The pattern counts from where it leaves the top left corner's circle onto the top side.
+            // Once that side is merged away, the same place is the middle of the merged corner's.
+            return EmitDashedOutline(center, rotation, outline[..n], radii[..n], splits[..n], inner[..m], innerEnds[..n], fill, border, thickness, aaOffset, aaSize, dash, cornerCuts[..n], patternRadii[..n], merged[3]);
         }
 
         // A dashed ellipse keeps the shader's own distance, which is exact, and goes out in pieces
