@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.9.2] - 2026-10-25
+
 ### Changed
 
 - A miter join past its miter limit is cut flat at the limit, like SVG's `miter-clip`, instead of turning into a bevel.
@@ -485,7 +489,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.7...v0.9.0
 [0.8.7]: https://github.com/Apostolique/Apos.Shapes/compare/v0.8.6...v0.8.7
