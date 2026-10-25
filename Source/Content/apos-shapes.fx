@@ -455,6 +455,36 @@ float StrokeConeSDF(float2 p, float len, float rA, float rB, float4 data) {
     return d;
 }
 
+// A path segment's distance joined with its neighbor's across one joint whose slabs overlap.
+// Each segment draws its own quads, so without this the border of one would run on across the
+// fill of the other. Mirrored across the joint's bisector, the neighbor lands on this segment's
+// own spine, run back from the joint, and that is the frame it is measured in. into is which
+// way along x the neighbor runs there. rJ is the half width at the joint, slope how fast the
+// neighbor narrows away from it, and reach how far it runs before it is cut flat. Cutting it
+// short can only ever leave shape out, never add any.
+//
+// past is how far the pixel stands past this segment's end at the joint. A round joint is the
+// joint's disc, which own already holds. A sharp joint's outer corner is what both slabs still
+// cover past the joint, which is past own's end and short of the neighbor's start. Past both,
+// only the neighbor's body is left.
+float JointUnion(float own, float2 q, float2 joint, float angle, float into, float past, float rJ, float slope, float reach, float mode, float limit) {
+    float2 dir;
+    sincos(angle, dir.y, dir.x);
+    float2 v = q - joint;
+    float along = dot(v, dir);
+    v = 2.0 * along * dir - v;
+    float2 n = float2(v.x * into, abs(v.y));
+    float wall = slope * n.x + sqrt(1.0 - slope * slope) * n.y - rJ;
+    float body = max(wall, n.x - reach);
+    if (mode < 2.5) return min(own, max(body, -n.x));
+    float d = past > 0.0
+        ? (n.x > 0.0 ? body : max(own, wall))
+        : (n.x > 0.0 ? min(own, body) : own);
+    // A bevel or a clip never cuts into either body, but at a sharp enough turn it runs right
+    // past the joint, and then it is the edge the neighbor's body is nearest to.
+    return mode > 3.5 ? max(d, along - rJ * (mode > 4.5 ? limit : abs(dir.y))) : d;
+}
+
 // Signed distance along the contour to the nearest dash edge, negative inside a dash.
 // data.x is the period in world units; data.y packs the dash fraction and the phase as two
 // 11 bit values, both period-relative so the quantization stays subpixel. A dash's center
@@ -1683,6 +1713,38 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         d = sd.w == sdfSize
             ? StrokeSDF(q, pathLen, sdfSize, sd)
             : StrokeConeSDF(q, pathLen, sdfSize, sd.w, sd);
+        // A solid segment beside a joint whose slabs overlap carries its neighbors' lengths in
+        // the rounding slot, the start's code below the end's. Each is 11 bits over the
+        // segment's own length plus 32 radii, which is further than any of its quads reach from
+        // a joint. A neighbor that changes width needs its slope too, so it gets a quad to
+        // itself. Its slot goes negative and holds a 10 bit length, which end it sits at, and
+        // the slope.
+        float joints = abs(rounded);
+        if (joints > 0.5) {
+            float m = sd.x;
+            float modeA = DecodeDigit(m, 8.0);
+            float modeB = DecodeDigit(m, 8.0);
+            float limit = 1.0 + m * 0.25;
+            float codeA;
+            float codeB;
+            float slope = 0.0;
+            float steps = 2047.0;
+            if (rounded < 0.0) {
+                float code = DecodeDigit(joints, 1024.0);
+                float atEnd = DecodeDigit(joints, 2.0);
+                slope = (joints - 1024.0) / 1023.0;
+                steps = 1023.0;
+                codeA = atEnd > 0.5 ? 0.0 : code;
+                codeB = atEnd > 0.5 ? code : 0.0;
+            } else {
+                codeA = DecodeDigit(joints, 2048.0);
+                codeB = joints;
+            }
+            float unit = (pathLen + 32.0 * max(sdfSize, sd.w)) / steps;
+            if (codeA > 0.5) d = JointUnion(d, q, float2(0.0, 0.0), sd.y, 1.0, -q.x, sdfSize, slope, codeA * unit, modeA, limit);
+            if (codeB > 0.5) d = JointUnion(d, q, float2(pathLen, 0.0), sd.z, -1.0, q.x - pathLen, sd.w, slope, codeB * unit, modeB, limit);
+            rounded = 0.0;
+        }
         pBand = d;
     }
 

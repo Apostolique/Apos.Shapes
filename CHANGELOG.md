@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Miter and bevel joins stay sharp or flat on short segments, sharp turns and tapered paths instead of turning round. Dashed paths still round those joints.
 - A path's border stays on its outline at sharper joints than before, instead of crossing the fill.
+- A path's border no longer crosses the fill where two neighboring segments overlap, like at a near reversal or beside a short segment.
 
 ## [0.9.1] - 2026-10-25
 

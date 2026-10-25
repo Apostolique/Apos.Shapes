@@ -1020,17 +1020,20 @@ namespace Apos.Shapes {
                 // A solid miter or bevel keeps its shape all the way to a full reversal, where it
                 // ends square or flat, so only round and dashed joints need the round caps.
                 bool sharp = requested != PathJoin.Round && !dashed;
+                float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
+                float sign = s2 >= 0f ? 1f : -1f;
+                // A reversal keeps its half turn too. The bisector is still a line there, running
+                // along the spine at a full turn back, and the border's union mirrors through it.
+                jd.Sign = sign;
+                jd.CHalf = cHalf;
+                jd.SHalf = sHalf;
+                jd.Theta = 2f * MathF.Atan2(sHalf, cHalf);
                 if (cHalf < 0.05f && !sharp) {
-                    // Near reversal the bisector degenerates; both sides fall back to overlapping round caps.
+                    // Near reversal the inner miter runs off to infinity. Both sides fall back to
+                    // overlapping round caps.
                     jd.Mode = PathJointMode.Reversal;
                 } else {
-                    float sHalf = MathF.Sqrt(MathF.Max((1f - c2) * 0.5f, 0f));
-                    float sign = s2 >= 0f ? 1f : -1f;
                     float run = h * sHalf / cHalf; // How far along each segment the inner miter reaches.
-                    jd.Sign = sign;
-                    jd.CHalf = cHalf;
-                    jd.SHalf = sHalf;
-                    jd.Theta = 2f * MathF.Atan2(sHalf, cHalf);
                     PathJoin effective = requested;
                     bool clip = false;
                     if (effective == PathJoin.Miter) {
@@ -1197,6 +1200,9 @@ namespace Apos.Shapes {
             // Cross sections at each end: two corners at a cap, up to three points at a joint.
             // Every polygon is convex, so a fan from the first vertex triangulates it.
             bool tapered = !radii.IsEmpty;
+            // A fill alone has no border to keep off a neighbor, and a dashed path gives every dash
+            // a border of its own.
+            bool unite = rd.TypeDigit == 0 && thickness > 0f;
             Span<Vector2> poly = stackalloc Vector2[6];
             Span<Vector2> half = stackalloc Vector2[5];
             for (int i = 0; i < segs; i++) {
@@ -1220,6 +1226,30 @@ namespace Apos.Shapes {
                 bool hasEnd = closed || i < segs - 1;
                 int js = closed ? (i + jointCount - 1) % jointCount : i - 1;
                 int je = i;
+
+                // Beside a joint whose slabs overlap, the segment measures its border against the
+                // neighbor's body as well as its own, or its border would run on across the
+                // neighbor's fill. codeStart and codeEnd each carry one end's neighbor, see
+                // JointCodes.
+                bool uniteStart = unite && hasStart && joints[js].Mode != PathJointMode.Partition;
+                bool uniteEnd = unite && hasEnd && joints[je].Mode != PathJointMode.Partition;
+                float rMax = MathF.Max(radiusA, radiusB);
+                float codeStart = 0f;
+                float codeEnd = 0f;
+                if (uniteStart) {
+                    int k = (i + n - 1) % n;
+                    float lenM = Vector2.Distance(pts[k], a);
+                    codeStart = tapered
+                        ? TaperJointCode(len, rMax, lenM, (radiusA - R(radii, radius, k)) / lenM, false)
+                        : JointCodes(len, rMax, lenM, 0f);
+                }
+                if (uniteEnd) {
+                    int k = (i + 2) % n;
+                    float lenN = Vector2.Distance(b, pts[k]);
+                    codeEnd = tapered
+                        ? TaperJointCode(len, rMax, lenN, (radiusB - R(radii, radius, k)) / lenN, true)
+                        : JointCodes(len, rMax, 0f, lenN);
+                }
 
                 int count = 0;
                 float modeStart = 0f;
@@ -1392,6 +1422,10 @@ namespace Apos.Shapes {
                         }
                     }
                 }
+                // The union mirrors through the joint's bisector, which a bevel or a clip already
+                // carries as its plane. A round or open end has no plane, so it lends the slot.
+                if (uniteStart) angStart = MathF.Atan2(-joints[js].Sign * joints[js].CHalf, -joints[js].SHalf);
+                if (uniteEnd) angEnd = MathF.Atan2(-joints[je].Sign * joints[je].CHalf, joints[je].SHalf);
 
                 PathPiece second = default;
                 if (rd.TypeDigit > 0) {
@@ -1415,11 +1449,24 @@ namespace Apos.Shapes {
                     for (int k = startCount; k < count; k++) half[m++] = poly[k];
                     half[m++] = mid + nrm * hA;
                     EmitPathPiece(second, half[..m], fill, border, thickness, aaSize, rd);
+                } else if (codeStart < 0f && codeEnd < 0f) {
+                    // Two neighbors that change width don't fit one quad, so the segment splits
+                    // square across its middle and each half takes the neighbor at its own end.
+                    float modes = modeStart + 8f * modeEnd + 64f * clipCode;
+                    Vector2 mid = a + d * 0.5f;
+                    int m = 0;
+                    for (int k = 0; k < startCount; k++) half[m++] = poly[k];
+                    half[m++] = mid - nrm * hA;
+                    half[m++] = mid + nrm * hA;
+                    EmitPathFan(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, codeStart);
+                    m = 0;
+                    half[m++] = mid - nrm * hA;
+                    for (int k = startCount; k < count; k++) half[m++] = poly[k];
+                    half[m++] = mid + nrm * hA;
+                    EmitPathFan(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, codeEnd);
                 } else {
                     float modes = modeStart + 8f * modeEnd + 64f * clipCode;
-                    for (int k = 1; k + 1 < count; k += 2) {
-                        EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, count - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
-                    }
+                    EmitPathFan(a, u, nrm, len, poly[..count], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, codeStart + codeEnd);
                 }
 
                 // Round join: a fan around the joint covers the outer wedge between the two walls. Any
@@ -1443,7 +1490,7 @@ namespace Apos.Shapes {
                             half[3] = fanEnd;
                             EmitPathPiece(second, half[..4], fill, border, thickness, aaSize, rd);
                         } else {
-                            EmitPathQuad(a, u, nrm, len, b, fanStart, v1, fanEnd, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, 0f);
+                            EmitPathQuad(a, u, nrm, len, b, fanStart, v1, fanEnd, fill, border, thickness, radiusA, radiusB, aaSize, 0f, 0f, uniteEnd ? angEnd : 0f, codeEnd);
                         }
                     }
                 }
@@ -1458,8 +1505,8 @@ namespace Apos.Shapes {
                     if (jd.WedgeNext > 2) half[m++] = jd.WNext;
                     half[m++] = jd.E1Next;
                     float mode = JoinEndMode(jd);
-                    float ang = mode > 3.5f ? MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf) : 0f;
-                    EmitPathWedge(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, mode + 24f + 64f * clipCode, ang, 0f);
+                    float ang = mode > 3.5f || uniteStart ? MathF.Atan2(-jd.Sign * jd.CHalf, -jd.SHalf) : 0f;
+                    EmitPathWedge(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, mode + 24f + 64f * clipCode, ang, 0f, codeStart);
                 }
                 if (hasEnd && !squareEnd && joints[je].Mode == PathJointMode.Overlap && joints[je].WedgePrev > 0) {
                     ref PathJoint jd = ref joints[je];
@@ -1469,8 +1516,8 @@ namespace Apos.Shapes {
                     if (jd.WedgePrev > 2) half[m++] = jd.WPrev;
                     half[m++] = jd.MOut;
                     float mode = JoinEndMode(jd);
-                    float ang = mode > 3.5f ? MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf) : 0f;
-                    EmitPathWedge(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, 3f + 8f * mode + 64f * clipCode, 0f, ang);
+                    float ang = mode > 3.5f || uniteEnd ? MathF.Atan2(-jd.Sign * jd.CHalf, jd.SHalf) : 0f;
+                    EmitPathWedge(a, u, nrm, len, half[..m], fill, border, thickness, radiusA, radiusB, aaSize, 3f + 8f * mode + 64f * clipCode, 0f, ang, codeEnd);
                 }
             }
         }
@@ -1567,11 +1614,38 @@ namespace Apos.Shapes {
         // One half of an overlap joint's outer corner, in its segment's frame. The corners come
         // in either winding, depending on the side the joint turns to, and go out clockwise on
         // screen.
-        private void EmitPathWedge(Vector2 a, Vector2 u, Vector2 nrm, float len, Span<Vector2> poly, in Gradient fill, in Gradient border, float thickness, float radiusA, float radiusB, float aaSize, float modes, float angStart, float angEnd) {
+        private void EmitPathWedge(Vector2 a, Vector2 u, Vector2 nrm, float len, Span<Vector2> poly, in Gradient fill, in Gradient border, float thickness, float radiusA, float radiusB, float aaSize, float modes, float angStart, float angEnd, float joints) {
             if (PolygonArea(poly) < 0f) poly.Reverse();
+            EmitPathFan(a, u, nrm, len, poly, fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, joints);
+        }
+        // A convex polygon of a path segment, wound clockwise on screen, as a fan of quads from
+        // its first vertex.
+        private void EmitPathFan(Vector2 a, Vector2 u, Vector2 nrm, float len, ReadOnlySpan<Vector2> poly, in Gradient fill, in Gradient border, float thickness, float radiusA, float radiusB, float aaSize, float modes, float angStart, float angEnd, float joints) {
             for (int k = 1; k + 1 < poly.Length; k += 2) {
-                EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, poly.Length - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd);
+                EmitPathQuad(a, u, nrm, len, poly[0], poly[k], poly[k + 1], poly[Math.Min(k + 2, poly.Length - 1)], fill, border, thickness, radiusA, radiusB, aaSize, modes, angStart, angEnd, joints);
             }
+        }
+
+        // The neighbors a solid segment joins its distance with across joints whose slabs
+        // overlap, packed for the rounding slot. See JointUnion in the shader. A length counts in
+        // 2047 steps of the segment's own length plus 32 radii, which is further than any of its
+        // quads reach from a joint, and rounds down so the neighbor never comes out longer than
+        // it is. A code of 0 leaves that end alone, so a length of 0 asks for nothing. The
+        // start's code sits below the end's, and each end packs on its own, so the two add.
+        private static float JointCodes(float len, float rMax, float lenStart, float lenEnd) {
+            float unit = (len + 32f * rMax) / 2047f;
+            static float Code(float l, float unit) => l > 0f ? Math.Clamp(MathF.Floor(l / unit), 1f, 2047f) : 0f;
+            return Code(lenStart, unit) + 2048f * Code(lenEnd, unit);
+        }
+        // A neighbor that changes width needs its slope too, how fast it narrows away from the
+        // joint as the shader's cone measures it. That takes the room the second end had, so the
+        // length drops to 10 bits beside which end it is and the slope, rounded the way that
+        // narrows the neighbor, and the code goes negative to say so.
+        private static float TaperJointCode(float len, float rMax, float lenNeighbor, float slope, bool atEnd) {
+            float unit = (len + 32f * rMax) / 1023f;
+            float code = Math.Clamp(MathF.Floor(lenNeighbor / unit), 1f, 1023f);
+            float slopeCode = Math.Clamp(MathF.Ceiling(Math.Clamp(slope, -0.999f, 0.999f) * 1023f + 1024f), 1f, 2047f);
+            return -(code + 1024f * (atEnd ? 1f : 0f) + 2048f * slopeCode);
         }
         /// <summary>Fills a path, with no border. See the DrawPath overload.</summary>
         /// <param name="points">The points the path runs through. Consecutive duplicates are dropped.</param>
@@ -4102,13 +4176,13 @@ namespace Apos.Shapes {
         // A path quad's local coordinates live in its segment's frame: x along the segment, y across it.
         // Meta2 carries the packed end modes, the bevel plane angles for StrokeSDF, and the far end's
         // half width, which equals radius on a uniform path and tells the shader to take the plain
-        // capsule.
-        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float radiusEnd, float aaSize, float modes, float angStart, float angEnd) {
+        // capsule. joints rides in the rounding slot, see JointCodes.
+        private void EmitPathQuad(Vector2 origin, Vector2 u, Vector2 nrm, float len, Vector2 w0, Vector2 w1, Vector2 w2, Vector2 w3, in Gradient fill, in Gradient border, float thickness, float radius, float radiusEnd, float aaSize, float modes, float angStart, float angEnd, float joints = 0f) {
             Vector2 Local(Vector2 w) {
                 Vector2 r = w - origin;
                 return new Vector2(Vector2.Dot(r, u), Vector2.Dot(r, nrm));
             }
-            EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, 0f, modes, angStart, angEnd, radiusEnd);
+            EmitHollowQuad(w0, w1, w2, w3, Local(w0), Local(w1), Local(w2), Local(w3), VertexShape.Shape.Path, fill, border, thickness, radius, len, aaSize, joints, modes, angStart, angEnd, radiusEnd);
         }
 
         // One quad per edge between two nested convex polygons with matching corner counts. Adjacent
