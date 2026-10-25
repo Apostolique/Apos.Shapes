@@ -5,7 +5,7 @@ Shape rendering library for MonoGame and KNI.
 
 ## Description
 
-This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text straight from a font's outlines, SVG drawings straight from theirs, and textures with the `SpriteBatch` API. Shapes, text, drawings, and textures can be interleaved in any order. Everything renders together in a single batch that never needs to break.
+This library draws crisp anti-aliased shapes on the GPU using [SDF](https://en.wikipedia.org/wiki/Signed_distance_function)s. It also draws text straight from a font's outlines, SVG drawings straight from theirs, and textures with the `SpriteBatch` API. Shapes, text, drawings, and textures can be interleaved in any order, and they all go to the GPU together in one upload.
 
 Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the work on the math functions. The text follows Eric Lengyel's [Slug](https://sluglibrary.com) algorithm, by way of [Forme](https://github.com/AristurtleDev/Forme).
 
@@ -25,9 +25,9 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 * Text solved from the font's own outlines in the shader. No atlas, so nothing picks a size up front and a glyph stays exact at any size, rotation, and zoom
 * SVG drawings solved the same way, fills and strokes, in the file's own colors and gradients or in one color of your own
 * Textures (`SpriteBatch` API)
-* Clipping to a rectangle
-* One batch for everything. Mixing shapes, text, drawings, and textures never breaks the batch
-* Precompiled shader embedded in the assembly using [ShadowDusk](https://github.com/kaltinril/ShadowDusk). No need for Wine to build on Linux or macOS.
+* Clipping to rectangles that can be rounded, rotated, and nested inside each other
+* One batch for everything. Shapes, text, drawings, and textures mix in any order
+* Precompiled shaders embedded in the assembly using [ShadowDusk](https://github.com/kaltinril/ShadowDusk), in a small version for each mix of features so a game only waits on compiling what it draws. No need for Wine to build on Linux or macOS.
 * Works with MonoGame 3.8.2+ and [KNI](https://github.com/kniengine/kni)
 
 ## Documentation
