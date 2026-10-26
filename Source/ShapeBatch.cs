@@ -20,7 +20,8 @@ namespace Apos.Shapes {
         /// <param name="graphicsDevice">The device to draw with.</param>
         /// <param name="effect">
         /// A replacement for the built-in shader. Leave it null, which loads the one embedded in
-        /// this assembly for the running backend.
+        /// this assembly for the running backend. A replacement with only some of the built-in
+        /// shader's techniques draws each shape with the smallest one that covers it.
         /// </param>
         /// <param name="warmup">
         /// Runs <see cref="Warmup"/> so the driver compiles the shader as early as possible. You
@@ -30,7 +31,20 @@ namespace Apos.Shapes {
         public ShapeBatch(GraphicsDevice graphicsDevice, Effect? effect = null, bool warmup = true) {
             _graphicsDevice = graphicsDevice;
 
-            _effect = effect ?? LoadEmbeddedEffect(graphicsDevice);
+            _ownsEffect = effect == null;
+            effect ??= LoadEmbeddedEffect(graphicsDevice);
+            if (effect != null) {
+                _effect = new ShaderEffect(effect);
+                for (int i = 0; i < _techniques.Length; i++) {
+                    _techniques[i] = effect.Techniques["Shapes" + i];
+                    if (_techniques[i] != null) {
+                        _effects[i] = _effect;
+                        _available |= 1 << i;
+                    }
+                }
+            } else {
+                _available = (1 << _techniques.Length) - 1;
+            }
 
             _vertices = new VertexShape[_initialVertices];
             _indices = new uint[_initialIndices];
@@ -41,25 +55,6 @@ namespace Apos.Shapes {
 
             _indexBuffer = new IndexBuffer(_graphicsDevice, IndexElementSize.ThirtyTwoBits, _indices.Length, BufferUsage.WriteOnly);
             _indexBuffer.SetData(_indices);
-
-            _viewProjection = _effect.Parameters["view_projection"];
-            // Null-safe so custom effects compiled before these parameters existed keep working.
-            _halfViewportParam = _effect.Parameters["half_viewport"];
-            _ditherScale = _effect.Parameters["dither_scale"];
-            _ditherMode = _effect.Parameters["dither_mode"];
-            _rampTexel = _effect.Parameters["ramp_texel"];
-            _bandTexSize = _effect.Parameters["band_tex_size"];
-            _bandTexel = _effect.Parameters["band_texel"];
-            _curveTexel = _effect.Parameters["curve_texel"];
-            _clipFrameParam = _effect.Parameters["clip_frame"];
-            _clipSizeParam = _effect.Parameters["clip_size"];
-            _clipCountParam = _effect.Parameters["clip_count"];
-            _textureParam = _effect.Parameters["TextureTex"];
-            _bandParam = _effect.Parameters["BandTex"];
-            _curveParam = _effect.Parameters["CurveTex"];
-            _blueNoiseParam = _effect.Parameters["BlueNoiseTex"];
-            _rampParam = _effect.Parameters["RampTex"];
-            for (int i = 0; i < _techniques.Length; i++) _techniques[i] = _effect.Techniques["Shapes" + i];
 
             _blueNoise = BlueNoise.CreateTexture(graphicsDevice);
             _placeholder = new Texture2D(graphicsDevice, 1, 1);
@@ -142,16 +137,17 @@ namespace Apos.Shapes {
         public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) : this(graphicsDevice, effect) { }
 
         /// <summary>
-        /// Loads the shader that was precompiled at pack time and embedded in this assembly.
+        /// Loads the shader that was precompiled at pack time and embedded in this assembly, or
+        /// returns null on KNI's GL family, where each technique loads on its own.
         /// </summary>
-        private static Effect LoadEmbeddedEffect(GraphicsDevice graphicsDevice) {
+        private static Effect? LoadEmbeddedEffect(GraphicsDevice graphicsDevice) {
 #if KNI
-            // The knifx covers KNI's GL family (desktop GL, GLES, WebGL); the DirectX backends load standard MGFX instead.
+            // The knifx files cover KNI's GL family (desktop GL, GLES, WebGL); the DirectX backends load standard MGFX instead.
             GraphicsBackend backend = graphicsDevice.Adapter.Backend;
             if (backend == GraphicsBackend.DirectX11 || backend == GraphicsBackend.DirectX12) {
                 return new Effect(graphicsDevice, ReadEmbeddedBytes("Apos.Shapes.apos-shapes.dx11.mgfx"));
             }
-            return new Effect(graphicsDevice, ReadEmbeddedBytes("Apos.Shapes.apos-shapes.knifx"));
+            return null;
 #else
             string name = GetActiveProfile() switch {
                 0 => "Apos.Shapes.apos-shapes.ogl.mgfx",
@@ -161,6 +157,20 @@ namespace Apos.Shapes {
             };
             return new Effect(graphicsDevice, ReadEmbeddedBytes(name));
 #endif
+        }
+
+        // The effect that draws a technique, by index. KNI's GL backends compile every shader in
+        // an effect as soon as it loads, so there each technique is an effect of its own that
+        // loads the first time it draws, and only the ones a game uses cost a compile.
+        private ShaderEffect EffectFor(int techniqueIndex) {
+            if (techniqueIndex < 0) return _effect!;
+            ShaderEffect? effect = _effects[techniqueIndex];
+            if (effect == null) {
+                var loaded = new Effect(_graphicsDevice, ReadEmbeddedBytes($"Apos.Shapes.apos-shapes.{techniqueIndex}.knifx"));
+                effect = _effects[techniqueIndex] = new ShaderEffect(loaded);
+                _techniques[techniqueIndex] = loaded.Techniques["Shapes" + techniqueIndex];
+            }
+            return effect;
         }
 
 #if !KNI
@@ -3463,6 +3473,12 @@ namespace Apos.Shapes {
                 _placeholder.Dispose();
                 _rampAtlas?.Dispose();
                 _glyphAtlas?.Dispose();
+                if (_ownsEffect) {
+                    _effect?.Effect.Dispose();
+                    foreach (ShaderEffect? effect in _effects) {
+                        if (effect != _effect) effect?.Effect.Dispose();
+                    }
+                }
             }
             _disposed = true;
         }
@@ -3470,13 +3486,9 @@ namespace Apos.Shapes {
         private void Flush() {
             if (_indexCount == 0) return;
 
-            _viewProjection.SetValue(_worldToClip); // Begin already multiplied these.
-            _halfViewportParam?.SetValue(_halfViewport);
-            _ditherScale?.SetValue(DitherStrength / 255f);
-            _ditherMode?.SetValue(DitherNoiseSource == DitherNoise.BlueNoise ? 1f : 0f);
             UploadRamps();
-            _rampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
             UploadGlyphs();
+            _parameterVersion++;
             // Making a texture binds it on whichever unit GL last had active, behind the back of
             // the device's record of what each unit holds, so a unit can end up holding a glyph
             // table while the record still says blue noise and nothing ever rebinds it. Clearing
@@ -3516,9 +3528,8 @@ namespace Apos.Shapes {
                     clipSet = run.ClipSet;
                     _clipSets.CopyTo(clipSet, _clipFrames, 0, 4);
                     _clipSets.CopyTo(clipSet + 4, _clipSizes, 0, 4);
-                    _clipFrameParam?.SetValue(_clipFrames);
-                    _clipSizeParam?.SetValue(_clipSizes);
-                    _clipCountParam?.SetValue((float)run.ClipCount);
+                    _clipCount = run.ClipCount;
+                    _parameterVersion++;
                 }
                 DrawSplit(run.Texture, run.FirstIndex, end - run.FirstIndex);
             }
@@ -3539,7 +3550,7 @@ namespace Apos.Shapes {
         // draws on its own with a smaller technique. The rest goes with its neighbors, so a few
         // dashed quads among solid ones don't each cost a draw call.
         private void DrawSplit(Texture2D? texture, int firstIndex, int indexCount) {
-            if (_techniques[0] == null) {
+            if (_available == 0) {
                 DrawRange(texture, -1, firstIndex, indexCount);
                 return;
             }
@@ -3598,19 +3609,24 @@ namespace Apos.Shapes {
         // Draws a stretch of the index buffer with a technique, by index. -1 means a replacement
         // shader's current technique.
         private void DrawRange(Texture2D? texture, int techniqueIndex, int firstIndex, int indexCount) {
-            EffectTechnique technique = techniqueIndex < 0 ? _effect.CurrentTechnique : _techniques[techniqueIndex]!;
-            if (techniqueIndex >= 0) _compiled[techniqueIndex] = true;
-            if (_blueNoiseParam != null) {
+            ShaderEffect effect = EffectFor(techniqueIndex);
+            EffectTechnique technique = techniqueIndex < 0 ? effect.Effect.CurrentTechnique : _techniques[techniqueIndex]!;
+            if (techniqueIndex >= 0) _compiled |= 1 << techniqueIndex;
+            if (effect.Version != _parameterVersion) {
+                effect.Version = _parameterVersion;
+                SetParameters(effect);
+            }
+            if (effect.BlueNoise != null) {
                 // The built-in shader names its textures, and each technique's shader may keep
                 // them on different units, so they go over by name and Apply places them.
                 // A table that doesn't exist yet gets a texel of its own rather than another
                 // texture: GL keeps sampling settings on the texture, so sharing one would hand
                 // the noise the ramp's clamping. The shader never reads it in that case.
-                _textureParam?.SetValue(texture ?? _placeholder);
-                _bandParam?.SetValue(_glyphAtlas?.Band ?? _placeholder);
-                _curveParam?.SetValue(_glyphAtlas?.Curve ?? _placeholder);
-                _blueNoiseParam.SetValue(_blueNoise);
-                _rampParam?.SetValue(_rampAtlas ?? _placeholder);
+                effect.Texture?.SetValue(texture ?? _placeholder);
+                effect.Band?.SetValue(_glyphAtlas?.Band ?? _placeholder);
+                effect.Curve?.SetValue(_glyphAtlas?.Curve ?? _placeholder);
+                effect.BlueNoise.SetValue(_blueNoise);
+                effect.Ramp?.SetValue(_rampAtlas ?? _placeholder);
                 foreach (EffectPass pass in technique.Passes) {
                     pass.Apply();
                     _graphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, firstIndex, indexCount / 3);
@@ -3644,27 +3660,32 @@ namespace Apos.Shapes {
         // The technique for a stretch that uses these features, by index, or -1 for a
         // replacement shader. One that hasn't drawn yet would stall on its first compile, so
         // while some technique that has drawn covers them, that one stands in instead. A warmup
-        // asks for exactly what it names, since compiling that is the point of it.
+        // asks for exactly what it names, since compiling that is the point of it. A replacement
+        // shader may leave techniques out, and then the smallest one it has that covers them
+        // draws instead.
         private int PickTechnique(int features) {
-            if (_techniques[features] == null) return -1;
+            if (_available == 0) return -1;
             if (_warmupFeatures == 0) {
-                int best = SmallestCompiled(features);
+                int best = Smallest(features, _compiled);
                 if (best >= 0) return best;
             }
-            return features;
+            int pick = Smallest(features, _available);
+            if (pick < 0) throw new InvalidOperationException($"The effect has no technique that can draw {(ShapeFeatures)features}.");
+            return pick;
         }
         // The smallest compiled technique for a stretch of a run that draws with whole, or whole
         // itself, which is about to compile if it hasn't.
         private int Cover(int features, int whole) {
-            int best = SmallestCompiled(features);
+            int best = Smallest(features, _compiled);
             return best >= 0 ? best : whole;
         }
 
-        // The smallest technique that has drawn and covers these features, or -1 if none has.
-        private int SmallestCompiled(int features) {
+        // The smallest technique among a set of them, by bit, that covers these features, or -1
+        // if none does.
+        private static int Smallest(int features, int among) {
             int best = -1;
-            for (int i = 0; i < _techniques.Length; i++) {
-                if (_compiled[i] && (i & features) == features && (best < 0 || BitCount(i) < BitCount(best))) best = i;
+            for (int i = 0; i < 16; i++) {
+                if ((among >> i & 1) != 0 && (i & features) == features && (best < 0 || BitCount(i) < BitCount(best))) best = i;
             }
             return best;
         }
@@ -3717,21 +3738,32 @@ namespace Apos.Shapes {
             return new Vector2(cx * iw * _halfViewport.X, cy * iw * _halfViewport.Y);
         }
 
-        // Brings the two glyph textures up to date with the table's arenas, then hands the
-        // shader the sizes its linear texel addressing divides by. The shader only reaches this
-        // addressing under the glyph shape, so a batch that never drew one leaves the three
-        // parameters alone.
+        // Hands an effect what this flush draws with, apart from the textures. The shader only
+        // reads the glyph tables' sizes under the glyph shape, so a batch that never drew one
+        // leaves those parameters alone.
+        private void SetParameters(ShaderEffect effect) {
+            effect.ViewProjection.SetValue(_worldToClip); // Begin already multiplied these.
+            effect.HalfViewport?.SetValue(_halfViewport);
+            effect.DitherScale?.SetValue(DitherStrength / 255f);
+            effect.DitherMode?.SetValue(DitherNoiseSource == DitherNoise.BlueNoise ? 1f : 0f);
+            effect.RampTexel?.SetValue(new Vector2(1f / (Ramp.Width * 2), _rampAtlas != null ? 1f / _rampAtlas.Height : 0f));
+            if (_glyphAtlas?.Band != null) {
+                effect.BandTexSize?.SetValue(new Vector2(_glyphAtlas.Band.Width, _glyphAtlas.Band.Height));
+                effect.BandTexel?.SetValue(new Vector2(1f / _glyphAtlas.Band.Width, 1f / _glyphAtlas.Band.Height));
+            }
+            if (_glyphAtlas?.Curve != null) {
+                effect.CurveTexel?.SetValue(new Vector2(1f / _glyphAtlas.Curve.Width, 1f / _glyphAtlas.Curve.Height));
+            }
+            effect.ClipFrame?.SetValue(_clipFrames);
+            effect.ClipSize?.SetValue(_clipSizes);
+            effect.ClipCount?.SetValue((float)_clipCount);
+        }
+
+        // Brings the two glyph textures up to date with the table's arenas.
         private void UploadGlyphs() {
             if (_glyphs.Count == 0) return;
             _glyphAtlas ??= new GlyphAtlas();
             _glyphAtlas.Upload(_graphicsDevice, _glyphs);
-            if (_glyphAtlas.Band != null) {
-                _bandTexSize?.SetValue(new Vector2(_glyphAtlas.Band.Width, _glyphAtlas.Band.Height));
-                _bandTexel?.SetValue(new Vector2(1f / _glyphAtlas.Band.Width, 1f / _glyphAtlas.Band.Height));
-            }
-            if (_glyphAtlas.Curve != null) {
-                _curveTexel?.SetValue(new Vector2(1f / _glyphAtlas.Curve.Width, 1f / _glyphAtlas.Curve.Height));
-            }
         }
 
         // Brings the atlas up to date with the global registry by generation: rows the atlas
@@ -4914,25 +4946,65 @@ namespace Apos.Shapes {
 
         private Matrix _view;
         private Matrix _projection;
-        private readonly Effect _effect;
-        private readonly EffectParameter _viewProjection;
-        private readonly EffectParameter? _halfViewportParam;
-        private readonly EffectParameter? _ditherScale;
-        private readonly EffectParameter? _ditherMode;
-        private readonly EffectParameter? _rampTexel;
-        private readonly EffectParameter? _bandTexSize;
-        private readonly EffectParameter? _bandTexel;
-        private readonly EffectParameter? _curveTexel;
-        private readonly EffectParameter? _textureParam;
-        private readonly EffectParameter? _bandParam;
-        private readonly EffectParameter? _curveParam;
-        private readonly EffectParameter? _blueNoiseParam;
-        private readonly EffectParameter? _rampParam;
-        // The built-in shader's techniques by the features they carry; null for a replacement
-        // shader, which draws with its current technique.
+        // An effect and the parameters the batch sets on it.
+        private sealed class ShaderEffect {
+            public readonly Effect Effect;
+            public readonly EffectParameter ViewProjection;
+            public readonly EffectParameter? HalfViewport;
+            public readonly EffectParameter? DitherScale;
+            public readonly EffectParameter? DitherMode;
+            public readonly EffectParameter? RampTexel;
+            public readonly EffectParameter? BandTexSize;
+            public readonly EffectParameter? BandTexel;
+            public readonly EffectParameter? CurveTexel;
+            public readonly EffectParameter? ClipFrame;
+            public readonly EffectParameter? ClipSize;
+            public readonly EffectParameter? ClipCount;
+            public readonly EffectParameter? Texture;
+            public readonly EffectParameter? Band;
+            public readonly EffectParameter? Curve;
+            public readonly EffectParameter? BlueNoise;
+            public readonly EffectParameter? Ramp;
+            // The batch's _parameterVersion when it last set the parameters above.
+            public int Version = -1;
+
+            public ShaderEffect(Effect effect) {
+                Effect = effect;
+                ViewProjection = effect.Parameters["view_projection"];
+                // Null-safe so custom effects compiled before these parameters existed keep working.
+                HalfViewport = effect.Parameters["half_viewport"];
+                DitherScale = effect.Parameters["dither_scale"];
+                DitherMode = effect.Parameters["dither_mode"];
+                RampTexel = effect.Parameters["ramp_texel"];
+                BandTexSize = effect.Parameters["band_tex_size"];
+                BandTexel = effect.Parameters["band_texel"];
+                CurveTexel = effect.Parameters["curve_texel"];
+                ClipFrame = effect.Parameters["clip_frame"];
+                ClipSize = effect.Parameters["clip_size"];
+                ClipCount = effect.Parameters["clip_count"];
+                Texture = effect.Parameters["TextureTex"];
+                Band = effect.Parameters["BandTex"];
+                Curve = effect.Parameters["CurveTex"];
+                BlueNoise = effect.Parameters["BlueNoiseTex"];
+                Ramp = effect.Parameters["RampTex"];
+            }
+        }
+        // The effect with every technique in it, or null on KNI's GL family, where each
+        // technique is an effect of its own.
+        private readonly ShaderEffect? _effect;
+        // Whether the batch loaded its effects, and so disposes them, rather than taking one.
+        private readonly bool _ownsEffect;
+        // The built-in shader's techniques by the features they carry, and the effects that
+        // hold them. Null for a technique that hasn't loaded yet, or that a replacement shader
+        // doesn't have. A replacement with none of them draws with its current technique.
         private readonly EffectTechnique?[] _techniques = new EffectTechnique?[16];
-        // Which techniques this batch has drawn with, and so has already paid to compile.
-        private readonly bool[] _compiled = new bool[16];
+        private readonly ShaderEffect?[] _effects = new ShaderEffect?[16];
+        // The techniques there are to draw with, one bit each, and the ones this batch has drawn
+        // with and so has already paid to compile.
+        private readonly int _available;
+        private int _compiled;
+        // Goes up whenever a parameter changes, so each effect gets them again before it draws.
+        private int _parameterVersion;
         // Set only while a warmup draws, to the features it was asked to compile.
         private int _warmupFeatures;
         // A run's stretches of quads while it splits by technique. Technique is -1 for a gap.
@@ -4974,9 +5046,7 @@ namespace Apos.Shapes {
         private bool _clipsChanged = true;
         private readonly Vector4[] _clipFrames = new Vector4[4];
         private readonly Vector4[] _clipSizes = new Vector4[4];
-        private readonly EffectParameter? _clipFrameParam;
-        private readonly EffectParameter? _clipSizeParam;
-        private readonly EffectParameter? _clipCountParam;
+        private int _clipCount;
 
         // Working room for paths longer than _pathStackPoints, grown on demand and kept. Nothing
         // here outlives the call that fills it; they are fields only so the memory is reused.

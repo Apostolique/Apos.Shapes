@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Fixed
+
+- On KNI's GL backends (desktop GL, Android, WebGL), creating a `ShapeBatch` no longer compiles every version of the shader. Each one compiles the first time something draws with it, like on the other backends.
+- A replacement effect that leaves out some of the built-in shader's techniques draws with the smallest one it has that covers the shape instead of its current technique, and `End` throws when none of them does.
 
 ## [0.9.2] - 2026-10-25
 

@@ -48,20 +48,31 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.knifx.gz" LogicalName="Apos.Shapes.apos-shapes.knifx.gz" Visible="false" />
+    <!-- KNI's GL backends compile every shader in an effect as soon as it loads, so each
+         technique ships as an effect of its own and loads the first time it draws. -->
+    <AposTechnique Include="0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15" />
+    <AposTechniqueFile Include="@(AposTechnique->'$(AposShaderDir)apos-shapes.%(Identity).knifx')" />
+    <EmbeddedResource Include="@(AposTechniqueFile->'%(Identity).gz')" LogicalName="Apos.Shapes.%(Filename)%(Extension)" Visible="false" />
     <EmbeddedResource Include="$(AposShaderDir)apos-shapes.kni.dx11.mgfx.gz" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx.gz" Visible="false" />
   </ItemGroup>
 
   <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"
           Inputs="Content/apos-shapes.fx;../Tools/ShaderPack/Program.cs;$(MSBuildProjectFullPath)"
-          Outputs="$(AposShaderDir)apos-shapes.knifx.gz;$(AposShaderDir)apos-shapes.kni.dx11.mgfx.gz">
+          Outputs="@(AposTechniqueFile->'%(Identity).gz');$(AposShaderDir)apos-shapes.kni.dx11.mgfx.gz">
     <MakeDir Directories="$(AposShaderDir)" />
     <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    <!-- ShadowDusk takes the techniques from the file it compiles, as written, without the ones
+         behind an #if or in an include. So each technique gets a file of its own that includes
+         the shader with ONE_TECHNIQUE defined, which leaves out the shader's own techniques.
+         The shader models are spelled out: ShadowDusk reads 3.0 for the macro in the shader's
+         own techniques, and KNI's GL backends only take 3.0 shaders on the HiDef profile. -->
+    <WriteLinesToFile File="$(AposShaderDir)apos-shapes.%(AposTechnique.Identity).fx" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="#define ONE_TECHNIQUE;#include &quot;apos-shapes.fx&quot;;technique Shapes%(AposTechnique.Identity) { pass { VertexShader = compile vs_3_0 SpriteVertexShader()%3B PixelShader = compile ps_3_0 ShapePixel%(AposTechnique.Identity)()%3B } }" />
     <!-- Roll forward so the net8.0 tool still runs when only a newer runtime is installed, like in CI. -->
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.knifx&quot; --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="dotnet tool run ShadowDuskCLI &quot;$(AposShaderDir)apos-shapes.%(AposTechnique.Identity).fx&quot; &quot;$(AposShaderDir)apos-shapes.%(AposTechnique.Identity).knifx&quot; --target-runtime kni-knifx /I Content" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <!-- See Tools/ShaderPack for why the two packages compress differently. -->
-    <Exec Command="dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- gzip &quot;$(AposShaderDir)apos-shapes.knifx&quot; &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- gzip @(AposTechniqueFile->'&quot;%(Identity)&quot;', ' ') &quot;$(AposShaderDir)apos-shapes.kni.dx11.mgfx&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
   </Target>
 
   <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders

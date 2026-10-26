@@ -2058,6 +2058,9 @@ float4 ShapePixel13(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false
 float4 ShapePixel14(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true, true); }
 float4 ShapePixel15(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, true); }
 
+// The KNI GL build compiles each technique on its own, in a file that includes this one and
+// defines ONE_TECHNIQUE, since KNI compiles every shader in an effect as soon as it loads.
+#ifndef ONE_TECHNIQUE
 technique Shapes0 {
     pass {
         VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
@@ -2154,3 +2157,4 @@ technique Shapes15 {
         PixelShader = compile PS_SHADERMODEL ShapePixel15();
     }
 }
+#endif
