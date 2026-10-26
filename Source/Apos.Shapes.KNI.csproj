@@ -76,12 +76,15 @@
   </Target>
 
   <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders
-       images from trusted hosts and can't resolve repo-relative paths. -->
+       images from trusted hosts and can't resolve repo-relative paths. A release run links to
+       its own tag, so later image changes don't reach older versions. -->
   <Target Name="PrepareNuGetReadme" BeforeTargets="GenerateNuspec">
     <MakeDir Directories="$(BaseIntermediateOutputPath)" />
     <PropertyGroup>
+      <_NuGetReadmeRef>main</_NuGetReadmeRef>
+      <_NuGetReadmeRef Condition="'$(GITHUB_ACTIONS)' == 'true' And '$(GITHUB_REF_TYPE)' == 'tag'">$(GITHUB_REF_NAME)</_NuGetReadmeRef>
       <!-- '%' and ';' are MSBuild-escaped so WriteLinesToFile keeps them literal. -->
-      <_NuGetReadme>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../README.md').Replace('](./Images/', '](https://raw.githubusercontent.com/Apostolique/Apos.Shapes/main/Images/').Replace('%', '%25').Replace(';', '%3B'))</_NuGetReadme>
+      <_NuGetReadme>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../README.md').Replace('](./Images/', '](https://raw.githubusercontent.com/Apostolique/Apos.Shapes/$(_NuGetReadmeRef)/Images/').Replace('%', '%25').Replace(';', '%3B'))</_NuGetReadme>
     </PropertyGroup>
     <WriteLinesToFile File="$(BaseIntermediateOutputPath)README.md" Lines="$(_NuGetReadme)" Overwrite="true" />
   </Target>
