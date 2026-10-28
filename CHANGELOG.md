@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- SVG `use` and `symbol` elements, and nested `svg` elements.
+- SVG `switch` draws only its first child that applies, and `requiredExtensions` and `systemLanguage` are read.
 
 ## [0.9.4] - 2026-10-28
 

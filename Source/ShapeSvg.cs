@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Xml;
 using Microsoft.Xna.Framework;
@@ -16,11 +17,11 @@ namespace Apos.Shapes {
     /// any number of batches at the same time.
     ///
     /// What it reads: `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon` and `g`,
-    /// with transforms, fills, strokes, and linear and radial gradients out of `defs`. Styles
-    /// come from presentation attributes, `style` attributes and `style` elements, where a rule
-    /// may select by tag, class and id. Text, `use`, clip paths, masks, filters and patterns are
-    /// ignored. Anything ignored is counted rather than reported, so a file always loads if it
-    /// parses as XML.
+    /// with transforms, fills, strokes, and linear and radial gradients out of `defs`, plus
+    /// `use`, `symbol`, nested `svg` and `switch`. Styles come from presentation attributes,
+    /// `style` attributes and `style` elements, where a rule may select by tag, class and id.
+    /// Text, clip paths, masks, filters and patterns are ignored. Anything ignored is counted
+    /// rather than reported, so a file always loads if it parses as XML.
     ///
     /// Sizes are in em units: one em is the height of the viewBox, so multiply by the height you
     /// draw at to get world units. Everything here is safe to call from any thread.
@@ -260,23 +261,33 @@ namespace Apos.Shapes {
         private struct Frame {
             internal SvgStyle Style;
             internal SvgMatrix M;
-            internal bool Ignore;
             internal bool Defs;
-            internal SvgGradientDef? Grad;
         }
 
-        private void Parse(XmlReader r, SvgSheet? sheet, float tolerance) {
-            var pending = new List<Pending>();
-            var gradients = new SvgGradients();
-            var stack = new List<Frame>();
-            SvgStyle rootStyle = SvgStyle.Root();
-            SvgMatrix rootM = SvgMatrix.Identity;
+        // One element, held until the whole document is read so a use can point at an element
+        // anywhere in the file, before or after it.
+        private sealed class Node {
+            internal Node(string name, SvgAttrs attrs) {
+                Name = name;
+                Attrs = attrs;
+            }
+            internal readonly string Name;
+            internal readonly SvgAttrs Attrs;
+            internal List<Node>? Children;
+        }
 
-            bool sawRoot = false;
-            bool hasBox = false;
-            float vbX = 0f, vbY = 0f, vbW = 0f, vbH = 0f;
-            float attrW = 0f, attrH = 0f;
+        // How deep elements may nest, uses included, before the rest is dropped. The walk is
+        // recursive, so this is what keeps a hostile file from running out of stack.
+        private const int MaxDepth = 256;
+        // How many elements uses may stamp out in all. A use can point at a group full of uses,
+        // so without a cap a small file could ask for billions of copies.
+        private const int MaxUsed = 100_000;
 
+        // Gradients are gathered here, wherever they are in the tree, since a paint can name one
+        // from anywhere. An id goes to the first element that has it.
+        private static Node? Read(XmlReader r, SvgSheet? sheet, Dictionary<string, Node> ids, SvgGradients gradients) {
+            Node? root = null;
+            var stack = new List<(Node Node, SvgGradientDef? Grad)>();
             while (r.Read()) {
                 if (r.NodeType == XmlNodeType.EndElement) {
                     if (stack.Count > 0) stack.RemoveAt(stack.Count - 1);
@@ -285,93 +296,189 @@ namespace Apos.Shapes {
                 if (r.NodeType != XmlNodeType.Element) continue;
 
                 bool empty = r.IsEmptyElement;
-                Frame parent = stack.Count > 0 ? stack[stack.Count - 1] : new Frame { Style = rootStyle, M = rootM };
-                var frame = new Frame {
-                    Style = parent.Style,
-                    M = parent.M,
-                    Ignore = parent.Ignore,
-                    Defs = parent.Defs,
-                    Grad = parent.Grad,
-                };
-
-                if (!parent.Ignore) {
-                    string name = r.LocalName;
-                    var attrs = new SvgAttrs(r, sheet);
-                    switch (name) {
-                        case "svg":
-                            if (!sawRoot) {
-                                sawRoot = true;
-                                hasBox = ViewBox(attrs.Raw("viewBox"), ref vbX, ref vbY, ref vbW, ref vbH);
-                                SvgColor.TryLength(attrs.Raw("width"), 0f, out attrW);
-                                SvgColor.TryLength(attrs.Raw("height"), 0f, out attrH);
-                            } else {
-                                // A nested svg is its own viewport with its own scaling.
-                                Drop("svg");
-                            }
-                            frame.Style = frame.Style.With(attrs, ref _skipped);
-                            frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
-                            break;
-                        case "g":
-                        case "a":
-                            frame.Style = frame.Style.With(attrs, ref _skipped);
-                            frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
-                            break;
-                        case "switch":
-                            // Only the first child that a renderer accepts should draw; drawing
-                            // all of them is what happens instead.
-                            Drop("switch");
-                            frame.Style = frame.Style.With(attrs, ref _skipped);
-                            frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
-                            break;
-                        case "defs":
-                            frame.Defs = true;
-                            frame.Style = frame.Style.With(attrs, ref _skipped);
-                            frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
-                            break;
-                        case "linearGradient":
-                        case "radialGradient": {
-                            string id = attrs.Raw("id") ?? string.Empty;
-                            var def = new SvgGradientDef(id, name[0] == 'r');
-                            Copy(r, def);
-                            def.Href = Reference(attrs);
-                            gradients.Add(def);
-                            frame.Grad = def;
-                            break;
-                        }
-                        case "stop":
-                            if (frame.Grad != null) Stop(attrs, frame.Grad);
-                            break;
-                        case "path":
-                        case "rect":
-                        case "circle":
-                        case "ellipse":
-                        case "line":
-                        case "polyline":
-                        case "polygon": {
-                            SvgStyle style = frame.Style.With(attrs, ref _skipped);
-                            SvgMatrix m = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
-                            if (!frame.Defs) pending.Add(new Pending(name, attrs, style, m));
-                            frame.Ignore = true;
-                            break;
-                        }
-                        case "title":
-                        case "desc":
-                        case "metadata":
-                            frame.Ignore = true;
-                            break;
-                        case "style":
-                            // Read ahead of this pass. A style that isn't used is dropped here.
-                            if (!Applies(attrs.Raw("type"), attrs.Raw("media"))) Drop("style");
-                            frame.Ignore = true;
-                            break;
-                        default:
-                            Drop(name);
-                            frame.Ignore = true;
-                            break;
-                    }
+                string name = r.LocalName;
+                var node = new Node(name, new SvgAttrs(r, sheet));
+                SvgGradientDef? grad = stack.Count > 0 ? stack[stack.Count - 1].Grad : null;
+                if (stack.Count > 0) {
+                    Node parent = stack[stack.Count - 1].Node;
+                    (parent.Children ??= new List<Node>()).Add(node);
+                } else {
+                    root = node;
                 }
 
-                if (!empty) stack.Add(frame);
+                string? id = node.Attrs.Raw("id");
+                if (id != null && id.Length > 0) ids.TryAdd(id, node);
+
+                if (name == "linearGradient" || name == "radialGradient") {
+                    var def = new SvgGradientDef(id ?? string.Empty, name[0] == 'r');
+                    Copy(r, def);
+                    def.Href = Reference(node.Attrs);
+                    gradients.Add(def);
+                    grad = def;
+                } else if (name == "stop" && grad != null) {
+                    Stop(node.Attrs, grad);
+                }
+
+                if (!empty) stack.Add((node, grad));
+            }
+            return root;
+        }
+
+        private void Parse(XmlReader r, SvgSheet? sheet, float tolerance) {
+            var pending = new List<Pending>();
+            var gradients = new SvgGradients();
+            var ids = new Dictionary<string, Node>(StringComparer.Ordinal);
+            var stamping = new HashSet<Node>();
+            int used = 0;
+
+            bool sawRoot = false;
+            bool hasBox = false;
+            float vbX = 0f, vbY = 0f, vbW = 0f, vbH = 0f;
+            float attrW = 0f, attrH = 0f;
+
+            Node? top = Read(r, sheet, ids, gradients);
+            if (top != null) {
+                Walk(top, new Frame { Style = SvgStyle.Root(), M = SvgMatrix.Identity }, 0, null);
+            }
+
+            // use is the element that stamped this one out, when one did, which is what sizes a
+            // symbol or an svg it points at.
+            void Walk(Node n, Frame parent, int depth, SvgAttrs? use) {
+                if (depth > MaxDepth) {
+                    Drop("deep nesting");
+                    return;
+                }
+                SvgAttrs attrs = n.Attrs;
+                if (depth > 0 && !Conditions(attrs)) return;
+
+                Frame frame = parent;
+                switch (n.Name) {
+                    case "svg":
+                        frame.Style = frame.Style.With(attrs, ref _skipped);
+                        frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        if (!sawRoot) {
+                            sawRoot = true;
+                            hasBox = ViewBox(attrs.Raw("viewBox"), ref vbX, ref vbY, ref vbW, ref vbH);
+                            SvgColor.TryLength(attrs.Raw("width"), 0f, out attrW);
+                            SvgColor.TryLength(attrs.Raw("height"), 0f, out attrH);
+                        } else {
+                            // A nested svg is its own viewport with its own scaling.
+                            frame.M = SvgMatrix.Mul(frame.M, Viewport(attrs, use));
+                        }
+                        break;
+                    case "symbol":
+                        // A symbol only draws where a use stamps it out.
+                        if (use == null) return;
+                        frame.Style = frame.Style.With(attrs, ref _skipped);
+                        frame.M = SvgMatrix.Mul(frame.M, Viewport(attrs, use));
+                        break;
+                    case "g":
+                    case "a":
+                        frame.Style = frame.Style.With(attrs, ref _skipped);
+                        frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        break;
+                    case "switch": {
+                        // Only the first child whose conditions hold draws.
+                        frame.Style = frame.Style.With(attrs, ref _skipped);
+                        frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        if (n.Children == null) return;
+                        foreach (Node c in n.Children) {
+                            if (c.Name is "title" or "desc" or "metadata" || !Conditions(c.Attrs)) continue;
+                            Walk(c, frame, depth + 1, null);
+                            break;
+                        }
+                        return;
+                    }
+                    case "defs":
+                        frame.Defs = true;
+                        frame.Style = frame.Style.With(attrs, ref _skipped);
+                        frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        break;
+                    case "use": {
+                        if (frame.Defs) return;
+                        string? id = Reference(attrs);
+                        if (id == null || !ids.TryGetValue(id, out Node? target)) {
+                            Drop("use");
+                            return;
+                        }
+                        // A use that points at one of its own ancestors would stamp itself out
+                        // forever.
+                        if (stamping.Contains(target) || used >= MaxUsed) {
+                            Drop("use");
+                            return;
+                        }
+                        used += Count(target, MaxUsed - used, depth);
+                        frame.Style = frame.Style.With(attrs, ref _skipped);
+                        frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        frame.M = SvgMatrix.Mul(frame.M, Translate(Len(attrs, "x", vbW), Len(attrs, "y", vbH)));
+                        stamping.Add(target);
+                        Walk(target, frame, depth + 1, attrs);
+                        stamping.Remove(target);
+                        return;
+                    }
+                    case "linearGradient":
+                    case "radialGradient":
+                    case "stop":
+                    case "title":
+                    case "desc":
+                    case "metadata":
+                        return;
+                    case "path":
+                    case "rect":
+                    case "circle":
+                    case "ellipse":
+                    case "line":
+                    case "polyline":
+                    case "polygon": {
+                        SvgStyle style = frame.Style.With(attrs, ref _skipped);
+                        SvgMatrix m = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        if (!frame.Defs) pending.Add(new Pending(n.Name, attrs, style, m));
+                        return;
+                    }
+                    case "style":
+                        // Read ahead of this pass. A style that isn't used is dropped here.
+                        if (!Applies(attrs.Raw("type"), attrs.Raw("media"))) Drop("style");
+                        return;
+                    default:
+                        Drop(n.Name);
+                        return;
+                }
+
+                if (n.Children == null) return;
+                foreach (Node c in n.Children) Walk(c, frame, depth + 1, null);
+            }
+
+            // A nested svg or a symbol maps its viewBox onto the box it's given: its own x, y,
+            // width and height, with the use's width and height winning over its own. Percentages
+            // are of the root viewBox.
+            SvgMatrix Viewport(SvgAttrs own, SvgAttrs? use) {
+                float x = Len(own, "x", vbW);
+                float y = Len(own, "y", vbH);
+                float w = vbW;
+                float h = vbH;
+                if (use != null && SvgColor.TryLength(use.Raw("width"), vbW, out float uw)) w = uw;
+                else if (SvgColor.TryLength(own.Raw("width"), vbW, out float ow)) w = ow;
+                if (use != null && SvgColor.TryLength(use.Raw("height"), vbH, out float uh)) h = uh;
+                else if (SvgColor.TryLength(own.Raw("height"), vbH, out float oh)) h = oh;
+
+                SvgMatrix m = Translate(x, y);
+                float bx = 0f, by = 0f, bw = 0f, bh = 0f;
+                if (!ViewBox(own.Raw("viewBox"), ref bx, ref by, ref bw, ref bh) || !(w > 0f) || !(h > 0f)) {
+                    return m;
+                }
+                return SvgMatrix.Mul(m, Fit(own.Raw("preserveAspectRatio"), bx, by, bw, bh, w, h));
+            }
+
+            // How many elements stamping n out adds, counted no further than limit or than the walk
+            // would go.
+            int Count(Node n, int limit, int depth) {
+                int total = 1;
+                if (n.Children == null || depth >= MaxDepth) return total;
+                foreach (Node c in n.Children) {
+                    if (total >= limit) break;
+                    total += Count(c, limit - total, depth + 1);
+                }
+                return total;
             }
 
             if (!sawRoot) {
@@ -446,6 +553,55 @@ namespace Apos.Shapes {
             v = v.Trim();
             if (!v.StartsWith("#", StringComparison.Ordinal) || v.Length < 2) return null;
             return v.Substring(1);
+        }
+
+        // Whether an element's conditional attributes let it draw. No extension is supported, and
+        // a language matches the one the app runs in, or the language that one is a dialect of.
+        private static bool Conditions(SvgAttrs a) {
+            if (a.Has("requiredExtensions")) return false;
+            string? languages = a.Raw("systemLanguage");
+            if (languages == null) return true;
+            CultureInfo ui = CultureInfo.CurrentUICulture;
+            string name = ui.Name.Length > 0 ? ui.Name : "en";
+            string two = ui.Name.Length > 0 ? ui.TwoLetterISOLanguageName : "en";
+            foreach (string part in languages.Split(',')) {
+                string tag = part.Trim();
+                if (tag.Length == 0) continue;
+                if (string.Equals(tag, name, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(tag, two, StringComparison.OrdinalIgnoreCase)
+                    || tag.StartsWith(two + "-", StringComparison.OrdinalIgnoreCase)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static SvgMatrix Translate(float x, float y) => new(1f, 0f, 0f, 1f, x, y);
+
+        // A viewBox fitted into a w by h box the way preserveAspectRatio says, which by default
+        // is scaled to fit whole and centered.
+        private static SvgMatrix Fit(string? aspect, float bx, float by, float bw, float bh, float w, float h) {
+            float sx = w / bw;
+            float sy = h / bh;
+            string align = "xMidYMid";
+            bool slice = false;
+            if (aspect != null) {
+                string[] parts = aspect.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                int i = 0;
+                if (i < parts.Length && parts[i] == "defer") i++;
+                if (i < parts.Length) align = parts[i++];
+                if (i < parts.Length) slice = parts[i] == "slice";
+            }
+            if (align == "none") return new SvgMatrix(sx, 0f, 0f, sy, -bx * sx, -by * sy);
+
+            float s = slice ? MathF.Max(sx, sy) : MathF.Min(sx, sy);
+            float ax = align.StartsWith("xMin", StringComparison.Ordinal) ? 0f
+                : align.StartsWith("xMax", StringComparison.Ordinal) ? 1f : 0.5f;
+            float ay = align.EndsWith("YMin", StringComparison.Ordinal) ? 0f
+                : align.EndsWith("YMax", StringComparison.Ordinal) ? 1f : 0.5f;
+            float tx = (w - bw * s) * ax - bx * s;
+            float ty = (h - bh * s) * ay - by * s;
+            return new SvgMatrix(s, 0f, 0f, s, tx, ty);
         }
 
         private static void Stop(SvgAttrs a, SvgGradientDef def) {

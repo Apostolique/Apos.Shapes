@@ -197,6 +197,8 @@ What you get is a silhouette: the shape survives and the colors don't. That suit
 
 Elements: `path` with the whole path grammar including arcs, `rect` with `rx` and `ry`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, and `g` and `a` around them. `transform` is applied at load and stacks down the tree.
 
+`use` draws another element again, wherever it is in the file, moved by its `x` and `y` and painted with the styles the `use` passes down. It can point at a `symbol`, which only draws where a `use` puts it. A `symbol` or a nested `svg` fits its `viewBox` into its `width` and `height` the way `preserveAspectRatio` says. `switch` draws the first child that applies: one with `requiredExtensions` never does, and one with `systemLanguage` does when a language in it matches the app's `CultureInfo.CurrentUICulture`. Those two attributes work the same way outside a `switch`.
+
 Paint and stroke properties are read off the element or inherited from its group, and a declaration in `style=""` wins over the presentation attribute of the same name: `fill`, `stroke`, `fill-rule`, `fill-opacity`, `stroke-opacity`, `opacity`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`, and `color`. Opacity folds into the colors rather than compositing, so a translucent element blends against what's under it.
 
 A `style` element applies too, which is how Illustrator writes its colors. A rule layers below `style=""` and above the presentation attribute of the same name, so the order is inline style, then the sheet, then the attribute. Selectors can be a tag, `.class`, `#id`, `*`, or those written together like `path.a#b`, and a comma list of them. Descendant and sibling combinators, attribute selectors, pseudo-classes, and at-rules such as `@media` are skipped, and `@import` is never followed. A skipped selector still holds its place: where its last part matches an element, the properties it sets come from the attributes instead of from a less specific rule. A `style` element with a `media` other than `all` or `screen` is skipped. The rules resolve while the file loads, so drawing is no slower for them.
@@ -207,9 +209,9 @@ A drawing is read once when it loads, and its elements sit in the same table the
 
 ## Limits
 
-`use`, `text`, `clipPath`, `mask`, `filter`, and `pattern` are skipped. So is a nested `svg`, and a `switch` draws all of its children rather than the first one that fits. Anything skipped is dropped quietly, so a file that parses as XML always loads, and one full of things this doesn't draw loads to a drawing that's missing them.
+`text`, `clipPath`, `mask`, `filter`, `pattern`, `image`, and `foreignObject` are skipped. Anything skipped is dropped quietly, so a file that parses as XML always loads, and one full of things this doesn't draw loads to a drawing that's missing them.
 
-There's no viewport clipping. A file that draws past its own viewBox draws past it here too.
+There's no viewport clipping. A file that draws past its own viewBox draws past it here too, and so does a `symbol` or a nested `svg` that draws past its own box.
 
 A radial gradient with a focal point away from its center sweeps evenly from the center instead. `currentColor` is resolved at load and is black unless a `color` property set it, so it can't follow the color you draw with.
 
