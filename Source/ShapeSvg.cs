@@ -173,8 +173,10 @@ namespace Apos.Shapes {
         // How far out of the em square an element's own control points may reach. The curve
         // texture holds them as fixed point over [-2, 2] on the KNI targets and the pad curve
         // every short band list is filled out with sits at -1.5, so an element wider than this
-        // is dropped rather than drawn wrong.
+        // is baked shrunk to fit and drawn enlarged.
         private const float EmReach = 1.2f;
+        // How far past a tile, in ems, the outline it is cut from is kept.
+        private const float TileMargin = 0.05f;
 
         // A style element may come after the elements it styles, so its rules are gathered in a
         // pass of their own before anything is resolved.
@@ -573,8 +575,10 @@ namespace Apos.Shapes {
 
             if (style.Fill.Kind != SvgPaintKind.None && fillAlpha > 0f) {
                 if (Paint(style.Fill, gradients, o, p.M, ToEm, viewW, viewH, fillAlpha, out Gradient g)) {
-                    shape.Fill = Bake(o, shape.Origin, u, vbMin, index);
+                    shape.Fill = Bake(o, shape.Origin, u, vbMin, index, out float fillScale, out BakedGlyph[]? fillTiles);
                     if (shape.Fill != null) {
+                        shape.FillScale = fillScale;
+                        shape.FillTiles = fillTiles;
                         shape.HasFill = true;
                         shape.FillPaint = g;
                         shape.EvenOdd = style.EvenOdd;
@@ -622,8 +626,8 @@ namespace Apos.Shapes {
             Vector2 lo = Vector2.Min(a, b);
             Vector2 hi = Vector2.Max(a, b);
             if (shape.Fill != null) {
-                lo = Vector2.Min(lo, shape.Origin + shape.Fill.Min);
-                hi = Vector2.Max(hi, shape.Origin + shape.Fill.Max);
+                lo = Vector2.Min(lo, shape.Origin + shape.Fill.Min * shape.FillScale);
+                hi = Vector2.Max(hi, shape.Origin + shape.Fill.Max * shape.FillScale);
             }
             float pad = shape.HasStroke ? shape.StrokeRadius : 0f;
             shape.Min = lo - new Vector2(pad);
@@ -686,13 +690,16 @@ namespace Apos.Shapes {
         // grid: divided by the viewBox height so one em is that height, y negated so the outline
         // lands in the y up frame a glyph's does, moved so the element's own box is centered on
         // its origin, and multiplied by the grid.
-        private BakedGlyph? Bake(SvgOutline o, Vector2 origin, float u, Vector2 vbMin, int index) {
+        private BakedGlyph? Bake(SvgOutline o, Vector2 origin, float u, Vector2 vbMin, int index,
+                                 out float fillScale, out BakedGlyph[]? tiles) {
+            fillScale = 1f;
+            tiles = null;
             float k = Grid / u;
             float ox = (vbMin.X * (1f / u) + origin.X) * Grid;
             float oy = (vbMin.Y * (1f / u) - origin.Y) * Grid;
             Vector2 Design(Vector2 q) => new(q.X * k - ox, oy - q.Y * k);
 
-            var curves = new List<GlyphCurve>();
+            var contours = new List<List<GlyphCurve>>();
             float lo = float.MaxValue, hi = float.MinValue, lox = float.MaxValue, hix = float.MinValue;
             void Grow(Vector2 d) {
                 if (d.X < lox) lox = d.X;
@@ -705,6 +712,7 @@ namespace Apos.Shapes {
                 int start = o.Starts[s];
                 int count = o.Counts[s];
                 if (count == 0) continue;
+                var contour = new List<GlyphCurve>(count + 1);
                 Vector2 first = default, last = default;
                 for (int i = 0; i < count; i++) {
                     SvgQuad q = o.Quads[start + i];
@@ -716,26 +724,113 @@ namespace Apos.Shapes {
                     Grow(p1);
                     Grow(p2);
                     Grow(p3);
-                    curves.Add(new GlyphCurve { P1 = p1, P2 = p2, P3 = p3 });
+                    contour.Add(new GlyphCurve { P1 = p1, P2 = p2, P3 = p3 });
                 }
                 // Every subpath is closed for filling, whether or not a Z said so.
                 if (last != first) {
-                    curves.Add(new GlyphCurve { P1 = last, P2 = (last + first) * 0.5f, P3 = first });
+                    contour.Add(new GlyphCurve { P1 = last, P2 = (last + first) * 0.5f, P3 = first });
                 }
+                contours.Add(contour);
             }
-            if (curves.Count == 0) return null;
+            if (contours.Count == 0) return null;
 
+            // An element reaching past the limit is baked shrunk about its center, which is the
+            // origin, and drawn enlarged by the same factor, so a wide drawing loses nothing.
             float reach = Grid * EmReach;
-            if (!(lox >= -reach) || !(hix <= reach) || !(lo >= -reach) || !(hi <= reach)) {
+            float farthest = MathF.Max(MathF.Max(-lox, hix), MathF.Max(-lo, hi));
+            if (!float.IsFinite(farthest)) {
                 Drop("oversized element");
                 return null;
+            }
+            if (farthest > reach) {
+                float shrink = reach / farthest;
+                foreach (List<GlyphCurve> contour in contours) {
+                    for (int i = 0; i < contour.Count; i++) {
+                        GlyphCurve c = contour[i];
+                        c.P1 *= shrink;
+                        c.P2 *= shrink;
+                        c.P3 *= shrink;
+                        contour[i] = c;
+                    }
+                }
+                lox *= shrink;
+                hix *= shrink;
+                lo *= shrink;
+                hi *= shrink;
+                fillScale = 1f / shrink;
             }
 
             int x1 = (int)MathF.Floor(lox);
             int y1 = (int)MathF.Floor(lo);
             int x2 = (int)MathF.Ceiling(hix);
             int y2 = (int)MathF.Ceiling(hi);
-            return GlyphBake.Bake(curves, index, 0, 0, x1, y1, x2, y2, Grid, GlyphBake.MaxCurves);
+
+            BakedGlyph whole = GlyphBake.Bake(Flatten(contours), index, 0, 0, x1, y1, x2, y2, Grid, GlyphBake.MaxCurves);
+            if (whole.Clamped > 0) {
+                tiles = Tile(contours, index, x1, y1, x2, y2, whole.Clamped);
+            }
+            return whole;
+        }
+
+        private static List<GlyphCurve> Flatten(List<List<GlyphCurve>> contours) {
+            var all = new List<GlyphCurve>();
+            foreach (List<GlyphCurve> contour in contours) all.AddRange(contour);
+            return all;
+        }
+
+        // A band holds a fixed number of curves and drops the rest, which leaves streaks across
+        // an element with more curves than that along one row or column, such as a line of text
+        // outlined into a single path. Cutting the outline into a grid of tiles gives each its
+        // own bands. The smallest grid in which none overflow is used, or failing that the one
+        // with the fewest overflowing bands, as long as that beats the whole element. Null when
+        // tiling doesn't help, in which case the whole thing draws as before.
+        private static BakedGlyph[]? Tile(List<List<GlyphCurve>> contours, int index, int x1, int y1, int x2, int y2, int wholeClamped) {
+            // How far past its tile each clipped outline reaches, so the anti aliasing at a seam
+            // sees the real edge rather than the chord that cut it.
+            float margin = Grid * TileMargin;
+            float width = Math.Max(1, x2 - x1);
+            float height = Math.Max(1, y2 - y1);
+            int[] steps = { 2, 3, 4, 6, 8, 12, 16 };
+            BakedGlyph[]? best = null;
+            int bestClamped = wholeClamped;
+            foreach (int n in steps) {
+                int nx, ny;
+                if (width >= height) {
+                    nx = n;
+                    ny = Math.Max(1, (int)MathF.Round(n * height / width));
+                } else {
+                    ny = n;
+                    nx = Math.Max(1, (int)MathF.Round(n * width / height));
+                }
+                var baked = new List<BakedGlyph>();
+                int clamped = 0;
+                for (int iy = 0; iy < ny; iy++) {
+                    int ty1 = y1 + (int)((long)(y2 - y1) * iy / ny);
+                    int ty2 = y1 + (int)((long)(y2 - y1) * (iy + 1) / ny);
+                    for (int ix = 0; ix < nx; ix++) {
+                        int tx1 = x1 + (int)((long)(x2 - x1) * ix / nx);
+                        int tx2 = x1 + (int)((long)(x2 - x1) * (ix + 1) / nx);
+                        List<GlyphCurve> clipped = SvgTileClip.Clip(contours,
+                            ix == 0 ? float.NegativeInfinity : tx1 - margin,
+                            ix == nx - 1 ? float.PositiveInfinity : tx2 + margin,
+                            iy == 0 ? float.NegativeInfinity : ty1 - margin,
+                            iy == ny - 1 ? float.PositiveInfinity : ty2 + margin);
+                        if (clipped.Count == 0) continue;
+                        BakedGlyph tile = GlyphBake.Bake(clipped, index, 0, 0, tx1, ty1, tx2, ty2, Grid, GlyphBake.MaxCurves);
+                        clamped += tile.Clamped;
+                        tile.SeamMinX = ix > 0;
+                        tile.SeamMaxX = ix < nx - 1;
+                        tile.SeamMinY = iy > 0;
+                        tile.SeamMaxY = iy < ny - 1;
+                        baked.Add(tile);
+                    }
+                }
+                if (baked.Count == 0 || clamped >= bestClamped) continue;
+                best = baked.ToArray();
+                bestClamped = clamped;
+                if (clamped == 0) break;
+            }
+            return best;
         }
     }
 }

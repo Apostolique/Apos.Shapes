@@ -217,7 +217,7 @@ A `stroke-dasharray` of one or two lengths dashes exactly as written. A longer o
 
 Opacity on a group multiplies into its children instead of compositing the group as a unit, since there's no offscreen pass to composite in. Children that overlap inside a translucent group show through each other.
 
-An element wider or taller than about 2.4 times the viewBox height is dropped rather than drawn wrong. That's per element, not per document, so a long banner made of ordinary marks is fine.
+An element that's very wide or tall for its viewBox is drawn like any other. So is a single element with a great many curves across each row, such as a line of text outlined into one path: each band of a baked shape holds at most 16 curves, so a shape that needs more is cut into tiles that each fit. A shape dense enough that even the finest grid of tiles overflows still draws with horizontal streaks where the bands run out.
 
 A hand minified file sometimes uses an `xlink:href` without declaring the `xlink` prefix. That isn't well formed XML, so the load fails and `TryLoad` returns false. Adding `xmlns:xlink="http://www.w3.org/1999/xlink"` to the root element fixes the file.
 

@@ -3154,8 +3154,14 @@ namespace Apos.Shapes {
                 if (s.HasFill && s.Fill != null) {
                     Gradient g = overridden ? fill : SvgPaint(s.FillPaint, position, origin, size, sin, cos);
                     Vector2 pen = SvgToWorld(s.Origin, position, origin, size, sin, cos);
-                    DrawGlyphQuad(s.Fill, pen, scale, g, sin, cos, aaSize,
-                                  s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph);
+                    VertexShape.Shape fillShape = s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph;
+                    if (s.FillTiles != null) {
+                        foreach (BakedGlyph tile in s.FillTiles) {
+                            DrawGlyphQuad(tile, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
+                        }
+                    } else {
+                        DrawGlyphQuad(s.Fill, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
+                    }
                 }
                 if (s.HasStroke) {
                     DrawSvgStroke(s, position, size, overridden ? fill : SvgPaint(s.StrokePaint, position, origin, size, sin, cos),
@@ -3393,6 +3399,21 @@ namespace Apos.Shapes {
                                  position.Y - (g.Min.Y + g.Max.Y) * 0.5f * scale.Y);
             UpdatePixelSize(center, (g.Max - g.Min).Length() * MathF.Max(worldPerEm.X, worldPerEm.Y) * 0.5f);
             Vector2 pixelsPerEm = new(worldPerEm.X / _pixelSize, worldPerEm.Y / _pixelSize);
+            if (!_isPerspective) {
+                // A view that stretches one axis more than the other (a squashed drawing) has no
+                // single pixel size: the isotropic one above is the coarser axis's, so the finer
+                // axis would read far too few pixels per em, and both its margin and its fade
+                // would balloon past the shape. Measure each em axis where it lands on screen.
+                float jxx = _worldToClip.M11 * _halfViewport.X, jxy = _worldToClip.M21 * _halfViewport.X;
+                float jyx = _worldToClip.M12 * _halfViewport.Y, jyy = _worldToClip.M22 * _halfViewport.Y;
+                Vector2 emX = new(cos, sin);
+                Vector2 emY = new(sin, -cos);
+                float ax = jxx * emX.X + jxy * emX.Y, ay = jyx * emX.X + jyy * emX.Y;
+                float screenPerEmX = MathF.Sqrt(ax * ax + ay * ay);
+                float bx = jxx * emY.X + jxy * emY.Y, by = jyx * emY.X + jyy * emY.Y;
+                float screenPerEmY = MathF.Sqrt(bx * bx + by * by);
+                pixelsPerEm = new(worldPerEm.X * screenPerEmX, worldPerEm.Y * screenPerEmY);
+            }
 
             // Coverage only reaches half a pixel past the outline, and outside the outline's own
             // box the two scans cancel to exactly zero however far out the sample sits, so the
@@ -3400,6 +3421,10 @@ namespace Apos.Shapes {
             Vector2 pad = new(MathF.Abs(aaSize) / MathF.Max(pixelsPerEm.X, 1e-6f), MathF.Abs(aaSize) / MathF.Max(pixelsPerEm.Y, 1e-6f));
             Vector2 emMin = g.Min - pad;
             Vector2 emMax = g.Max + pad;
+            if (g.SeamMinX) emMin.X = g.Min.X;
+            if (g.SeamMaxX) emMax.X = g.Max.X;
+            if (g.SeamMinY) emMin.Y = g.Min.Y;
+            if (g.SeamMaxY) emMax.Y = g.Max.Y;
 
             // Font space has y up and the world has it down, so the top of the glyph is its
             // largest em y. The corners still go round the way every other quad's do.

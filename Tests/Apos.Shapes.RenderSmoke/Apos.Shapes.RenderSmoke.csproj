@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Draws a few SVGs on KNI's desktop OpenGL backend and checks pixels. KNI's GL family is the
+    strictest target: it stores the curve texture as 16 bit fixed point, so it is the one that
+    breaks first. It is a console program rather than an xunit project because a graphics
+    window wants the main thread. It exits non zero when a check fails.
+
+    Run it with "dotnet run" from this folder, in Release.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <KniPlatform>DesktopGL</KniPlatform>
+    <DefineConstants>$(DefineConstants);KNI;DESKTOPGL</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Devices" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Storage" Version="4.2.9001" />
+    <PackageReference Include="nkast.Kni.Platform.SDL2.GL" Version="4.2.9001" />
+    <ProjectReference Include="../../Source/Apos.Shapes.KNI.csproj" />
+  </ItemGroup>
+
+</Project>
