@@ -93,7 +93,7 @@ _sb.BorderRectangle(at, _icon.Measure(96f), new Color(96, 165, 250), 1f);
 
 ![An SVG icon with the box Measure returns drawn around it](measure.png)
 
-The height of that box is the size you asked for and the width follows the document's aspect ratio, which is `Width / Height` on the `ShapeSvg` in the file's own units. It's the viewBox, so it's where the file says its picture is rather than a promise about the pixels. A file is allowed to draw outside its own viewBox and this doesn't clip, so ink can land past that box. `SetClipRect` is how you cut it.
+The height of that box is the size you asked for and the width follows the document's aspect ratio, which is `Width / Height` on the `ShapeSvg` in the file's own units. It's the viewBox, and what the file draws past it is cut off, the way a viewer shows the file. A file whose root `svg` says `overflow="visible"` isn't cut, so its ink can land past that box.
 
 `rotation` turns the whole drawing at once, around `position`, and `origin` moves the point it turns around, in world units out from the top left corner. So half of `Measure` turns a drawing around its middle. A turned drawing costs one sine and one cosine for the whole picture, however many elements it has, and `aaSize` is the same anti-aliasing width in screen pixels every shape takes.
 
@@ -209,6 +209,8 @@ Elements: `path` with the whole path grammar including arcs, `rect` with `rx` an
 
 `use` draws another element again, wherever it is in the file, moved by its `x` and `y` and painted with the styles the `use` passes down. It can point at a `symbol`, which only draws where a `use` puts it. A `symbol` or a nested `svg` fits its `viewBox` into its `width` and `height` the way `preserveAspectRatio` says. `switch` draws the first child that applies: one with `requiredExtensions` never does, and one with `systemLanguage` does when a language in it matches the app's `CultureInfo.CurrentUICulture`. Those two attributes work the same way outside a `switch`.
 
+A drawing is cut to its viewBox, and a `symbol` or a nested `svg` to its own box, unless it says `overflow="visible"`. `clip-path` cuts to a `clipPath` that's one `rect`, `circle`, or `ellipse` with equal radii, which is what design tools write around a frame. Most of it happens at load: a fill that crosses a clip is cut down to it right there. A stroke that crosses one, or a fill under a round clip, is clipped as it draws instead, the way `PushClip` does, which costs a draw call each time the clips change.
+
 Paint and stroke properties are read off the element or inherited from its group, and a declaration in `style=""` wins over the presentation attribute of the same name: `fill`, `stroke`, `fill-rule`, `fill-opacity`, `stroke-opacity`, `opacity`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`, and `color`. Opacity folds into the colors rather than compositing, so a translucent element blends against what's under it.
 
 A `style` element applies too, which is how Illustrator writes its colors. A rule layers below `style=""` and above the presentation attribute of the same name, so the order is inline style, then the sheet, then the attribute. Selectors can be a tag, `.class`, `#id`, `*`, or those written together like `path.a#b`, and a comma list of them. Descendant and sibling combinators, attribute selectors, pseudo-classes, and at-rules such as `@media` are skipped, and `@import` is never followed. A skipped selector still holds its place: where its last part matches an element, the properties it sets come from the attributes instead of from a less specific rule. A `style` element with a `media` other than `all` or `screen` is skipped. The rules resolve while the file loads, so drawing is no slower for them.
@@ -219,9 +221,9 @@ A drawing is read once when it loads, and its elements sit in the same table the
 
 ## Limits
 
-`text`, `clipPath`, `mask`, `filter`, `pattern`, `image`, and `foreignObject` are skipped. Anything skipped is dropped quietly, so a file that parses as XML always loads, and one full of things this doesn't draw loads to a drawing that's missing them.
+`text`, `mask`, `filter`, `pattern`, `image`, and `foreignObject` are skipped, and so is a `clipPath` that isn't one shape. Anything skipped is dropped quietly, so a file that parses as XML always loads, and one full of things this doesn't draw loads to a drawing that's missing them.
 
-There's no viewport clipping. A file that draws past its own viewBox draws past it here too, and so does a `symbol` or a nested `svg` that draws past its own box.
+A `clipPath` that's more than one shape, or a path, doesn't cut anything, so what it was meant to cut draws whole. So does one in `objectBoundingBox` units.
 
 A radial gradient with a focal point away from its center sweeps evenly from the center instead.
 

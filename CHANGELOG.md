@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - SVG `use` and `symbol` elements, and nested `svg` elements.
 - SVG `switch` draws only its first child that applies, and `requiredExtensions` and `systemLanguage` are read.
 - `DrawSvg` takes a `currentColor`, which paints the elements the file paints with `currentColor`.
+- SVG `clip-path` with a `clipPath` that is one `rect`, `circle`, or round `ellipse`.
+
+### Changed
+
+- An SVG drawing is cut to its viewBox, and a `symbol` or a nested `svg` to its own box, unless it says `overflow="visible"`.
 
 ### Fixed
 

@@ -20,7 +20,8 @@ namespace Apos.Shapes {
     /// with transforms, fills, strokes, and linear and radial gradients out of `defs`, plus
     /// `use`, `symbol`, nested `svg` and `switch`. Styles come from presentation attributes,
     /// `style` attributes and `style` elements, where a rule may select by tag, class and id.
-    /// Text, clip paths, masks, filters and patterns are ignored. Anything ignored is counted
+    /// A `clipPath` of one rectangle or circle clips. Text, other clip paths, masks, filters
+    /// and patterns are ignored. Anything ignored is counted
     /// rather than reported, so a file always loads if it parses as XML.
     ///
     /// Sizes are in em units: one em is the height of the viewBox, so multiply by the height you
@@ -139,13 +140,13 @@ namespace Apos.Shapes {
         public float Height { get; private set; }
 
         /// <summary>
-        /// The box <see cref="ShapeBatch.DrawSvg(ShapeSvg, Vector2, float, float, Vector2, float)"/>
+        /// The box <see cref="ShapeBatch.DrawSvg(ShapeSvg, Vector2, float, float, Vector2, float, Gradient?)"/>
         /// draws into, in world units, with its top left corner at the position the drawing is
         /// drawn at. It's the viewBox, so the height is the size given and the width follows the
         /// document's aspect ratio.
         ///
-        /// A file may draw outside its own viewBox, and this doesn't clip, so ink can land past
-        /// this box. It's where the file says the picture is, not a promise about the pixels.
+        /// What the file draws past this box is cut off, unless its root says
+        /// `overflow="visible"`.
         /// </summary>
         /// <param name="size">Em size in world units, the same one the drawing is drawn at.</param>
         public Vector2 Measure(float size) {
@@ -214,6 +215,13 @@ namespace Apos.Shapes {
 
         // A style element applies when it's CSS, which is what no type means, and it isn't for
         // some other medium. This draws to a screen.
+        // overflow lets a viewport's drawing show past its box when it's visible or auto.
+        private static bool Overflows(SvgAttrs a) {
+            string? v = a.Get("overflow")?.Trim();
+            return string.Equals(v, "visible", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(v, "auto", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool Applies(string? type, string? media) {
             return IsCss(type) && IsScreen(media);
         }
@@ -246,22 +254,25 @@ namespace Apos.Shapes {
         // the viewBox diagonal and a file is allowed not to have one, in which case the box is
         // whatever the geometry turns out to cover.
         private readonly struct Pending {
-            internal Pending(string name, SvgAttrs attrs, SvgStyle style, in SvgMatrix m) {
+            internal Pending(string name, SvgAttrs attrs, SvgStyle style, in SvgMatrix m, SvgClipChain? clip) {
                 Name = name;
                 Attrs = attrs;
                 Style = style;
                 M = m;
+                Clip = clip;
             }
             internal readonly string Name;
             internal readonly SvgAttrs Attrs;
             internal readonly SvgStyle Style;
             internal readonly SvgMatrix M;
+            internal readonly SvgClipChain? Clip;
         }
 
         private struct Frame {
             internal SvgStyle Style;
             internal SvgMatrix M;
             internal bool Defs;
+            internal SvgClipChain? Clip;
         }
 
         // One element, held until the whole document is read so a use can point at an element
@@ -332,6 +343,7 @@ namespace Apos.Shapes {
             int used = 0;
 
             bool sawRoot = false;
+            bool rootClips = true;
             bool hasBox = false;
             float vbX = 0f, vbY = 0f, vbW = 0f, vbH = 0f;
             float attrW = 0f, attrH = 0f;
@@ -361,26 +373,31 @@ namespace Apos.Shapes {
                             hasBox = ViewBox(attrs.Raw("viewBox"), ref vbX, ref vbY, ref vbW, ref vbH);
                             SvgColor.TryLength(attrs.Raw("width"), 0f, out attrW);
                             SvgColor.TryLength(attrs.Raw("height"), 0f, out attrH);
+                            rootClips = !Overflows(attrs);
                         } else {
                             // A nested svg is its own viewport with its own scaling.
-                            frame.M = SvgMatrix.Mul(frame.M, Viewport(attrs, use));
+                            Viewport(ref frame, attrs, use);
                         }
+                        frame.Clip = ClipPath(attrs, frame.M, frame.Clip);
                         break;
                     case "symbol":
                         // A symbol only draws where a use stamps it out.
                         if (use == null) return;
                         frame.Style = frame.Style.With(attrs, ref _skipped);
-                        frame.M = SvgMatrix.Mul(frame.M, Viewport(attrs, use));
+                        Viewport(ref frame, attrs, use);
+                        frame.Clip = ClipPath(attrs, frame.M, frame.Clip);
                         break;
                     case "g":
                     case "a":
                         frame.Style = frame.Style.With(attrs, ref _skipped);
                         frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        frame.Clip = ClipPath(attrs, frame.M, frame.Clip);
                         break;
                     case "switch": {
                         // Only the first child whose conditions hold draws.
                         frame.Style = frame.Style.With(attrs, ref _skipped);
                         frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        frame.Clip = ClipPath(attrs, frame.M, frame.Clip);
                         if (n.Children == null) return;
                         foreach (Node c in n.Children) {
                             if (c.Name is "title" or "desc" or "metadata" || !Conditions(c.Attrs)) continue;
@@ -410,6 +427,7 @@ namespace Apos.Shapes {
                         used += Count(target, MaxUsed - used, depth);
                         frame.Style = frame.Style.With(attrs, ref _skipped);
                         frame.M = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
+                        frame.Clip = ClipPath(attrs, frame.M, frame.Clip);
                         frame.M = SvgMatrix.Mul(frame.M, Translate(Len(attrs, "x", vbW), Len(attrs, "y", vbH)));
                         stamping.Add(target);
                         Walk(target, frame, depth + 1, attrs);
@@ -418,6 +436,7 @@ namespace Apos.Shapes {
                     }
                     case "linearGradient":
                     case "radialGradient":
+                    case "clipPath":
                     case "stop":
                     case "title":
                     case "desc":
@@ -432,7 +451,7 @@ namespace Apos.Shapes {
                     case "polygon": {
                         SvgStyle style = frame.Style.With(attrs, ref _skipped);
                         SvgMatrix m = SvgMatrix.Mul(frame.M, SvgMatrix.Parse(attrs.Raw("transform"), ref _skipped));
-                        if (!frame.Defs) pending.Add(new Pending(n.Name, attrs, style, m));
+                        if (!frame.Defs) pending.Add(new Pending(n.Name, attrs, style, m, ClipPath(attrs, m, frame.Clip)));
                         return;
                     }
                     case "style":
@@ -450,8 +469,8 @@ namespace Apos.Shapes {
 
             // A nested svg or a symbol maps its viewBox onto the box it's given: its own x, y,
             // width and height, with the use's width and height winning over its own. Percentages
-            // are of the root viewBox.
-            SvgMatrix Viewport(SvgAttrs own, SvgAttrs? use) {
+            // are of the root viewBox. What it draws is cut to that box unless it overflows.
+            void Viewport(ref Frame frame, SvgAttrs own, SvgAttrs? use) {
                 float x = Len(own, "x", vbW);
                 float y = Len(own, "y", vbH);
                 float w = vbW;
@@ -461,12 +480,77 @@ namespace Apos.Shapes {
                 if (use != null && SvgColor.TryLength(use.Raw("height"), vbH, out float uh)) h = uh;
                 else if (SvgColor.TryLength(own.Raw("height"), vbH, out float oh)) h = oh;
 
-                SvgMatrix m = Translate(x, y);
-                float bx = 0f, by = 0f, bw = 0f, bh = 0f;
-                if (!ViewBox(own.Raw("viewBox"), ref bx, ref by, ref bw, ref bh) || !(w > 0f) || !(h > 0f)) {
-                    return m;
+                if (!Overflows(own)) {
+                    frame.Clip = SvgClipChain.From(frame.M, x, y, w, h, 0f, frame.Clip) ?? frame.Clip;
                 }
-                return SvgMatrix.Mul(m, Fit(own.Raw("preserveAspectRatio"), bx, by, bw, bh, w, h));
+                frame.M = SvgMatrix.Mul(frame.M, Translate(x, y));
+                float bx = 0f, by = 0f, bw = 0f, bh = 0f;
+                if (!ViewBox(own.Raw("viewBox"), ref bx, ref by, ref bw, ref bh) || !(w > 0f) || !(h > 0f)) return;
+                frame.M = SvgMatrix.Mul(frame.M, Fit(own.Raw("preserveAspectRatio"), bx, by, bw, bh, w, h));
+            }
+
+            // The clip-path an element names, inside the clips around it. Only a clipPath that is
+            // one rect, circle or round ellipse in the element's own units turns into a clip.
+            // Anything else is dropped and the element draws uncut.
+            SvgClipChain? ClipPath(SvgAttrs attrs, in SvgMatrix m, SvgClipChain? outer) {
+                string? v = attrs.Get("clip-path");
+                if (v == null) return outer;
+                v = v.Trim();
+                if (v.Length == 0 || string.Equals(v, "none", StringComparison.OrdinalIgnoreCase)) return outer;
+                SvgClipChain? clip = null;
+                if (v.StartsWith("url(", StringComparison.OrdinalIgnoreCase) && v.EndsWith(")", StringComparison.Ordinal)) {
+                    string id = v.Substring(4, v.Length - 5).Trim().Trim('\'', '"');
+                    if (id.StartsWith("#", StringComparison.Ordinal)) id = id.Substring(1);
+                    if (ids.TryGetValue(id, out Node? target) && target.Name == "clipPath") {
+                        clip = ClipShape(target, m, outer);
+                    }
+                }
+                if (clip == null) Drop("clipPath");
+                return clip ?? outer;
+            }
+
+            SvgClipChain? ClipShape(Node clipPath, in SvgMatrix m, SvgClipChain? outer) {
+                SvgAttrs own = clipPath.Attrs;
+                if (string.Equals(own.Raw("clipPathUnits")?.Trim(), "objectBoundingBox", StringComparison.Ordinal)) return null;
+                Node? shape = null;
+                if (clipPath.Children != null) {
+                    foreach (Node c in clipPath.Children) {
+                        if (c.Name is "title" or "desc" or "metadata" || !Conditions(c.Attrs)) continue;
+                        if (shape != null) return null;
+                        shape = c;
+                    }
+                }
+                if (shape == null) return null;
+                SvgAttrs a = shape.Attrs;
+                if (a.Has("clip-path")) return null;
+                SvgMatrix inner = SvgMatrix.Mul(m, SvgMatrix.Parse(own.Raw("transform"), ref _skipped));
+                inner = SvgMatrix.Mul(inner, SvgMatrix.Parse(a.Raw("transform"), ref _skipped));
+                switch (shape.Name) {
+                    case "rect": {
+                        bool hasRx = SvgColor.TryLength(a.Get("rx"), vbW, out float rx);
+                        bool hasRy = SvgColor.TryLength(a.Get("ry"), vbH, out float ry);
+                        if (!hasRx) rx = ry;
+                        if (!hasRy) ry = rx;
+                        float w = Len(a, "width", vbW);
+                        float h = Len(a, "height", vbH);
+                        rx = Math.Clamp(rx, 0f, w * 0.5f);
+                        ry = Math.Clamp(ry, 0f, h * 0.5f);
+                        if (MathF.Abs(rx - ry) > 1e-4f * MathF.Max(rx, ry)) return null;
+                        return SvgClipChain.From(inner, Len(a, "x", vbW), Len(a, "y", vbH), w, h, rx, outer);
+                    }
+                    case "circle": {
+                        float r = Len(a, "r", MathF.Sqrt((vbW * vbW + vbH * vbH) * 0.5f));
+                        return SvgClipChain.From(inner, Len(a, "cx", vbW) - r, Len(a, "cy", vbH) - r, 2f * r, 2f * r, r, outer);
+                    }
+                    case "ellipse": {
+                        float rx = Len(a, "rx", vbW);
+                        float ry = Len(a, "ry", vbH);
+                        if (MathF.Abs(rx - ry) > 1e-4f * MathF.Max(rx, ry)) return null;
+                        return SvgClipChain.From(inner, Len(a, "cx", vbW) - rx, Len(a, "cy", vbH) - rx, 2f * rx, 2f * rx, rx, outer);
+                    }
+                    default:
+                        return null;
+                }
             }
 
             // How many elements stamping n out adds, counted no further than limit or than the walk
@@ -486,6 +570,7 @@ namespace Apos.Shapes {
             }
 
             float tol = MathF.Max(tolerance, 1e-6f);
+            bool boxGiven = hasBox;
             if (!hasBox) {
                 if (attrW > 0f && attrH > 0f) {
                     vbX = 0f;
@@ -493,6 +578,7 @@ namespace Apos.Shapes {
                     vbW = attrW;
                     vbH = attrH;
                     hasBox = true;
+                    boxGiven = true;
                 } else {
                     // No box of its own, so the geometry's is the box. A coarse pass is enough to
                     // find it: the tolerance it picks only moves the box by the tolerance itself.
@@ -515,10 +601,17 @@ namespace Apos.Shapes {
             float u = vbH;
             float doc = MathF.Sqrt(vbW * vbW + vbH * vbH) * tol;
 
+            // A box the file gave is the viewport the whole drawing is cut to, the way a viewer
+            // shows it. One measured from the geometry has nothing outside it to cut.
+            SvgClip? viewport = null;
+            if (rootClips && boxGiven) {
+                viewport = new SvgClip(new Vector2(vbW * 0.5f / u, -0.5f), new Vector2(vbW * 0.5f / u, 0.5f), 0f, 0f);
+            }
+
             var min = new Vector2(float.MaxValue, float.MaxValue);
             var max = new Vector2(float.MinValue, float.MinValue);
             for (int i = 0; i < pending.Count; i++) {
-                SvgShape? shape = Build(pending[i], gradients, doc, u, new Vector2(vbX, vbY), vbW, vbH, i);
+                SvgShape? shape = Build(pending[i], gradients, doc, u, new Vector2(vbX, vbY), vbW, vbH, i, viewport);
                 if (shape == null) continue;
                 _shapes.Add(shape);
                 min = Vector2.Min(min, shape.Min);
@@ -708,7 +801,7 @@ namespace Apos.Shapes {
         }
 
         private SvgShape? Build(in Pending p, SvgGradients gradients, float tol, float u, Vector2 vbMin,
-                                float viewW, float viewH, int index) {
+                                float viewW, float viewH, int index, SvgClip? viewport) {
             SvgOutline o = Outline(p, tol, viewW, viewH);
             if (o.Quads.Count == 0) return null;
             // Nothing downstream can be handed a coordinate that is not a number.
@@ -734,9 +827,16 @@ namespace Apos.Shapes {
             if (style.Fill.Current) style.Fill = new SvgPaint(SvgPaintKind.Flat, style.Current, null, true);
             if (style.Stroke.Current) style.Stroke = new SvgPaint(SvgPaintKind.Flat, style.Current, null, true);
 
-            if (style.Fill.Kind != SvgPaintKind.None && fillAlpha > 0f) {
+            bool filled = style.Fill.Kind != SvgPaintKind.None && fillAlpha > 0f;
+            bool stroked = style.Stroke.Kind != SvgPaintKind.None && strokeAlpha > 0f && style.StrokeWidth > 0f;
+            List<SvgClip>? cuts = null;
+            if (!Clips(p.Clip, viewport, filled, stroked, style, p.M.PenScale * inv, docMin, docMax, ToEm, u, vbMin, ref cuts, out shape.Clips)) {
+                return null;
+            }
+
+            if (filled) {
                 if (Paint(style.Fill, gradients, o, p.M, ToEm, viewW, viewH, fillAlpha, out Gradient g)) {
-                    shape.Fill = Bake(o, shape.Origin, u, vbMin, index, out float fillScale, out BakedGlyph[]? fillTiles);
+                    shape.Fill = Bake(o, shape.Origin, u, vbMin, index, cuts, out float fillScale, out BakedGlyph[]? fillTiles);
                     if (shape.Fill != null) {
                         shape.FillScale = fillScale;
                         shape.FillTiles = fillTiles;
@@ -751,7 +851,7 @@ namespace Apos.Shapes {
 
             float pen = p.M.PenScale;
             float radius = style.StrokeWidth * pen * inv * 0.5f;
-            if (style.Stroke.Kind != SvgPaintKind.None && strokeAlpha > 0f && radius > 0f) {
+            if (stroked && radius > 0f) {
                 if (Paint(style.Stroke, gradients, o, p.M, ToEm, viewW, viewH, strokeAlpha, out Gradient g)) {
                     if (p.M.Anisotropic) Drop("anisotropic stroke");
                     var lines = new List<Vector2[]>();
@@ -797,6 +897,53 @@ namespace Apos.Shapes {
             shape.Min = lo - new Vector2(pad);
             shape.Max = hi + new Vector2(pad);
             return shape;
+        }
+
+        // Sorts out the clips around an element, innermost first and the viewport last. One that
+        // takes in the whole element does nothing, and one that misses it hides it, which is the
+        // false this returns. The rest cut it: a fill is cut at load where the clip has square
+        // corners, and a stroke, or a fill under round corners, is clipped when it draws.
+        private static bool Clips(SvgClipChain? chain, SvgClip? viewport, bool filled, bool stroked, in SvgStyle style,
+                                  float penToEm, Vector2 docMin, Vector2 docMax, Func<Vector2, Vector2> toEm, float u, Vector2 vbMin,
+                                  ref List<SvgClip>? cuts, out SvgClip[]? draws) {
+            draws = null;
+            if (chain == null && viewport == null) return true;
+
+            // The element's box with room for the stroke, its miters and square caps.
+            Vector2 a = toEm(docMin);
+            Vector2 b = toEm(docMax);
+            Vector2 lo = Vector2.Min(a, b);
+            Vector2 hi = Vector2.Max(a, b);
+            if (stroked) {
+                float reach = style.StrokeWidth * 0.5f * penToEm * MathF.Max(style.Join == PathJoin.Miter ? style.MiterLimit : 1f, 1.5f);
+                lo -= new Vector2(reach);
+                hi += new Vector2(reach);
+            }
+
+            List<SvgClip>? kept = null;
+            for (SvgClipChain? c = chain; ; c = c.Outer) {
+                SvgClip clip;
+                if (c != null) {
+                    clip = new SvgClip(toEm(c.Center), c.Half / u, c.Angle, c.Rounding / u);
+                } else if (viewport != null) {
+                    clip = viewport.Value;
+                } else {
+                    break;
+                }
+                if (!clip.Covers(lo, hi)) {
+                    if (clip.Misses(lo, hi)) return false;
+                    bool cut = filled && clip.Rounding <= 0f;
+                    if (cut) (cuts ??= new List<SvgClip>()).Add(clip);
+                    if (stroked || filled && !cut) (kept ??= new List<SvgClip>()).Add(clip);
+                }
+                if (c == null) break;
+            }
+            // Outermost first, the order they are pushed in.
+            if (kept != null) {
+                kept.Reverse();
+                draws = kept.ToArray();
+            }
+            return true;
         }
 
         // The dash pattern as a period and the dashes in it. An odd list repeats to an even one,
@@ -960,7 +1107,7 @@ namespace Apos.Shapes {
         // grid: divided by the viewBox height so one em is that height, y negated so the outline
         // lands in the y up frame a glyph's does, moved so the element's own box is centered on
         // its origin, and multiplied by the grid.
-        private BakedGlyph? Bake(SvgOutline o, Vector2 origin, float u, Vector2 vbMin, int index,
+        private BakedGlyph? Bake(SvgOutline o, Vector2 origin, float u, Vector2 vbMin, int index, List<SvgClip>? cuts,
                                  out float fillScale, out BakedGlyph[]? tiles) {
             fillScale = 1f;
             tiles = null;
@@ -1002,6 +1149,23 @@ namespace Apos.Shapes {
                 }
                 contours.Add(contour);
             }
+            // An outline too far out to hold in a float can't be cut either.
+            if (!float.IsFinite(lox) || !float.IsFinite(hix) || !float.IsFinite(lo) || !float.IsFinite(hi)) {
+                Drop("oversized element");
+                return null;
+            }
+            if (cuts != null) {
+                contours = Cut(contours, cuts, origin);
+                lo = lox = float.MaxValue;
+                hi = hix = float.MinValue;
+                foreach (List<GlyphCurve> contour in contours) {
+                    foreach (GlyphCurve c in contour) {
+                        Grow(c.P1);
+                        Grow(c.P2);
+                        Grow(c.P3);
+                    }
+                }
+            }
             if (contours.Count == 0) return null;
 
             // An element reaching past the limit is baked shrunk about its center, which is the
@@ -1040,6 +1204,39 @@ namespace Apos.Shapes {
                 tiles = Tile(contours, index, x1, y1, x2, y2, whole.Clamped);
             }
             return whole;
+        }
+
+        // The outline cut to each clip in turn. The design grid is the em frame moved to the
+        // origin and scaled by Grid, so each clip is turned to line up with the axes, cut like a
+        // tile, and turned back.
+        private static List<List<GlyphCurve>> Cut(List<List<GlyphCurve>> contours, List<SvgClip> cuts, Vector2 origin) {
+            foreach (SvgClip clip in cuts) {
+                Vector2 half = clip.Half * Grid;
+                var result = new List<List<GlyphCurve>>(contours.Count);
+                foreach (List<GlyphCurve> contour in contours) {
+                    var turned = new List<GlyphCurve>(contour.Count);
+                    foreach (GlyphCurve c in contour) {
+                        turned.Add(new GlyphCurve {
+                            P1 = clip.Local(origin + c.P1 / Grid) * Grid,
+                            P2 = clip.Local(origin + c.P2 / Grid) * Grid,
+                            P3 = clip.Local(origin + c.P3 / Grid) * Grid,
+                        });
+                    }
+                    // One contour at a time, so each stays a loop of its own.
+                    List<GlyphCurve> kept = SvgTileClip.Clip(new List<List<GlyphCurve>> { turned }, -half.X, half.X, -half.Y, half.Y);
+                    if (kept.Count == 0) continue;
+                    for (int i = 0; i < kept.Count; i++) {
+                        GlyphCurve c = kept[i];
+                        c.P1 = (clip.Em(c.P1 / Grid) - origin) * Grid;
+                        c.P2 = (clip.Em(c.P2 / Grid) - origin) * Grid;
+                        c.P3 = (clip.Em(c.P3 / Grid) - origin) * Grid;
+                        kept[i] = c;
+                    }
+                    result.Add(kept);
+                }
+                contours = result;
+            }
+            return contours;
         }
 
         private static List<GlyphCurve> Flatten(List<List<GlyphCurve>> contours) {

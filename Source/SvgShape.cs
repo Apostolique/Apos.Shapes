@@ -58,6 +58,10 @@ namespace Apos.Shapes {
         internal float[] DashShift = Array.Empty<float>();
         internal DashCap DashCap;
 
+        // The clips the element is drawn inside, outermost first, or null when it needs none.
+        // A fill cut at load doesn't count, since its outline already ends at the clip.
+        internal SvgClip[]? Clips;
+
         // The element's box in the document's em frame, stroke included.
         internal Vector2 Min;
         internal Vector2 Max;

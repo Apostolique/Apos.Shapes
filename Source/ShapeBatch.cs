@@ -3077,8 +3077,9 @@ namespace Apos.Shapes {
         /// tall whatever the numbers inside it say.
         ///
         /// A drawing lays out from its top left corner: <paramref name="position"/> is the
-        /// viewBox's corner, and <see cref="ShapeSvg.Measure"/> hands back the box it fills. A file
-        /// may draw outside its own viewBox and there is no clipping, so ink can land past that box.
+        /// viewBox's corner, and <see cref="ShapeSvg.Measure"/> hands back the box it fills. What
+        /// the file draws past that box is cut off, the way a viewer shows it, unless the file's
+        /// root says `overflow="visible"`.
         /// </summary>
         /// <param name="svg">The drawing to draw.</param>
         /// <param name="position">Top left of the viewBox, before the origin is taken off.</param>
@@ -3161,8 +3162,25 @@ namespace Apos.Shapes {
             }
 
             var scale = new Vector2(size, size);
+            // Elements in a row under the same clips share them, and each change of clips costs
+            // a draw call, so they are only pushed when the next element needs different ones.
+            SvgClip[]? clips = null;
             for (int i = 0; i < shapes.Count; i++) {
                 SvgShape s = shapes[i];
+                if (!SameClips(clips, s.Clips)) {
+                    if (clips != null) {
+                        for (int k = 0; k < clips.Length; k++) PopClip();
+                    }
+                    clips = s.Clips;
+                    if (clips != null) {
+                        foreach (SvgClip c in clips) {
+                            Vector2 center = SvgToWorld(c.Center, position, origin, size, sin, cos);
+                            Vector2 extent = c.Half * (2f * size);
+                            PushClip(new RectangleF(center.X - extent.X * 0.5f, center.Y - extent.Y * 0.5f, extent.X, extent.Y),
+                                     c.Rounding * size, c.Angle + rotation, aaSize);
+                        }
+                    }
+                }
                 if (s.HasFill && s.Fill != null) {
                     Gradient g = overridden ? fill
                         : currentColor != null && s.FillCurrent ? SvgFade(current, s.FillAlpha)
@@ -3184,6 +3202,18 @@ namespace Apos.Shapes {
                     DrawSvgStroke(s, position, size, g, origin, sin, cos, aaSize);
                 }
             }
+            if (clips != null) {
+                for (int k = 0; k < clips.Length; k++) PopClip();
+            }
+        }
+
+        private static bool SameClips(SvgClip[]? a, SvgClip[]? b) {
+            if (a == b) return true;
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++) {
+                if (!a[i].Equals(b[i])) return false;
+            }
+            return true;
         }
 
         // One element's stroke, subpath by subpath, through the same path renderer a hand written
