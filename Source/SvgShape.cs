@@ -25,8 +25,10 @@ namespace Apos.Shapes {
         internal Gradient FillPaint;
         internal bool HasFill;
         internal bool EvenOdd;
-        // Set when the paint came from currentColor, so a draw time color can replace it.
+        // Set when the paint came from currentColor, so a draw time color can replace it. The
+        // alpha is the element's opacities, which that color is drawn under.
         internal bool FillCurrent;
+        internal float FillAlpha = 1f;
 
         // The stroke's polylines in the document's em frame, one per subpath, already flattened
         // to the load tolerance. Each has its own closed flag, which is what tells the path
@@ -36,6 +38,7 @@ namespace Apos.Shapes {
         internal Gradient StrokePaint;
         internal bool HasStroke;
         internal bool StrokeCurrent;
+        internal float StrokeAlpha = 1f;
         // Half the stroke width in em units, which is the radius the path renderer takes.
         internal float StrokeRadius;
         internal PathCap Cap;

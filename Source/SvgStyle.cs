@@ -75,6 +75,9 @@ namespace Apos.Shapes {
         // What currentColor resolves to. Black until a color property says otherwise, which is
         // the initial value CSS gives it.
         internal Color Current;
+        // Whether a color property in the file set it. Until one does, currentColor is the color
+        // the drawing is drawn with, when the draw call gives one.
+        internal bool CurrentSet;
 
         internal static SvgStyle Root() {
             return new SvgStyle {
@@ -98,7 +101,10 @@ namespace Apos.Shapes {
         internal SvgStyle With(SvgAttrs a, ref int skipped) {
             SvgStyle s = this;
 
-            if (SvgColor.TryColor(a.Get("color"), out Color current)) s.Current = current;
+            if (SvgColor.TryColor(a.Get("color"), out Color current)) {
+                s.Current = current;
+                s.CurrentSet = true;
+            }
 
             string? v = a.Get("fill");
             if (v != null && SvgColor.TryPaint(v, s.Current, out SvgPaint fill)) s.Fill = fill;

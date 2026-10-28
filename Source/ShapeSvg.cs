@@ -729,6 +729,11 @@ namespace Apos.Shapes {
             float fillAlpha = style.FillOpacity * style.Opacity;
             float strokeAlpha = style.StrokeOpacity * style.Opacity;
 
+            // currentColor is the color property of the element that draws, the way CSS
+            // inherits it, rather than of the one that set the paint.
+            if (style.Fill.Current) style.Fill = new SvgPaint(SvgPaintKind.Flat, style.Current, null, true);
+            if (style.Stroke.Current) style.Stroke = new SvgPaint(SvgPaintKind.Flat, style.Current, null, true);
+
             if (style.Fill.Kind != SvgPaintKind.None && fillAlpha > 0f) {
                 if (Paint(style.Fill, gradients, o, p.M, ToEm, viewW, viewH, fillAlpha, out Gradient g)) {
                     shape.Fill = Bake(o, shape.Origin, u, vbMin, index, out float fillScale, out BakedGlyph[]? fillTiles);
@@ -738,7 +743,8 @@ namespace Apos.Shapes {
                         shape.HasFill = true;
                         shape.FillPaint = g;
                         shape.EvenOdd = style.EvenOdd;
-                        shape.FillCurrent = style.Fill.Current;
+                        shape.FillCurrent = style.Fill.Current && !style.CurrentSet;
+                        shape.FillAlpha = fillAlpha;
                     }
                 }
             }
@@ -762,7 +768,8 @@ namespace Apos.Shapes {
                     if (lines.Count > 0) {
                         shape.HasStroke = true;
                         shape.StrokePaint = g;
-                        shape.StrokeCurrent = style.Stroke.Current;
+                        shape.StrokeCurrent = style.Stroke.Current && !style.CurrentSet;
+                        shape.StrokeAlpha = strokeAlpha;
                         shape.Stroke = lines.ToArray();
                         shape.StrokeClosed = closed.ToArray();
                         shape.StrokeRadius = radius;

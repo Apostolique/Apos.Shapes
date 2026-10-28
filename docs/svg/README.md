@@ -193,6 +193,16 @@ It's a `Gradient`, so a `Color` works as is and so do palettes, ramps, and color
 
 What you get is a silhouette: the shape survives and the colors don't. That suits line art and icons made of separate marks. A drawing built on a filled backdrop comes out as that backdrop, since the backdrop is a paint like any other.
 
+## Follow the color you draw with
+
+A file can paint some of its elements with `currentColor` and leave the rest in its own colors. Those elements take `currentColor` from the draw call:
+
+```csharp
+_sb.DrawSvg(_icon, new Vector2(20, 20), 24f, currentColor: Color.White);
+```
+
+Only the `currentColor` paints change, so a two tone icon can keep its accent while its outline follows the text beside it. It's a `Gradient` too, and a local one reads its two points in the drawing's own box like the overload above. A `color` property inside the file still wins for the elements under it, the same way it does in a browser. Without the parameter, `currentColor` is black unless the file's own `color` sets it.
+
 ## What it reads
 
 Elements: `path` with the whole path grammar including arcs, `rect` with `rx` and `ry`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, and `g` and `a` around them. `transform` is applied at load and stacks down the tree.
@@ -213,7 +223,7 @@ A drawing is read once when it loads, and its elements sit in the same table the
 
 There's no viewport clipping. A file that draws past its own viewBox draws past it here too, and so does a `symbol` or a nested `svg` that draws past its own box.
 
-A radial gradient with a focal point away from its center sweeps evenly from the center instead. `currentColor` is resolved at load and is black unless a `color` property set it, so it can't follow the color you draw with.
+A radial gradient with a focal point away from its center sweeps evenly from the center instead.
 
 Opacity on a group multiplies into its children instead of compositing the group as a unit, since there's no offscreen pass to composite in. Children that overlap inside a translucent group show through each other.
 

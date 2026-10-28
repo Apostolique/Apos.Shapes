@@ -3089,10 +3089,17 @@ namespace Apos.Shapes {
         /// what <see cref="ShapeSvg.Measure"/> hands back turns the drawing around its middle.
         /// </param>
         /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="currentColor">
+        /// The paint for every fill and stroke the file paints with `currentColor`, so an icon
+        /// can follow the color of the text beside it while keeping its other colors. A local
+        /// gradient reads its two points in the drawing's own frame, like the overload that
+        /// repaints everything. Null keeps the color the file resolved, which is black unless
+        /// a `color` property in the file set it.
+        /// </param>
         /// <exception cref="ArgumentNullException"><paramref name="svg"/> is null.</exception>
         /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
-        public void DrawSvg(ShapeSvg svg, Vector2 position, float size, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
-            DrawSvgCore(svg, position, size, default, false, rotation, origin, aaSize);
+        public void DrawSvg(ShapeSvg svg, Vector2 position, float size, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f, Gradient? currentColor = null) {
+            DrawSvgCore(svg, position, size, default, false, currentColor, rotation, origin, aaSize);
         }
         /// <summary>
         /// Draws an SVG drawing in one color or gradient of your own, which replaces every paint in
@@ -3117,14 +3124,14 @@ namespace Apos.Shapes {
         /// <exception cref="ArgumentNullException"><paramref name="svg"/> is null.</exception>
         /// <exception cref="InvalidOperationException"><see cref="Begin"/> was never called.</exception>
         public void DrawSvg(ShapeSvg svg, Vector2 position, float size, Gradient fill, float rotation = 0f, Vector2 origin = default, float aaSize = 1.5f) {
-            DrawSvgCore(svg, position, size, fill, true, rotation, origin, aaSize);
+            DrawSvgCore(svg, position, size, fill, true, null, rotation, origin, aaSize);
         }
 
         // Both overloads, with one flag between them: whether the paint comes from the file or from
         // the caller. Nothing here throws on the draw path, the same way text doesn't - an element
         // whose fill would not seat is skipped, and a document with nothing drawable in it draws
         // nothing.
-        private void DrawSvgCore(ShapeSvg svg, Vector2 position, float size, Gradient fill, bool overridden, float rotation, Vector2 origin, float aaSize) {
+        private void DrawSvgCore(ShapeSvg svg, Vector2 position, float size, Gradient fill, bool overridden, Gradient? currentColor, float rotation, Vector2 origin, float aaSize) {
             ArgumentNullException.ThrowIfNull(svg);
             IReadOnlyList<SvgShape> shapes = svg.Shapes;
             if (shapes.Count == 0) return;
@@ -3147,12 +3154,19 @@ namespace Apos.Shapes {
                 // paint the strokes a different color from the fills.
                 fill.IsLocal = false;
             }
+            Gradient current = currentColor ?? default;
+            if (currentColor != null && current.IsLocal) {
+                GradientToWorld(ref current, position, -origin, sin, cos);
+                current.IsLocal = false;
+            }
 
             var scale = new Vector2(size, size);
             for (int i = 0; i < shapes.Count; i++) {
                 SvgShape s = shapes[i];
                 if (s.HasFill && s.Fill != null) {
-                    Gradient g = overridden ? fill : SvgPaint(s.FillPaint, position, origin, size, sin, cos);
+                    Gradient g = overridden ? fill
+                        : currentColor != null && s.FillCurrent ? SvgFade(current, s.FillAlpha)
+                        : SvgPaint(s.FillPaint, position, origin, size, sin, cos);
                     Vector2 pen = SvgToWorld(s.Origin, position, origin, size, sin, cos);
                     VertexShape.Shape fillShape = s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph;
                     if (s.FillTiles != null) {
@@ -3164,8 +3178,10 @@ namespace Apos.Shapes {
                     }
                 }
                 if (s.HasStroke) {
-                    DrawSvgStroke(s, position, size, overridden ? fill : SvgPaint(s.StrokePaint, position, origin, size, sin, cos),
-                                  origin, sin, cos, aaSize);
+                    Gradient g = overridden ? fill
+                        : currentColor != null && s.StrokeCurrent ? SvgFade(current, s.StrokeAlpha)
+                        : SvgPaint(s.StrokePaint, position, origin, size, sin, cos);
+                    DrawSvgStroke(s, position, size, g, origin, sin, cos, aaSize);
                 }
             }
         }
@@ -3212,6 +3228,15 @@ namespace Apos.Shapes {
             float x = em.X * size - origin.X;
             float y = -em.Y * size - origin.Y;
             return new Vector2(position.X + x * cos - y * sin, position.Y + x * sin + y * cos);
+        }
+
+        // A draw time color under the element's opacities. The two end colors fade, while a
+        // palette or a color ramp keeps the alpha it was made with.
+        private static Gradient SvgFade(Gradient g, float alpha) {
+            if (alpha >= 1f || g.IsPalette || g.Colors != null) return g;
+            g.AC = SvgGradients.Fade(g.AC, alpha);
+            g.BC = SvgGradients.Fade(g.BC, alpha);
+            return g;
         }
 
         // An element's own paint through that same frame. A gradient in the file is part of the

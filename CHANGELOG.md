@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - SVG `use` and `symbol` elements, and nested `svg` elements.
 - SVG `switch` draws only its first child that applies, and `requiredExtensions` and `systemLanguage` are read.
+- `DrawSvg` takes a `currentColor`, which paints the elements the file paints with `currentColor`.
 
 ### Fixed
 
@@ -17,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - SVG dashes with `stroke-linecap="square"` have square ends instead of flat ones.
 - SVG dashes on a closed shape like a `rect` or a `circle` start where the file says instead of half a dash early.
 - An SVG dash with round or square caps that starts just past the end of an open stroke no longer shows a sliver of its cap.
+- SVG `currentColor` takes the `color` of the element that draws, not of the one that set the paint.
 
 ## [0.9.4] - 2026-10-28
 
