@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.9.4] - 2026-10-28
+
 ### Fixed
 
-- An SVG element more than about 2.4 times wider or taller than the viewBox height is no longer dropped. A wide logo whose background is a single rectangle used to draw nothing.
-- An SVG element with more curves across one row or column than a band holds, such as a line of text outlined into a single path, no longer draws with horizontal streaks. It is cut into tiles that each fit.
-- Text drawn under a view that stretches one axis, and SVG drawings squashed that way, now measure pixel size per em axis. The anti aliasing margin and fade no longer balloon past the shape.
+- An SVG element far wider or taller than its viewBox is no longer dropped.
+- An SVG element with many curves side by side, like a line of text outlined into one path, no longer draws with horizontal streaks.
+- Text and SVG drawings under a view that stretches one axis more than the other no longer bleed a soft fringe past their edges.
 
 ## [0.9.3] - 2026-10-25
 
