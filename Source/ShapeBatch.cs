@@ -3172,13 +3172,12 @@ namespace Apos.Shapes {
 
         // One element's stroke, subpath by subpath, through the same path renderer a hand written
         // stroke goes through. The dash pattern never snaps: the file said where its dashes start
-        // and refitting the period to the contour would throw that away.
+        // and refitting the period to the contour would throw that away. A pattern with several
+        // dashes in its period draws once per dash.
         private void DrawSvgStroke(SvgShape s, Vector2 position, float size, in Gradient paint, Vector2 origin, float sin, float cos, float aaSize) {
             float radius = s.StrokeRadius * size;
             if (!(radius > 0f)) return;
-            DashStyle dash = s.Dashed
-                ? new DashStyle(s.DashSize * size, s.DashSpacing * size, s.DashOffset, s.DashCap, DashSnap.Off)
-                : default;
+            int passes = s.Dashed ? s.DashStarts.Length : 1;
 
             for (int i = 0; i < s.Stroke.Length; i++) {
                 Vector2[] line = s.Stroke[i];
@@ -3190,7 +3189,19 @@ namespace Apos.Shapes {
                 for (int j = 0; j < line.Length; j++) {
                     pts[j] = SvgToWorld(line[j], position, origin, size, sin, cos);
                 }
-                DrawPathUniform(pts, radius, paint, paint, 0f, s.Join, s.Cap, s.Cap, s.MiterLimit, aaSize, s.StrokeClosed[i], dash, !s.MiterClip);
+                bool closed = s.StrokeClosed[i];
+                for (int k = 0; k < passes; k++) {
+                    DashStyle dash = default;
+                    if (s.Dashed) {
+                        // DashStyle puts a dash's center on its phase on a closed contour, and its
+                        // start there on an open one.
+                        float length = s.DashLengths[k];
+                        float start = s.DashStarts[k] + (closed ? length * 0.5f : 0f);
+                        if (s.DashShift.Length > 0) start -= s.DashShift[i];
+                        dash = new DashStyle(length * size, (s.DashPeriod - length) * size, start / s.DashPeriod, s.DashCap, DashSnap.Off);
+                    }
+                    DrawPathUniform(pts, radius, paint, paint, 0f, s.Join, s.Cap, s.Cap, s.MiterLimit, aaSize, closed, dash, !s.MiterClip);
+                }
             }
         }
 

@@ -11,6 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - SVG `use` and `symbol` elements, and nested `svg` elements.
 - SVG `switch` draws only its first child that applies, and `requiredExtensions` and `systemLanguage` are read.
 
+### Fixed
+
+- An SVG `stroke-dasharray` with more than two lengths draws dashed instead of solid.
+- SVG dashes with `stroke-linecap="square"` have square ends instead of flat ones.
+- SVG dashes on a closed shape like a `rect` or a `circle` start where the file says instead of half a dash early.
+- An SVG dash with round or square caps that starts just past the end of an open stroke no longer shows a sliver of its cap.
+
 ## [0.9.4] - 2026-10-28
 
 ### Fixed

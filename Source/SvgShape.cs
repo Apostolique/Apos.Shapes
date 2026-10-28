@@ -43,12 +43,16 @@ namespace Apos.Shapes {
         internal bool MiterClip;
         internal float MiterLimit;
 
-        // The dash pattern in em units along the contour, and the offset in periods. Only a two
-        // length pattern maps onto DashStyle; anything longer is counted and drawn solid.
+        // The dash pattern in em units along the contour: one period, and where each dash in it
+        // starts and how long it is, counted from the start of every subpath. DashStyle has one
+        // dash per period, so each of these draws as a pass of its own.
         internal bool Dashed;
-        internal float DashSize;
-        internal float DashSpacing;
-        internal float DashOffset;
+        internal float DashPeriod;
+        internal float[] DashStarts = Array.Empty<float>();
+        internal float[] DashLengths = Array.Empty<float>();
+        // How far along its contour each subpath's polyline now starts, when its start was cut
+        // short. Empty when none was.
+        internal float[] DashShift = Array.Empty<float>();
         internal DashCap DashCap;
 
         // The element's box in the document's em frame, stroke included.

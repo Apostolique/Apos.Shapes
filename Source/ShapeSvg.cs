@@ -771,6 +771,7 @@ namespace Apos.Shapes {
                         shape.MiterClip = style.MiterClip;
                         shape.MiterLimit = style.MiterLimit;
                         Dash(shape, style, pen * inv);
+                        TrimDashedEnds(shape);
                     }
                 }
             }
@@ -791,35 +792,141 @@ namespace Apos.Shapes {
             return shape;
         }
 
-        // A dasharray of two lengths is the pattern DashStyle takes. One length is a dash and a
-        // space of the same size, which is what the spec says an odd list repeats to. Anything
-        // longer has more than one dash length in it and draws solid instead.
+        // The dash pattern as a period and the dashes in it. An odd list repeats to an even one,
+        // which is what the spec says. Square caps are butt dashes grown by the stroke's radius
+        // on both ends, and round caps reach that far too, so dashes whose caps would meet are
+        // merged into one: the union of the two is the longer dash, and drawing them as two
+        // would blend the overlap twice on a translucent stroke.
         private void Dash(SvgShape shape, in SvgStyle style, float toEm) {
-            float[]? dash = style.Dash;
-            if (dash == null) return;
-            float size;
-            float space;
-            if (dash.Length == 1) {
-                size = dash[0];
-                space = dash[0];
-            } else if (dash.Length == 2) {
-                size = dash[0];
-                space = dash[1];
-            } else {
-                Drop("stroke-dasharray");
+            float[]? list = style.Dash;
+            if (list == null) return;
+            int n = list.Length % 2 == 0 ? list.Length : list.Length * 2;
+            float period = 0f;
+            for (int i = 0; i < n; i++) period += list[i % list.Length];
+            if (!(period > 0f) || !float.IsFinite(period)) return;
+
+            float r = style.Cap == PathCap.Butt ? 0f : shape.StrokeRadius / toEm;
+            var spans = new List<(float Start, float End)>();
+            float at = -style.DashOffset;
+            for (int i = 0; i < n; i += 2) {
+                float length = list[i % list.Length];
+                // A butt dash of no length has nothing to draw.
+                if (length > 0f || r > 0f) {
+                    float start = at - r;
+                    start -= MathF.Floor(start / period) * period;
+                    spans.Add((start, start + length + 2f * r));
+                }
+                at += length + list[(i + 1) % list.Length];
+            }
+            if (spans.Count == 0) {
+                shape.HasStroke = false;
                 return;
             }
-            float period = size + space;
-            if (!(period > 0f) || !(space > 0f)) return;
+            spans.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+            var merged = new List<(float Start, float End)>();
+            foreach ((float Start, float End) s in spans) {
+                if (merged.Count > 0 && s.Start <= merged[merged.Count - 1].End) {
+                    (float Start, float End) last = merged[merged.Count - 1];
+                    merged[merged.Count - 1] = (last.Start, MathF.Max(last.End, s.End));
+                } else {
+                    merged.Add(s);
+                }
+            }
+            // The last one can wrap around into the first period's start.
+            while (merged.Count > 1 && merged[merged.Count - 1].End - period >= merged[0].Start) {
+                (float Start, float End) last = merged[merged.Count - 1];
+                merged.RemoveAt(merged.Count - 1);
+                merged[0] = (last.Start - period, MathF.Max(merged[0].End, last.End - period));
+            }
+            foreach ((float Start, float End) s in merged) {
+                // Dashes that cover the whole period with no space left are a solid stroke.
+                if (s.End - s.Start >= period) return;
+            }
+
             shape.Dashed = true;
-            shape.DashSize = size * toEm;
-            shape.DashSpacing = space * toEm;
-            // DashStyle counts the offset in periods and puts a dash's center on the phase, so
-            // the SVG offset comes in negated against a pattern that already starts half a dash
-            // in. Square caps have no dash equivalent, so a dash keeps the flat end.
-            shape.DashOffset = -style.DashOffset / period;
+            shape.DashPeriod = period * toEm;
+            shape.DashStarts = new float[merged.Count];
+            shape.DashLengths = new float[merged.Count];
+            // A round dash's length doesn't count its caps, while a square one is drawn as a
+            // butt dash whose ends are where the caps end.
+            float keep = style.Cap == PathCap.Round ? r : 0f;
+            for (int i = 0; i < merged.Count; i++) {
+                shape.DashStarts[i] = (merged[i].Start + keep) * toEm;
+                shape.DashLengths[i] = (merged[i].End - merged[i].Start - 2f * keep) * toEm;
+            }
             shape.DashCap = style.Cap == PathCap.Round ? DashCap.Round : DashCap.Butt;
-            if (style.Cap == PathCap.Square) Drop("square dash cap");
+        }
+
+        // A cap reaches a stroke's radius past its dash, and the path renderer draws the pattern
+        // a cap's length past each open end. So a dash that the spec says starts after the end,
+        // or stops before the start, would still show the part of its cap that reaches back in,
+        // and one that starts right where an end's cap stops leaves a sliver of anti aliasing.
+        // The subpath is cut short so its cap ends halfway across the space before such a dash,
+        // and DashShift keeps the pattern where it was when the start moves.
+        private static void TrimDashedEnds(SvgShape shape) {
+            float r = shape.StrokeRadius;
+            if (!shape.Dashed || shape.DashCap == DashCap.Butt && shape.Cap == PathCap.Butt || !(r > 0f)) return;
+            float period = shape.DashPeriod;
+            // Each dash with its caps on is a span along the contour, repeating every period.
+            float grow = shape.DashCap == DashCap.Round ? r : 0f;
+            int n = shape.DashStarts.Length;
+            float Start(int k) => shape.DashStarts[k] - grow;
+            float End(int k) => shape.DashStarts[k] + shape.DashLengths[k] + grow;
+            // The first repeat of at past x, and the last one short of it.
+            float Above(float x, float at) => at + MathF.Floor((x - at) / period + 1f) * period;
+            float Below(float x, float at) => at + MathF.Ceiling((x - at) / period - 1f) * period;
+
+            for (int i = 0; i < shape.Stroke.Length; i++) {
+                if (shape.StrokeClosed[i]) continue;
+                Vector2[] line = shape.Stroke[i];
+                float length = 0f;
+                for (int j = 1; j < line.Length; j++) length += Vector2.Distance(line[j - 1], line[j]);
+
+                // The first dash that starts past the end, and whether its cap reaches back in or
+                // stops within a radius of the end's.
+                float to = length;
+                float next = float.MaxValue;
+                for (int k = 0; k < n; k++) next = MathF.Min(next, Above(length - r, Start(k)));
+                if (next < length + 2f * r) {
+                    float before = float.MinValue;
+                    for (int k = 0; k < n; k++) before = MathF.Max(before, Below(next, End(k)));
+                    to = MathF.Min((before + next) * 0.5f, length + r) - r;
+                }
+
+                float from = 0f;
+                float last = float.MinValue;
+                for (int k = 0; k < n; k++) last = MathF.Max(last, Below(r, End(k)));
+                if (last > -2f * r) {
+                    float after = float.MaxValue;
+                    for (int k = 0; k < n; k++) after = MathF.Min(after, Above(last, Start(k)));
+                    from = MathF.Max((last + after) * 0.5f, -r) + r;
+                }
+
+                if (from <= 0f && to >= length) continue;
+                if (shape.DashShift.Length == 0) shape.DashShift = new float[shape.Stroke.Length];
+                shape.Stroke[i] = to - from > 1e-6f ? Cut(line, from, to) : Array.Empty<Vector2>();
+                shape.DashShift[i] = from;
+            }
+        }
+
+        // The stretch of a polyline between two distances along it.
+        private static Vector2[] Cut(Vector2[] line, float from, float to) {
+            var points = new List<Vector2>();
+            float at = 0f;
+            for (int j = 1; j < line.Length; j++) {
+                Vector2 a = line[j - 1];
+                Vector2 b = line[j];
+                float d = Vector2.Distance(a, b);
+                float next = at + d;
+                if (next > from && at < to && d > 0f) {
+                    if (points.Count == 0) points.Add(Vector2.Lerp(a, b, MathF.Max(from - at, 0f) / d));
+                    if (next < to) points.Add(b);
+                    else points.Add(Vector2.Lerp(a, b, (to - at) / d));
+                }
+                at = next;
+            }
+            return points.ToArray();
         }
 
         private bool Paint(in SvgPaint paint, SvgGradients gradients, SvgOutline o, in SvgMatrix m,

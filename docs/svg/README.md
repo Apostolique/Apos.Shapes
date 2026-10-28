@@ -166,7 +166,7 @@ _sb.DrawSvg(_chart, new Vector2(20, 20), 160f);
 
 ![A dashed baseline and a round joined polyline, both strokes](strokes.png)
 
-The dash pattern is never refitted to the contour it runs along, so the file's own `stroke-dasharray` and `stroke-dashoffset` come out exactly as written.
+The dash pattern is never refitted to the contour it runs along, so the file's own `stroke-dasharray` and `stroke-dashoffset` come out exactly as written. A list of any length works, and each dash ends in the stroke's `stroke-linecap`. A pattern with several dashes in it costs one stroke per dash, since each one is drawn as its own pass.
 
 ## One color of your own
 
@@ -214,8 +214,6 @@ A drawing is read once when it loads, and its elements sit in the same table the
 There's no viewport clipping. A file that draws past its own viewBox draws past it here too, and so does a `symbol` or a nested `svg` that draws past its own box.
 
 A radial gradient with a focal point away from its center sweeps evenly from the center instead. `currentColor` is resolved at load and is black unless a `color` property set it, so it can't follow the color you draw with.
-
-A `stroke-dasharray` of one or two lengths dashes exactly as written. A longer one has more than one dash length in it, which the dashes here can't do, so that stroke draws solid. A `stroke-linecap` of `square` gives a dashed stroke flat dash ends.
 
 Opacity on a group multiplies into its children instead of compositing the group as a unit, since there's no offscreen pass to composite in. Children that overlap inside a translucent group show through each other.
 
