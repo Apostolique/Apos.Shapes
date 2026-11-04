@@ -341,16 +341,14 @@ float RingSDF(float2 p, float2 n, float r, float hw) {
 }
 // Pops the lowest base-radix digit off m, defined early for StrokeSDF. floor() can be
 // off by one on some driver and translator combos, the remainder check corrects for it.
+// It's steps rather than branches because this runs a dozen times inline and every branch
+// adds to the driver's compile.
 float DecodeDigit(inout float m, float radix) {
     float q = floor(m / radix);
     float r = m - q * radix;
-    if (r >= radix) {
-        q += 1.0;
-        r -= radix;
-    } else if (r < 0.0) {
-        q -= 1.0;
-        r += radix;
-    }
+    float fix = step(radix, r) - step(r, -0.5);
+    q += fix;
+    r -= fix * radix;
     m = q;
     return r;
 }
@@ -1377,6 +1375,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // The border's style stays as it came: a border on the fill's own gradient reads the fill's
     // result through sameGradient below, which compares the two, and never needs its own.
     if (!useFillGradient) fillStyles.x = 0.0;
+    // Flat colors arrive in sRGB (see the VertexShape ctor), so a version without gradients
+    // leaves out the color space conversions.
+    if (!useFillGradient && !useBorderGradient) space = 2.0;
 
     float2 jx = ddx(p.Pos);
     float2 jy = ddy(p.Pos);
@@ -1635,25 +1636,30 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             dashStroke = true;
         }
     } else if (shape < 10.5) {
-        // One piece of a dashed outline. Meta2 is the turn, the outline's own corner radius, the
-        // radius the pattern turns on, and the pattern position where its fan starts. The pattern
-        // itself rides in the two size slots, which a piece has no use for. A chamfer's square
-        // corner cut by less than its pattern circle arrives with the cut as a negative radius.
-        pTau = p.Meta2.x;
-        float ro = max(p.Meta2.y, 0.0);
-        float rd = lineSize * 0.5;
-        sincos(pTau * 0.5, pH.y, pH.x);
-        pN2 = float2(pH.x * pH.x - pH.y * pH.y, 2.0 * pH.x * pH.y);
-        // The rounded corner: the fillet's circle across its own cone, the two edges either side.
-        bool cone = pTau > 0.0 && q.y >= 0.0 && q.x * pN2.y - q.y * pN2.x >= 0.0;
-        d = p.Meta2.y < 0.0 ? CutCornerSDF(q, -p.Meta2.y) : cone ? length(q) - ro : max(q.x, dot(q, pN2)) - ro;
-        piece = true;
-        pPiv = -pH * ((p.Meta2.z - ro) / max(pH.x, 1e-4));
-        pRc = p.Meta2.z - rd;
-        pU0 = p.Meta2.w;
-        dashData = float2(sdfSize, p.Meta1.w);
-        pBand = abs(d + rd) - rd;
-        pRadius = float4(rd, rd, 1.0, 1.0);
+        // Only dashed outlines come in pieces, so a version without dashes leaves this out.
+        if (useDash) {
+            // One piece of a dashed outline. Meta2 is the turn, the outline's own corner radius,
+            // the radius the pattern turns on, and the pattern position where its fan starts. The
+            // pattern itself rides in the two size slots, which a piece has no use for. A
+            // chamfer's square corner cut by less than its pattern circle arrives with the cut as
+            // a negative radius.
+            pTau = p.Meta2.x;
+            float ro = max(p.Meta2.y, 0.0);
+            float rd = lineSize * 0.5;
+            sincos(pTau * 0.5, pH.y, pH.x);
+            pN2 = float2(pH.x * pH.x - pH.y * pH.y, 2.0 * pH.x * pH.y);
+            // The rounded corner: the fillet's circle across its own cone, the two edges either
+            // side.
+            bool cone = pTau > 0.0 && q.y >= 0.0 && q.x * pN2.y - q.y * pN2.x >= 0.0;
+            d = p.Meta2.y < 0.0 ? CutCornerSDF(q, -p.Meta2.y) : cone ? length(q) - ro : max(q.x, dot(q, pN2)) - ro;
+            piece = true;
+            pPiv = -pH * ((p.Meta2.z - ro) / max(pH.x, 1e-4));
+            pRc = p.Meta2.z - rd;
+            pU0 = p.Meta2.w;
+            dashData = float2(sdfSize, p.Meta1.w);
+            pBand = abs(d + rd) - rd;
+            pRadius = float4(rd, rd, 1.0, 1.0);
+        }
     } else if (shape > 11.5) {
         d = ChamferBoxSDF(q, float2(sdfSize, p.Meta1.w), p.Meta2);
     } else {

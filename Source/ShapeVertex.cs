@@ -65,9 +65,6 @@ namespace Apos.Shapes {
                 border = default;
             }
 
-            Position = position;
-            TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash, blur > 0f ? 1 : 0));
-
             if (ramps == null) {
                 // Rows only exist inside a batch's table, so without one the ramps and color
                 // ramps fall away the same way texture masks shed them.
@@ -76,6 +73,16 @@ namespace Apos.Shapes {
                 fill.Colors = null;
                 border.Colors = null;
             }
+
+            if (IsFlat(fill) && IsFlat(border)) {
+                // A flat color never interpolates, so the space it would interpolate in makes no
+                // difference to it. Packing it as sRGB lets the shader versions without gradients
+                // leave the color space conversions out, which makes them faster to compile.
+                colorSpace = ColorSpace.Rgb;
+            }
+
+            Position = position;
+            TextureCoordinate = new Vector4(textureCoordinate, rounded, PackMeta(shape, fill, border, colorSpace, dash, blur > 0f ? 1 : 0));
 
             if (fill.IsPalette || border.IsPalette || fill.R != null || border.R != null || fill.Colors != null || border.Colors != null) {
                 (FillA, FillB) = PackSide(fill, colorSpace, ramps);
@@ -94,6 +101,11 @@ namespace Apos.Shapes {
             Meta1 = new Vector4(thickness, blur > 0f ? blur : aaSize, sdfSize, height);
             Meta2 = new Vector4(a, b, c, d);
             Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
+        }
+
+        // A plain color, which is a side the batch's QuadFeatures counts as no gradient.
+        private static bool IsFlat(in Gradient g) {
+            return g.S == Gradient.Shape.None && !g.IsPalette && g.R == null && g.Colors == null;
         }
 
         private static (ulong, ulong) PackSide(in Gradient g, ColorSpace colorSpace, RampTable? ramps) {

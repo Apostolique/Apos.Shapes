@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - An SVG drawing is cut to its viewBox, and a `symbol` or a nested `svg` to its own box, unless it says `overflow="visible"`.
+- The shader compiles faster the first time a game runs, most of all for drawings without gradients.
 
 ### Fixed
 
