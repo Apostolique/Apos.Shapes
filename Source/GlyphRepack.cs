@@ -20,8 +20,8 @@ namespace Apos.Shapes {
         // One encoding covers both roles the band texture has. A header is (curve count, list
         // offset) and a list entry is (curve texel x, curve texel y), and the shader reaches both
         // through the same helper with nothing to tell them apart by, so the two have to agree on
-        // where the bits sit. 12 bits holds a count with a band's split above it (up to 16 + 32 *
-        // 64) and an x up to the arena's 2048 wide rows; 20 bits holds a y of 255 and a linear
+        // where the bits sit. 12 bits holds a count with a band's split above it (up to 12 + 32 *
+        // 127) and an x up to the arena's 2048 wide rows; 20 bits holds a y of 255 and a linear
         // offset up to the 524287 the arena tops out at. Together that is exactly the 32 bits an
         // RGBA8 texel has.
         internal const int BandFirstMax = 4095;

@@ -71,6 +71,10 @@ namespace Apos.Shapes {
         internal bool SeamMaxX;
         internal bool SeamMinY;
         internal bool SeamMaxY;
+        // Set when even the long lists drop curves from this outline, which a few pictographs and
+        // dense drawings do: it draws as these instead, the same outline cut into tiles that each
+        // fit. This glyph stays the whole thing, which its box and metrics are measured from.
+        internal BakedGlyph[]? Tiles;
 
         // Bands per axis. Zero means the glyph has no outline to draw: a space, a code point
         // the font has no glyph for, or an outline this baker cannot express.
@@ -111,14 +115,25 @@ namespace Apos.Shapes {
         // texel. Must match MAX_BAND_CURVES in the shader. Both list lengths stay under 32,
         // which is what the split is packed above in a header's count.
         internal const int MaxCurves = 8;
-        // The lists a glyph too intricate for MaxCurves bakes with instead, which some symbol and
-        // CJK glyphs and dense SVG drawings are. Must match DENSE_BAND_CURVES in the shader.
-        internal const int DenseCurves = 16;
+        // The lists a glyph too intricate for MaxCurves bakes with instead, which plenty of
+        // ordinary letters in some fonts are. Must match DENSE_BAND_CURVES in the shader. An
+        // outline that overflows these too is cut into tiles (see Tile).
+        internal const int DenseCurves = 12;
 
-        // Bands per axis never goes past this. The band block grows as 2 * bands * (1 +
-        // MaxCurves) texels, so the ceiling is what keeps one difficult glyph from taking a
-        // texture row to itself.
-        private const int MaxBands = 64;
+        // Bands per axis never goes past this. The band block grows as 4 * bands * (1 +
+        // MaxCurves) texels, so the ceiling is what keeps one difficult glyph from taking much of
+        // the band texture to itself.
+        private const int MaxBands = 128;
+        // The furthest band index a split can sit before. A header packs its count with the split
+        // above it, times 32, into 12 bits on the KNI targets (see GlyphRepack.cs), and a split at
+        // the very end of 128 bands would carry past them. Leaving that one candidate out costs
+        // nothing in accuracy: whichever split wins, each half still lists every curve its own
+        // samples need.
+        private const int MaxSplit = 127;
+        // How far past its tile, in ems, each clipped outline reaches, so the anti aliasing at a
+        // seam sees the real edge rather than the chord that cut it. Half a pixel stays inside it
+        // down to 10 pixels per em.
+        private const float TileMargin = 0.05f;
 
         // The curve every short list is padded out with. All three control points sit an em and
         // a half below and left of the em square, so the sign test in RootEligibility zeroes both
@@ -231,6 +246,61 @@ namespace Apos.Shapes {
             return g;
         }
 
+        // A band holds a fixed number of curves and drops the rest, which leaves streaks or
+        // missing pieces in an outline with more curves than that along one row or column, such
+        // as a line of text outlined into a single path or an intricate pictograph. Cutting the
+        // outline into a grid of tiles gives each its own bands. The smallest grid in which none
+        // overflow is used, or failing that the one with the fewest overflowing bands, as long
+        // as that beats the whole outline. Null when tiling doesn't help, in which case the whole
+        // thing draws as before. The box and the contours are in design units, unitsPerEm of
+        // them to the em.
+        internal static BakedGlyph[]? Tile(List<List<GlyphCurve>> contours, int index, int x1, int y1, int x2, int y2, int unitsPerEm, int wholeClamped) {
+            float margin = unitsPerEm * TileMargin;
+            float width = Math.Max(1, x2 - x1);
+            float height = Math.Max(1, y2 - y1);
+            int[] steps = { 2, 3, 4, 6, 8, 12, 16 };
+            BakedGlyph[]? best = null;
+            int bestClamped = wholeClamped;
+            foreach (int n in steps) {
+                int nx, ny;
+                if (width >= height) {
+                    nx = n;
+                    ny = Math.Max(1, (int)MathF.Round(n * height / width));
+                } else {
+                    ny = n;
+                    nx = Math.Max(1, (int)MathF.Round(n * width / height));
+                }
+                var baked = new List<BakedGlyph>();
+                int clamped = 0;
+                for (int iy = 0; iy < ny; iy++) {
+                    int ty1 = y1 + (int)((long)(y2 - y1) * iy / ny);
+                    int ty2 = y1 + (int)((long)(y2 - y1) * (iy + 1) / ny);
+                    for (int ix = 0; ix < nx; ix++) {
+                        int tx1 = x1 + (int)((long)(x2 - x1) * ix / nx);
+                        int tx2 = x1 + (int)((long)(x2 - x1) * (ix + 1) / nx);
+                        List<GlyphCurve> clipped = SvgTileClip.Clip(contours,
+                            ix == 0 ? float.NegativeInfinity : tx1 - margin,
+                            ix == nx - 1 ? float.PositiveInfinity : tx2 + margin,
+                            iy == 0 ? float.NegativeInfinity : ty1 - margin,
+                            iy == ny - 1 ? float.PositiveInfinity : ty2 + margin);
+                        if (clipped.Count == 0) continue;
+                        BakedGlyph tile = GlyphBake.Bake(clipped, index, 0, 0, tx1, ty1, tx2, ty2, unitsPerEm, DenseCurves);
+                        clamped += tile.Clamped;
+                        tile.SeamMinX = ix > 0;
+                        tile.SeamMaxX = ix < nx - 1;
+                        tile.SeamMinY = iy > 0;
+                        tile.SeamMaxY = iy < ny - 1;
+                        baked.Add(tile);
+                    }
+                }
+                if (baked.Count == 0 || clamped >= bestClamped) continue;
+                best = baked.ToArray();
+                bestClamped = clamped;
+                if (clamped == 0) break;
+            }
+            return best;
+        }
+
         // How far past its split a half's list reaches. A sample's antialiasing reads the curves
         // within half a pixel of it, so a sample next to the split needs a few from the other
         // side. Half a pixel at 8 pixels per em covers that for any text worth reading; below
@@ -253,7 +323,7 @@ namespace Apos.Shapes {
             Array.Sort(maxs, 0, n);
             int bestSplit = 0, bestBefore = 0, bestAfter = n, bestCost = int.MaxValue;
             int before = 0, behind = 0;
-            for (int k = 0; k <= bands; k++) {
+            for (int k = 0; k <= Math.Min(bands, MaxSplit); k++) {
                 float at = start + k * dim;
                 while (before < n && mins[before] <= at + margin) before++;
                 while (behind < n && maxs[behind] < at - margin) behind++;

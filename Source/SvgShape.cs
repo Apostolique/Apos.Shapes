@@ -12,10 +12,6 @@ namespace Apos.Shapes {
         // baked. Its control points are relative to Origin, the same way a glyph's are relative
         // to the pen.
         internal BakedGlyph? Fill;
-        // Set when the whole fill had more curves across a row or column than a band holds, so
-        // it is drawn as these instead: the same outline cut into tiles that each fit. Fill
-        // stays the whole thing, which is what the element's box is measured from.
-        internal BakedGlyph[]? FillTiles;
         // Where the fill's own frame sits in the document's em frame.
         internal Vector2 Origin;
         // How much larger than the document's em the fill's own em is drawn. 1 unless the element

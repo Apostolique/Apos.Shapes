@@ -1268,7 +1268,7 @@ float DitherNoise(float2 worldPos) {
 // lane fetches a real texel and the count guard is a stateless step of the loop index rather than
 // an early out.
 #define MAX_BAND_CURVES 8
-#define DENSE_BAND_CURVES 16
+#define DENSE_BAND_CURVES 12
 
 #if __KNIFX__
 // WebGL1 through KNI cannot take a float texture at all - the interop wraps every upload in a

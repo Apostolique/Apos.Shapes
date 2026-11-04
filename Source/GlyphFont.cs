@@ -73,6 +73,7 @@ namespace Apos.Shapes {
         private readonly Dictionary<int, BakedGlyph> _byCodePoint = new();
         private readonly Dictionary<long, int> _kerning = new();
         private readonly List<GlyphCurve> _scratch = new();
+        private readonly List<int> _starts = new();
         // A font outlives any one batch and nothing stops two of them being on different
         // threads, the same way a ramp can be. Everything behind here mutates on first use, and
         // the font file's own reader is not reentrant either, so the whole lookup takes the
@@ -167,6 +168,10 @@ namespace Apos.Shapes {
 
             List<GlyphCurve> curves = _scratch;
             curves.Clear();
+            // Where each contour's curves start, kept in case the outline has to be tiled, which
+            // cuts it one closed contour at a time.
+            List<int> starts = _starts;
+            starts.Clear();
             float x = 0f, y = 0f;
             for (int v = 0; v < count; v++) {
                 ref StbTrueType.stbtt_vertex vert = ref verts[v];
@@ -174,6 +179,7 @@ namespace Apos.Shapes {
                 float ny = vert.y;
                 switch ((int)vert.type) {
                     case StbTrueType.STBTT_vmove:
+                        starts.Add(curves.Count);
                         break;
                     case StbTrueType.STBTT_vline:
                         curves.Add(new GlyphCurve {
@@ -202,7 +208,20 @@ namespace Apos.Shapes {
             if (baked.Clamped > 0 && MaxCurves < GlyphBake.DenseCurves) {
                 baked = GlyphBake.Bake(curves, glyph, advance, bearing, x1, y1, x2, y2, UnitsPerEm, GlyphBake.DenseCurves);
             }
+            if (baked.Clamped > 0) {
+                baked.Tiles = GlyphBake.Tile(Contours(curves, starts), glyph, x1, y1, x2, y2, UnitsPerEm, baked.Clamped);
+            }
             return baked;
+        }
+
+        // The outline split back into its closed contours.
+        private static List<List<GlyphCurve>> Contours(List<GlyphCurve> curves, List<int> starts) {
+            var contours = new List<List<GlyphCurve>>(starts.Count);
+            for (int i = 0; i < starts.Count; i++) {
+                int end = i + 1 < starts.Count ? starts[i + 1] : curves.Count;
+                if (end > starts[i]) contours.Add(curves.GetRange(starts[i], end - starts[i]));
+            }
+            return contours;
         }
 
         // A glyph with nothing to draw still advances the cursor, so whitespace does not

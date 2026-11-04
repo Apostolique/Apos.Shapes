@@ -3161,13 +3161,7 @@ namespace Apos.Shapes {
                         : SvgPaint(s.FillPaint, position, origin, size, sin, cos);
                     Vector2 pen = SvgToWorld(s.Origin, position, origin, size, sin, cos);
                     VertexShape.Shape fillShape = s.EvenOdd ? VertexShape.Shape.EvenOdd : VertexShape.Shape.Glyph;
-                    if (s.FillTiles != null) {
-                        foreach (BakedGlyph tile in s.FillTiles) {
-                            DrawGlyphQuad(tile, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
-                        }
-                    } else {
-                        DrawGlyphQuad(s.Fill, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
-                    }
+                    DrawGlyphQuad(s.Fill, pen, scale * s.FillScale, g, sin, cos, aaSize, fillShape);
                 }
                 if (s.HasStroke) {
                     Gradient g = overridden ? fill
@@ -3419,6 +3413,13 @@ namespace Apos.Shapes {
         // world space: the fill arrives resolved so a string paints one gradient rather than one
         // per letter.
         private void DrawGlyphQuad(BakedGlyph g, Vector2 position, Vector2 scale, in Gradient fill, float sin, float cos, float aaSize, VertexShape.Shape shape = VertexShape.Shape.Glyph) {
+            if (g.Tiles != null) {
+                // An outline too intricate for one quad draws as its tiles, which share its frame.
+                foreach (BakedGlyph tile in g.Tiles) {
+                    DrawGlyphQuad(tile, position, scale, fill, sin, cos, aaSize, shape);
+                }
+                return;
+            }
             PrepareQuad(fill);
             int at = g.Seat(_glyphs);
             if (at < 0) {

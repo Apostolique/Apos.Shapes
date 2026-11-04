@@ -144,7 +144,7 @@ Only TrueType outlines work. Most `.otf` files describe their glyphs with cubic 
 
 A newline is the only layout this does. There's no wrapping, no alignment, and no ellipsis, since those are decisions and this draws what it's handed. There's no fallback font chain either. A code point the font has no glyph for draws the font's own missing glyph box, so a hole shows up instead of quietly closing. You pick the font per call, so a fallback is a loop you write.
 
-Each scanline through a glyph carries up to 16 curves. Almost nothing reaches that, though a handful of dense characters do. The shade blocks `░ ▒ ▓` (U+2591 to U+2593) are the loud case, since a row through one really does cross more than 16, and they come out with detail missing. Real text isn't affected.
+Each scanline through a glyph carries up to 12 curves. A glyph that needs more, like the shade blocks `░ ▒ ▓` (U+2591 to U+2593), is cut into tiles that each fit and draws as several quads. The seams between tiles stay exact down to ~10 pixels per em. A few pictographs are dense enough that even the finest tiles overflow, like `☠ ⛀ ⛁` in Segoe UI Symbol, and they come out with small pieces missing. Real text isn't affected.
 
 On KNI's GL backends (WebGL, GLES, and desktop GL) the outlines are stored to within ~0.00003 em rather than exactly. It's a workaround for a bug in `nkast.Wasm.Canvas` that drops float texture uploads. An anti-aliased edge pixel there can land a shade off what the other backends give, which doesn't show at text sizes.
 

@@ -30,7 +30,7 @@ namespace Apos.Shapes.Tests {
 
             SvgShape shape = Assert.Single(svg.Shapes);
             Assert.Equal(1f, shape.FillScale);
-            Assert.Null(shape.FillTiles);
+            Assert.Null(shape.Fill!.Tiles);
             Assert.Equal(0, svg.Skipped);
         }
 
@@ -89,7 +89,7 @@ namespace Apos.Shapes.Tests {
             SvgShape shape = Assert.Single(Load(markup).Shapes);
 
             var glyphs = new List<BakedGlyph> { shape.Fill! };
-            if (shape.FillTiles != null) glyphs.AddRange(shape.FillTiles);
+            if (shape.Fill!.Tiles != null) glyphs.AddRange(shape.Fill!.Tiles);
             foreach (BakedGlyph glyph in glyphs) {
                 foreach (float value in glyph.CurveTexels) {
                     Assert.True(GlyphRepack.CurveInRange(value), $"{value} is outside the curve texture's range");
@@ -124,7 +124,7 @@ namespace Apos.Shapes.Tests {
             ShapeSvg svg = Load(Comb(holes: 4));
 
             SvgShape shape = Assert.Single(svg.Shapes);
-            Assert.Null(shape.FillTiles);
+            Assert.Null(shape.Fill!.Tiles);
             Assert.Equal(0, shape.Fill!.Clamped);
         }
 
@@ -134,9 +134,9 @@ namespace Apos.Shapes.Tests {
 
             SvgShape shape = Assert.Single(svg.Shapes);
             Assert.True(shape.Fill!.Clamped > 0, "the whole element should overflow, or this test proves nothing");
-            Assert.NotNull(shape.FillTiles);
-            Assert.True(shape.FillTiles!.Length > 1);
-            foreach (BakedGlyph tile in shape.FillTiles) {
+            Assert.NotNull(shape.Fill!.Tiles);
+            Assert.True(shape.Fill!.Tiles!.Length > 1);
+            foreach (BakedGlyph tile in shape.Fill!.Tiles) {
                 Assert.Equal(0, tile.Clamped);
             }
         }
@@ -146,7 +146,7 @@ namespace Apos.Shapes.Tests {
             ShapeSvg svg = Load(Comb(holes: 39));
             SvgShape shape = Assert.Single(svg.Shapes);
             BakedGlyph whole = shape.Fill!;
-            BakedGlyph[] tiles = shape.FillTiles!;
+            BakedGlyph[] tiles = shape.Fill!.Tiles!;
 
             Assert.Equal(whole.Min.X, tiles.Min(t => t.Min.X));
             Assert.Equal(whole.Max.X, tiles.Max(t => t.Max.X));
@@ -175,7 +175,7 @@ namespace Apos.Shapes.Tests {
             BakedGlyph whole = shape.Fill!;
 
             float wholeArea = (whole.Max.X - whole.Min.X) * (whole.Max.Y - whole.Min.Y);
-            float tileArea = shape.FillTiles!.Sum(t => (t.Max.X - t.Min.X) * (t.Max.Y - t.Min.Y));
+            float tileArea = shape.Fill!.Tiles!.Sum(t => (t.Max.X - t.Min.X) * (t.Max.Y - t.Min.Y));
 
             Assert.Equal(wholeArea, tileArea, wholeArea * 1e-4f);
         }

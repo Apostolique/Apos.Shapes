@@ -28,7 +28,8 @@ namespace Apos.Shapes {
         Ramps = 64,
         /// <summary>
         /// Text with glyphs too intricate for the version with <see cref="Text"/> alone, which
-        /// some symbol and CJK glyphs and dense SVG drawings are.
+        /// some letters in fonts like Times, Georgia and Calibri are, along with many symbols
+        /// and dense SVG drawings.
         /// </summary>
         DenseText = 128,
         /// <summary>Everything.</summary>
