@@ -12,11 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - SVG `switch` draws only its first child that applies, and `requiredExtensions` and `systemLanguage` are read.
 - `DrawSvg` takes a `currentColor`, which paints the elements the file paints with `currentColor`.
 - SVG `clip-path` with a `clipPath` that is one `rect`, `circle`, or round `ellipse`.
+- `ShapeFeatures.EllipsesAndPaths`, `ShapeFeatures.Clips` and `ShapeFeatures.Ramps`, for `Warmup`.
 
 ### Changed
 
 - An SVG drawing is cut to its viewBox, and a `symbol` or a nested `svg` to its own box, unless it says `overflow="visible"`.
-- The shader compiles faster the first time a game runs, most of all for drawings without gradients.
+- The shader compiles faster the first time a game runs.
+- `Warmup(ShapeFeatures.None)` leaves out ellipses, paths, clips, and palettes and ramps on gradients. Pass their features to warm those up too.
+- Creating the first `ShapeBatch` is faster on DirectX and Vulkan.
 
 ### Fixed
 

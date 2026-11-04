@@ -32,18 +32,18 @@ namespace Apos.Shapes {
             _graphicsDevice = graphicsDevice;
 
             _ownsEffect = effect == null;
-            effect ??= LoadEmbeddedEffect(graphicsDevice);
             if (effect != null) {
                 _effect = new ShaderEffect(effect);
-                for (int i = 0; i < _techniques.Length; i++) {
-                    _techniques[i] = effect.Techniques["Shapes" + i];
-                    if (_techniques[i] != null) {
-                        _effects[i] = _effect;
-                        _available |= 1 << i;
+                foreach (EffectTechnique technique in effect.Techniques) {
+                    if (TechniqueFeatures(technique.Name) is int features) {
+                        _techniques[features] = technique;
+                        _effects[features] = _effect;
+                        _available |= UInt128.One << features;
                     }
                 }
             } else {
-                _available = (1 << _techniques.Length) - 1;
+                _archive = ShaderArchive.For(EmbeddedArchive(graphicsDevice));
+                foreach (int name in _archive.Names) _available |= UInt128.One << (name ^ InvertedFeatures);
             }
 
             _vertices = new VertexShape[_initialVertices];
@@ -103,10 +103,10 @@ namespace Apos.Shapes {
         /// instead of during the first frame that draws a shape.
         /// </summary>
         /// <remarks>
-        /// The shader comes in a smaller and faster to compile version for every combination of
+        /// The shader comes in smaller versions that are faster to compile, each with some of the
         /// <see cref="ShapeFeatures"/>, and each one compiles the first time something draws with
         /// it. Pass every feature the game draws in the same batch: a batch with dashes and text
-        /// in it draws with the version that has both. Once a version has compiled, a batch that
+        /// in it draws with a version that has both. Once a version has compiled, a batch that
         /// needs less draws with it rather than waiting on a smaller one.
         ///
         /// The constructor warms up the version with none of them by default. It clears to black
@@ -137,40 +137,46 @@ namespace Apos.Shapes {
         public ShapeBatch(GraphicsDevice graphicsDevice, ContentManager content, Effect? effect = null) : this(graphicsDevice, effect) { }
 
         /// <summary>
-        /// Loads the shader that was precompiled at pack time and embedded in this assembly, or
-        /// returns null on KNI's GL family, where each technique loads on its own.
+        /// The embedded resource with the versions of the built-in shader for the running backend.
         /// </summary>
-        private static Effect? LoadEmbeddedEffect(GraphicsDevice graphicsDevice) {
+        private static string EmbeddedArchive(GraphicsDevice graphicsDevice) {
 #if KNI
-            // The knifx files cover KNI's GL family (desktop GL, GLES, WebGL); the DirectX backends load standard MGFX instead.
+            // The knifx versions cover KNI's GL family (desktop GL, GLES, WebGL); the DirectX backends load standard MGFX instead.
             GraphicsBackend backend = graphicsDevice.Adapter.Backend;
-            if (backend == GraphicsBackend.DirectX11 || backend == GraphicsBackend.DirectX12) {
-                return new Effect(graphicsDevice, ReadEmbeddedBytes("Apos.Shapes.apos-shapes.dx11.mgfx"));
-            }
-            return null;
+            return backend == GraphicsBackend.DirectX11 || backend == GraphicsBackend.DirectX12
+                ? "Apos.Shapes.apos-shapes.kni.dx11.pack"
+                : "Apos.Shapes.apos-shapes.knifx.pack";
 #else
-            string name = GetActiveProfile() switch {
-                0 => "Apos.Shapes.apos-shapes.ogl.mgfx",
-                2 => "Apos.Shapes.apos-shapes.dx12.mgfx",
-                80 => "Apos.Shapes.apos-shapes.vk.mgfx",
-                _ => "Apos.Shapes.apos-shapes.dx11.mgfx",
+            return GetActiveProfile() switch {
+                0 => "Apos.Shapes.apos-shapes.ogl.pack",
+                2 => "Apos.Shapes.apos-shapes.dx12.pack",
+                80 => "Apos.Shapes.apos-shapes.vk.pack",
+                _ => "Apos.Shapes.apos-shapes.dx11.pack",
             };
-            return new Effect(graphicsDevice, ReadEmbeddedBytes(name));
 #endif
         }
 
-        // The effect that draws a technique, by index. KNI's GL backends compile every shader in
-        // an effect as soon as it loads, so there each technique is an effect of its own that
-        // loads the first time it draws, and only the ones a game uses cost a compile.
-        private ShaderEffect EffectFor(int techniqueIndex) {
-            if (techniqueIndex < 0) return _effect!;
-            ShaderEffect? effect = _effects[techniqueIndex];
+        // The effect that draws a version of the shader, by its features. Each version of the
+        // built-in shader is an effect of its own that loads the first time it draws, since some
+        // backends create every shader in an effect as soon as it loads.
+        private ShaderEffect EffectFor(int features) {
+            if (features < 0) return _effect!;
+            ShaderEffect? effect = _effects[features];
             if (effect == null) {
-                var loaded = new Effect(_graphicsDevice, ReadEmbeddedBytes($"Apos.Shapes.apos-shapes.{techniqueIndex}.knifx"));
-                effect = _effects[techniqueIndex] = new ShaderEffect(loaded);
-                _techniques[techniqueIndex] = loaded.Techniques["Shapes" + techniqueIndex];
+                int name = features ^ InvertedFeatures;
+                var loaded = new Effect(_graphicsDevice, _archive!.Read(name));
+                effect = _effects[features] = new ShaderEffect(loaded);
+                _techniques[features] = loaded.Techniques["Shapes" + name];
             }
             return effect;
+        }
+
+        // The features of a technique named after them, or null for one that isn't. The name
+        // carries ellipses and paths, clips and ramps inverted, which keeps a shader from before
+        // they were features meaning what it did: its Shapes0 to Shapes15 all have them.
+        private static int? TechniqueFeatures(string name) {
+            if (!name.StartsWith("Shapes", StringComparison.Ordinal) || !int.TryParse(name.AsSpan(6), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int n) || n >= FeatureSets) return null;
+            return n ^ InvertedFeatures;
         }
 
 #if !KNI
@@ -188,42 +194,6 @@ namespace Apos.Shapes {
             return typeof(Effect).Assembly.GetType("Sdl") != null ? 0 : 1;
         }
 #endif
-
-        // The shaders ship compressed; see Tools/ShaderPack for why KNI's are gzip.
-        private static byte[] ReadEmbeddedBytes(string name) {
-#if KNI
-            name += ".gz";
-#else
-            name += ".br";
-#endif
-            using var stream = typeof(ShapeBatch).Assembly.GetManifestResourceStream(name)
-                ?? throw new InvalidOperationException($"Missing embedded resource \"{name}\".");
-#if KNI
-            using var unpacked = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
-#else
-            using var unpacked = new System.IO.Compression.BrotliStream(stream, System.IO.Compression.CompressionMode.Decompress);
-#endif
-            using var bytes = new System.IO.MemoryStream();
-            unpacked.CopyTo(bytes);
-            byte[] shader = bytes.ToArray();
-            UseHighpFloats(shader);
-            return shader;
-        }
-
-        /// <summary>
-        /// ShadowDusk declares the GL pixel shader mediump, which phones run as 16-bit floats that
-        /// can't hold pixel distances, so nothing draws. Swaps in highp, padded to keep lengths intact.
-        /// </summary>
-        private static void UseHighpFloats(byte[] bytes) {
-            ReadOnlySpan<byte> mediump = "precision mediump float;"u8;
-            ReadOnlySpan<byte> highp = "precision highp float;  "u8;
-            Span<byte> rest = bytes;
-            int i;
-            while ((i = rest.IndexOf(mediump)) >= 0) {
-                highp.CopyTo(rest[i..]);
-                rest = rest[(i + highp.Length)..];
-            }
-        }
 
         /// <summary>The device this batch draws with.</summary>
         public GraphicsDevice GraphicsDevice => _graphicsDevice;
@@ -3622,7 +3592,7 @@ namespace Apos.Shapes {
                     _clipCount = run.ClipCount;
                     _parameterVersion++;
                 }
-                DrawSplit(run.Texture, run.FirstIndex, end - run.FirstIndex);
+                DrawSplit(run.Texture, run.FirstIndex, end - run.FirstIndex, run.ClipCount > 0 ? (int)ShapeFeatures.Clips : 0);
             }
 
             _vertexCount = 0;
@@ -3639,8 +3609,9 @@ namespace Apos.Shapes {
         // Draws a run with the cheapest techniques that have already compiled. A stretch of quads
         // that needs fewer features than the run as a whole and covers enough of the screen
         // draws on its own with a smaller technique. The rest goes with its neighbors, so a few
-        // dashed quads among solid ones don't each cost a draw call.
-        private void DrawSplit(Texture2D? texture, int firstIndex, int indexCount) {
+        // dashed quads among solid ones don't each cost a draw call. runFeatures are the ones the
+        // whole run needs, which is its clips.
+        private void DrawSplit(Texture2D? texture, int firstIndex, int indexCount, int runFeatures) {
             if (_available == 0) {
                 DrawRange(texture, -1, firstIndex, indexCount);
                 return;
@@ -3649,7 +3620,7 @@ namespace Apos.Shapes {
             int count = 0, all = _warmupFeatures;
             int endQuad = (firstIndex + indexCount) / 6;
             for (int q = firstIndex / 6; q < endQuad; q++) {
-                int f = QuadFeatures(q);
+                int f = QuadFeatures(q) | runFeatures;
                 if (count > 0 && _stretches[count - 1].Features == f) continue;
                 if (count == _stretches.Length) Array.Resize(ref _stretches, count * 2);
                 _stretches[count++] = new Stretch { Start = q, Features = f };
@@ -3702,7 +3673,7 @@ namespace Apos.Shapes {
         private void DrawRange(Texture2D? texture, int techniqueIndex, int firstIndex, int indexCount) {
             ShaderEffect effect = EffectFor(techniqueIndex);
             EffectTechnique technique = techniqueIndex < 0 ? effect.Effect.CurrentTechnique : _techniques[techniqueIndex]!;
-            if (techniqueIndex >= 0) _compiled |= 1 << techniqueIndex;
+            if (techniqueIndex >= 0) _compiled |= UInt128.One << techniqueIndex;
             if (effect.Version != _parameterVersion) {
                 effect.Version = _parameterVersion;
                 SetParameters(effect);
@@ -3771,23 +3742,32 @@ namespace Apos.Shapes {
             return best >= 0 ? best : whole;
         }
 
-        // The smallest technique among a set of them, by bit, that covers these features, or -1
-        // if none does.
-        private static int Smallest(int features, int among) {
+        // The technique among a set of them, by bit, that covers these features and is quickest
+        // to compile, or -1 if none does.
+        private static int Smallest(int features, UInt128 among) {
             int best = -1;
-            for (int i = 0; i < 16; i++) {
-                if ((among >> i & 1) != 0 && (i & features) == features && (best < 0 || BitCount(i) < BitCount(best))) best = i;
+            for (int i = 0; i < FeatureSets; i++) {
+                if (((among >> i) & UInt128.One) != UInt128.Zero && (i & features) == features && (best < 0 || CompileCost(i) < CompileCost(best))) best = i;
             }
             return best;
         }
-        private static int BitCount(int v) => (v & 1) + (v >> 1 & 1) + (v >> 2 & 1) + (v >> 3 & 1);
+        // Roughly how much each feature adds to a version's compile, relative to the others.
+        private static int CompileCost(int features) {
+            int cost = 0;
+            if ((features & (int)ShapeFeatures.Dashes) != 0) cost += 12;
+            if ((features & (int)ShapeFeatures.Gradients) != 0) cost += 16;
+            if ((features & (int)ShapeFeatures.BorderGradients) != 0) cost += 16;
+            if ((features & (int)ShapeFeatures.Text) != 0) cost += 18;
+            if ((features & (int)ShapeFeatures.EllipsesAndPaths) != 0) cost += 10;
+            if ((features & (int)ShapeFeatures.Clips) != 0) cost += 3;
+            if ((features & (int)ShapeFeatures.Ramps) != 0) cost += 9;
+            return cost;
+        }
 
-        // Which of the four features the techniques split on a quad uses, as the technique's
-        // index: dashes in bit 0, fill gradients beyond a flat color in bit 1, border gradients
-        // in bit 2, text in bit 3. The quad's first vertex says, in the packed meta it carries
-        // for the shader and in the negated color lanes that flag a palette, a ramp or a color
-        // ramp. A border on the fill's own gradient reuses the fill's result in the shader, so
-        // only a border that differs needs its own.
+        // Which ShapeFeatures a quad uses, apart from clips, which belong to its run. The quad's
+        // first vertex says, in the packed meta it carries for the shader and in the negated color
+        // lanes that flag a palette, a ramp or a color ramp. A border on the fill's own gradient
+        // reuses the fill's result in the shader, so only a border that differs needs its own.
         private int QuadFeatures(int q) {
             const ulong flags = 0x8000800080008000ul;
             ref VertexShape v = ref _vertices[q * 4];
@@ -3796,14 +3776,19 @@ namespace Apos.Shapes {
             int fillStyle = meta / 16 % 64;
             int borderStyle = meta / 1024 % 64;
             int dash = meta / 262144 % 4;
+            bool fillRows = ((v.FillA | v.FillB) & flags) != 0;
+            bool borderRows = ((v.BorderA | v.BorderB) & flags) != 0;
             int features = 0;
-            if (dash != 0) features |= 1;
-            if (fillStyle % 16 != 0 || ((v.FillA | v.FillB) & flags) != 0) features |= 2;
-            if ((borderStyle % 16 != 0 || ((v.BorderA | v.BorderB) & flags) != 0)
+            if (dash != 0) features |= (int)ShapeFeatures.Dashes;
+            if (fillStyle % 16 != 0 || fillRows) features |= (int)ShapeFeatures.Gradients;
+            if (fillRows) features |= (int)ShapeFeatures.Ramps;
+            if ((borderStyle % 16 != 0 || borderRows)
                 && !(borderStyle == fillStyle && v.FillA == v.BorderA && v.FillB == v.BorderB && v.FillCoord == v.BorderCoord && v.Meta3.X == v.Meta3.Z && v.Meta3.Y == v.Meta3.W)) {
-                features |= 4;
+                features |= (int)ShapeFeatures.BorderGradients;
+                if (borderRows) features |= (int)ShapeFeatures.Ramps;
             }
-            if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= 8;
+            if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= (int)ShapeFeatures.Text;
+            if (shape == (int)VertexShape.Shape.Ellipse || shape == (int)VertexShape.Shape.Path) features |= (int)ShapeFeatures.EllipsesAndPaths;
             return features;
         }
 
@@ -5080,20 +5065,25 @@ namespace Apos.Shapes {
                 Ramp = effect.Parameters["RampTex"];
             }
         }
-        // The effect with every technique in it, or null on KNI's GL family, where each
-        // technique is an effect of its own.
+        // A replacement shader, or null for the built-in one, where each technique is an effect
+        // of its own that loads from the archive.
         private readonly ShaderEffect? _effect;
+        private readonly ShaderArchive? _archive;
+        // Every mix of ShapeFeatures, which is how the tables below are indexed.
+        private const int FeatureSets = 128;
+        // The features a technique's name carries inverted; see TechniqueFeatures.
+        private const int InvertedFeatures = (int)(ShapeFeatures.EllipsesAndPaths | ShapeFeatures.Clips | ShapeFeatures.Ramps);
         // Whether the batch loaded its effects, and so disposes them, rather than taking one.
         private readonly bool _ownsEffect;
         // The built-in shader's techniques by the features they carry, and the effects that
         // hold them. Null for a technique that hasn't loaded yet, or that a replacement shader
         // doesn't have. A replacement with none of them draws with its current technique.
-        private readonly EffectTechnique?[] _techniques = new EffectTechnique?[16];
-        private readonly ShaderEffect?[] _effects = new ShaderEffect?[16];
+        private readonly EffectTechnique?[] _techniques = new EffectTechnique?[FeatureSets];
+        private readonly ShaderEffect?[] _effects = new ShaderEffect?[FeatureSets];
         // The techniques there are to draw with, one bit each, and the ones this batch has drawn
         // with and so has already paid to compile.
-        private readonly int _available;
-        private int _compiled;
+        private readonly UInt128 _available;
+        private UInt128 _compiled;
         // Goes up whenever a parameter changes, so each effect gets them again before it draws.
         private int _parameterVersion;
         // Set only while a warmup draws, to the features it was asked to compile.

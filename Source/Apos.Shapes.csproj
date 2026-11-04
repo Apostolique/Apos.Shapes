@@ -53,24 +53,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.ogl.mgfx.br" LogicalName="Apos.Shapes.apos-shapes.ogl.mgfx.br" Visible="false" />
-    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx11.mgfx.br" LogicalName="Apos.Shapes.apos-shapes.dx11.mgfx.br" Visible="false" />
-    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.vk.mgfx.br" LogicalName="Apos.Shapes.apos-shapes.vk.mgfx.br" Visible="false" />
-    <EmbeddedResource Include="$(AposShaderDir)apos-shapes.dx12.mgfx.br" LogicalName="Apos.Shapes.apos-shapes.dx12.mgfx.br" Visible="false" />
+    <AposShaderPack Include="ogl;dx11;vk;dx12" />
+    <EmbeddedResource Include="@(AposShaderPack->'$(AposShaderDir)apos-shapes.%(Identity).pack')" LogicalName="Apos.Shapes.%(Filename)%(Extension)" Visible="false" />
   </ItemGroup>
 
   <Target Name="CompileAposShader" BeforeTargets="BeforeBuild"
           Inputs="Content/apos-shapes.fx;../Tools/ShaderPack/Program.cs;$(MSBuildProjectFullPath);../.config/dotnet-tools.json"
-          Outputs="$(AposShaderDir)apos-shapes.ogl.mgfx.br;$(AposShaderDir)apos-shapes.dx11.mgfx.br;$(AposShaderDir)apos-shapes.vk.mgfx.br;$(AposShaderDir)apos-shapes.dx12.mgfx.br">
+          Outputs="@(AposShaderPack->'$(AposShaderDir)apos-shapes.%(Identity).pack')">
     <MakeDir Directories="$(AposShaderDir)" />
     <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildProjectDirectory)" />
-    <!-- Roll forward so the net8.0 tool still runs when only a newer runtime is installed, like in CI. -->
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.ogl.mgfx&quot; /Profile:OpenGL" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx11.mgfx&quot; /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.vk.mgfx&quot; /Profile:Vulkan" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
-    <Exec Command="dotnet tool run ShadowDuskCLI &quot;Content/apos-shapes.fx&quot; &quot;$(AposShaderDir)apos-shapes.dx12.mgfx&quot; /Profile:DirectX_12" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
-    <!-- See Tools/ShaderPack for why the two packages compress differently. -->
-    <Exec Command="dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- brotli &quot;$(AposShaderDir)apos-shapes.ogl.mgfx&quot; &quot;$(AposShaderDir)apos-shapes.dx11.mgfx&quot; &quot;$(AposShaderDir)apos-shapes.vk.mgfx&quot; &quot;$(AposShaderDir)apos-shapes.dx12.mgfx&quot;" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <!-- ShaderPack builds every version of the shader for a backend and packs them; see there. -->
+    <PropertyGroup>
+      <_AposShaderPack>dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- build Content/apos-shapes.fx</_AposShaderPack>
+    </PropertyGroup>
+    <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.ogl.pack&quot; gl brotli VS_SHADERMODEL PS_SHADERMODEL /Profile:OpenGL" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.dx11.pack&quot; bytecode brotli VS_SHADERMODEL PS_SHADERMODEL /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.vk.pack&quot; bytecode brotli VS_SHADERMODEL PS_SHADERMODEL /Profile:Vulkan" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.dx12.pack&quot; bytecode brotli VS_SHADERMODEL PS_SHADERMODEL /Profile:DirectX_12" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
   </Target>
 
   <!-- The packed copy of the readme needs absolute image URLs: nuget.org only renders

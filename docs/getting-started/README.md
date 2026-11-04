@@ -51,7 +51,7 @@ The constructor warms up the shader, which gets the driver to compile it as earl
 _sb = new ShapeBatch(GraphicsDevice, warmup: false);
 ```
 
-The shader comes in a smaller version for each mix of dashes, gradients, and text, and each one compiles the first time something draws with it. Flat colors need the smallest one, which is what the constructor warms up. If your game draws text with gradients, you can warm up that version too:
+The shader comes in smaller versions, each with some of the features in `ShapeFeatures`: dashes, gradients, text, ellipses and paths, clips, and ramps. Each one compiles the first time something draws with it. The smallest one, which is what the constructor warms up, draws every shape but ellipses and paths in flat colors. If your game draws text with gradients, you can warm up that version too:
 
 ```csharp
 _sb.Warmup(ShapeFeatures.Text | ShapeFeatures.Gradients);

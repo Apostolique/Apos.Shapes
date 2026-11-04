@@ -1344,7 +1344,11 @@ float2 SolveHorizPoly(float4 p12, float2 p3) {
 // to compile. A variant without one holds that feature's inputs where they sit when nothing
 // uses it, and the compiler drops whatever they would have reached. See the techniques at the
 // end of the file.
-float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBorderGradient, bool useText) {
+// The switches are what a version of the shader carries: dashes, fill gradients, border
+// gradients that differ from the fill, text, ellipses and paths, clips, and the ramp table's
+// rows (palettes, ramps and color ramps). ShapeBatch only hands a version quads it covers, so
+// each switch that is off is code the driver never compiles.
+float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBorderGradient, bool useText, bool useShapes, bool useClip, bool useRows) {
     float lineSize = p.Meta1.x;
     // A negative width asks for the fade to straddle the true edge instead of sitting outside
     // it, which is what makes a shape cover exactly the pixels its size claims. It rides in the
@@ -1386,7 +1390,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // Each clip's distance in its own antialiasing widths; the pixel is as far out as the
     // furthest clip puts it.
     float clipAlpha = 1.0;
-    if (clip_count > 0.5) {
+    if (useClip && clip_count > 0.5) {
         float clipN = ClipDistance(p.Pos, clip_frame[0], clip_size[0], jx, jy, footprint, aaBias);
         if (clip_count > 1.5) clipN = max(clipN, ClipDistance(p.Pos, clip_frame[1], clip_size[1], jx, jy, footprint, aaBias));
         if (clip_count > 2.5) clipN = max(clipN, ClipDistance(p.Pos, clip_frame[2], clip_size[2], jx, jy, footprint, aaBias));
@@ -1574,7 +1578,8 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         }
     } else if (shape < 5.5) {
         d = TriangleSDF(q, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);
-    } else if (shape < 6.5) {
+    } else if (useShapes && shape < 6.5) {
+        // Ellipses and paths cost the most of any shapes to compile, so they are a switch.
         float2 ab = float2(sdfSize, p.Meta1.w);
         float2 eq, er, eNear;
         float eScale;
@@ -1662,7 +1667,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         }
     } else if (shape > 11.5) {
         d = ChamferBoxSDF(q, float2(sdfSize, p.Meta1.w), p.Meta2);
-    } else {
+    } else if (useShapes) {
         float4 sd = p.Meta2;
         float pathLen = p.Meta1.w;
         if (dashType >= 0.5) {
@@ -1903,16 +1908,16 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // The packed floats' signs are flags (see the vertex shader): y marks a ramp riding the
     // gradient, z and w carry a ramped stop pair's top row bits. The payloads come back
     // positive before anything unpacks them; x keeps its sign, PaletteColor reads it itself.
-    bool fillRamp = useFillGradient && p.Fill.y < -0.5;
+    bool fillRamp = useFillGradient && useRows && p.Fill.y < -0.5;
     bool fillZN = p.Fill.z < -0.5;
     bool fillWN = p.Fill.w < -0.5;
-    bool borderRamp = useBorderGradient && p.Border.y < -0.5;
+    bool borderRamp = useBorderGradient && useRows && p.Border.y < -0.5;
     bool borderZN = p.Border.z < -0.5;
     bool borderWN = p.Border.w < -0.5;
     // The third lane's sign without the ramp flag beside it marks a color ramp; a ramped
     // stop pair only ever sets it with the ramp flag, so the pair can't collide.
-    bool fillLut = useFillGradient && fillZN && !fillRamp;
-    bool borderLut = useBorderGradient && borderZN && !borderRamp;
+    bool fillLut = useFillGradient && useRows && fillZN && !fillRamp;
+    bool borderLut = useBorderGradient && useRows && borderZN && !borderRamp;
     float4 fillPk = float4(p.Fill.x,
                            fillRamp ? -p.Fill.y - 1.0 : p.Fill.y,
                            fillZN ? -p.Fill.z - 1.0 : p.Fill.z,
@@ -1958,7 +1963,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // A palette's unpacked stops are payload bits, not colors, so it never reads as a
     // transparent fill here, a ramped fill's alpha lanes carry row bits over the alpha, and
     // a color ramp's lanes are all payload, so those skip the shortcut too.
-    bool fillPal = useFillGradient && p.Fill.x < -0.5;
+    bool fillPal = useFillGradient && useRows && p.Fill.x < -0.5;
     bool borderOnly = !fillPal && !fillRamp && !fillLut && fillA.a == 0.0 && fillB.a == 0.0 && !sameGradient;
     if (borderOnly && borderMix <= 0.0) {
         // Transparent fill: everything inside the border band contributes nothing.
@@ -2004,7 +2009,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         br = fr;
     }
     if (!sameGradient && borderMix > 0.0) {
-        bool borderPal = useBorderGradient && p.Border.x < -0.5;
+        bool borderPal = useBorderGradient && useRows && p.Border.x < -0.5;
         float tAa, wrapF;
         float t = Gradient(useBorderGradient ? borderStyles : float2(0.0, 0.0), p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw, borderPal, borderRamp || borderLut, tAa, wrapF);
         float4 c;
@@ -2043,124 +2048,17 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     return result;
 }
 
-// One technique per combination of dashes (bit 0), fill gradients beyond a flat color (bit 1),
-// border gradients that differ from the fill's (bit 2) and text (bit 3), at the index those bits
-// make, which is how ShapeBatch picks one. A technique's shaders compile the first time
-// something draws with it, so a game only waits on the ones it uses.
-float4 ShapePixel0(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, false, false); }
-float4 ShapePixel1(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, false, false); }
-float4 ShapePixel2(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, false, false); }
-float4 ShapePixel3(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, false, false); }
-float4 ShapePixel4(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, true, false); }
-float4 ShapePixel5(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, true, false); }
-float4 ShapePixel6(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true, false); }
-float4 ShapePixel7(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, false); }
-float4 ShapePixel8(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, false, true); }
-float4 ShapePixel9(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, false, true); }
-float4 ShapePixel10(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, false, true); }
-float4 ShapePixel11(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, false, true); }
-float4 ShapePixel12(PixelInput p) : SV_TARGET { return ShapePixel(p, false, false, true, true); }
-float4 ShapePixel13(PixelInput p) : SV_TARGET { return ShapePixel(p, true, false, true, true); }
-float4 ShapePixel14(PixelInput p) : SV_TARGET { return ShapePixel(p, false, true, true, true); }
-float4 ShapePixel15(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, true); }
+// Each version of the shader is ShapePixel with its features switched on or off, in a technique
+// of its own named after them; see Tools/ShaderPack, which builds every version a release
+// ships. A version's shaders compile the first time something draws with it, so a game only
+// waits on the ones it uses. Compiled on its own, this file is the version with everything.
+float4 ShapePixelAll(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, true, true, true, true); }
 
-// The KNI GL build compiles each technique on its own, in a file that includes this one and
-// defines ONE_TECHNIQUE, since KNI compiles every shader in an effect as soon as it loads.
 #ifndef ONE_TECHNIQUE
-technique Shapes0 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel0();
-    }
-}
-technique Shapes1 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel1();
-    }
-}
-technique Shapes2 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel2();
-    }
-}
-technique Shapes3 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel3();
-    }
-}
-technique Shapes4 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel4();
-    }
-}
-technique Shapes5 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel5();
-    }
-}
-technique Shapes6 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel6();
-    }
-}
-technique Shapes7 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel7();
-    }
-}
-technique Shapes8 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel8();
-    }
-}
-technique Shapes9 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel9();
-    }
-}
-technique Shapes10 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel10();
-    }
-}
-technique Shapes11 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel11();
-    }
-}
-technique Shapes12 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel12();
-    }
-}
-technique Shapes13 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel13();
-    }
-}
-technique Shapes14 {
-    pass {
-        VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel14();
-    }
-}
 technique Shapes15 {
     pass {
         VertexShader = compile VS_SHADERMODEL SpriteVertexShader();
-        PixelShader = compile PS_SHADERMODEL ShapePixel15();
+        PixelShader = compile PS_SHADERMODEL ShapePixelAll();
     }
 }
 #endif
