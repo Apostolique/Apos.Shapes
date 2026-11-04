@@ -1849,13 +1849,15 @@ namespace Apos.Shapes {
                         // Offsetting outward the hole corners must stay on the rounded band, offsetting inward the erosion is an exact scale.
                         innerCorners[i] = holeOffset <= 0f ? corners[i] * scaleIn : corners[i] + Vector2.Normalize(corners[i]) * holeOffset;
                     }
-                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, 1f, aaSize, rounded, 0f, 0f, 0f, 0f);
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Triangle, fill, border, thickness, corners[0].X, corners[0].Y, aaSize, rounded, corners[1].X, corners[1].Y, corners[2].X, corners[2].Y);
                     if (interior) EmitInterior(center, rotation, innerCorners, fill, aaSize);
                     return;
                 }
             }
 
-            VertexShape v = new(topLeft, new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, aaSize: Aa(aaSize), rounded: rounded, colorSpace: ColorSpace, ramps: _ramps);
+            // It draws as a plain triangle, through its corners in its own frame.
+            float tri = halfWidth / MathF.Sqrt(3f);
+            VertexShape v = new(topLeft, new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.Triangle, fill, border, thickness, -halfWidth, -tri, aaSize: Aa(aaSize), rounded: rounded, a: halfWidth, b: -tri, c: 0f, d: 2f * tri, colorSpace: ColorSpace, ramps: _ramps);
             _vertices[_vertexCount + 0] = v;
             v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(halfWidth1, -incircle1));
             v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, new Vector2(halfWidth1, circumcircle1));
@@ -1885,6 +1887,228 @@ namespace Apos.Shapes {
         /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
         public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
+        }
+
+        /// <summary>
+        /// Draws a regular star with both a fill and a border. With no rotation, a point faces up.
+        /// </summary>
+        /// <param name="center">Center of the star.</param>
+        /// <param name="points">How many points the star has, at least 2. Two points make a rhombus.</param>
+        /// <param name="radius">Distance from the center to the points, in world units.</param>
+        /// <param name="innerRadius">
+        /// Distance from the center to the dents between the points, in world units, from 0 up to
+        /// <paramref name="radius"/>. At <paramref name="radius"/> times the cosine of pi over
+        /// <paramref name="points"/>, the dents sit on the lines between the points, which is
+        /// <see cref="DrawPolygon"/>'s shape.
+        /// </param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the corners that point outward by this many world units. Corners that point inward stay sharp.</param>
+        /// <param name="rotation">Angle in radians, around the star's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        public void DrawStar(Vector2 center, int points, float radius, float innerRadius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            if (points < 2) throw new ArgumentOutOfRangeException(nameof(points), "A star needs at least 2 points.");
+            DrawStarShape(center, points, radius, Math.Clamp(innerRadius, 0f, radius), false, fill, border, thickness, rounded, rotation, aaSize, default);
+        }
+        /// <summary>Fills a regular star, with no border. See <see cref="DrawStar"/>.</summary>
+        /// <param name="center">Center of the star.</param>
+        /// <param name="points">How many points the star has, at least 2.</param>
+        /// <param name="radius">Distance from the center to the points, in world units.</param>
+        /// <param name="innerRadius">Distance from the center to the dents between the points, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rounded">Rounds the corners that point outward by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the star's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        public void FillStar(Vector2 center, int points, float radius, float innerRadius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawStar(center, points, radius, innerRadius, g, g, 0f, rounded, rotation, aaSize);
+        }
+        /// <summary>Outlines a regular star, with nothing inside it. See <see cref="DrawStar"/>.</summary>
+        /// <param name="center">Center of the star.</param>
+        /// <param name="points">How many points the star has, at least 2.</param>
+        /// <param name="radius">Distance from the center to the points, in world units.</param>
+        /// <param name="innerRadius">Distance from the center to the dents between the points, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the corners that point outward by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the star's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        public void BorderStar(Vector2 center, int points, float radius, float innerRadius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawStar(center, points, radius, innerRadius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
+        }
+
+        /// <summary>
+        /// Draws a regular polygon with both a fill and a border. With no rotation, a corner faces up.
+        /// </summary>
+        /// <param name="center">Center of the polygon.</param>
+        /// <param name="sides">How many sides the polygon has, at least 3.</param>
+        /// <param name="radius">Distance from the center to the corners, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the polygon's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        /// <param name="dash">Cuts the border into dashes around the perimeter. The fill is untouched.</param>
+        public void DrawPolygon(Vector2 center, int sides, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            if (sides < 3) throw new ArgumentOutOfRangeException(nameof(sides), "A polygon needs at least 3 sides.");
+            DrawStarShape(center, sides, radius, radius * MathF.Cos(MathF.PI / sides), true, fill, border, thickness, rounded, rotation, aaSize, dash);
+        }
+        /// <summary>Fills a regular polygon, with no border. See <see cref="DrawPolygon"/>.</summary>
+        /// <param name="center">Center of the polygon.</param>
+        /// <param name="sides">How many sides the polygon has, at least 3.</param>
+        /// <param name="radius">Distance from the center to the corners, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="rounded">Rounds the corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the polygon's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        public void FillPolygon(Vector2 center, int sides, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawPolygon(center, sides, radius, g, g, 0f, rounded, rotation, aaSize);
+        }
+        /// <summary>Outlines a regular polygon, with nothing inside it. See <see cref="DrawPolygon"/>.</summary>
+        /// <param name="center">Center of the polygon.</param>
+        /// <param name="sides">How many sides the polygon has, at least 3.</param>
+        /// <param name="radius">Distance from the center to the corners, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="rounded">Rounds the corners by this many world units.</param>
+        /// <param name="rotation">Angle in radians, around the polygon's center.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        /// <param name="dash">Cuts the outline into dashes around the perimeter.</param>
+        public void BorderPolygon(Vector2 center, int sides, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashStyle dash = default) {
+            DrawPolygon(center, sides, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
+        }
+
+        // A star and a polygon are one distance field: a polygon is the star whose dents sit on
+        // the lines between its points. Every edge line stands the same apothem from the center,
+        // so sliding them all in by the rounding is a scale about the center, and the field's
+        // rounding dilates it back out.
+        private void DrawStarShape(Vector2 center, int points, float radius, float inner, bool polygon, Gradient fill, Gradient border, float thickness, float rounded, float rotation, float aaSize, DashStyle dash) {
+            PrepareQuad(fill, border);
+
+            float scale = StarScale(points, radius, inner, polygon, ref rounded, out float apothem);
+            float shrunk = apothem - rounded;
+
+            UpdatePixelSize(center, radius);
+            float aaOffset = AaOffset(aaSize);
+
+            int count = polygon ? points : 2 * points;
+            Span<Vector2> corners = count <= 64 ? stackalloc Vector2[count] : new Vector2[count];
+            StarCorners(radius, inner, polygon, corners);
+
+            Vector2 min = new(float.MaxValue);
+            Vector2 max = new(float.MinValue);
+            foreach (Vector2 c in corners) {
+                min = Vector2.Min(min, c);
+                max = Vector2.Max(max, c);
+            }
+            min -= new Vector2(aaOffset);
+            max += new Vector2(aaOffset);
+
+            var topLeft = center + min;
+            var topRight = center + new Vector2(max.X, min.Y);
+            var bottomRight = center + max;
+            var bottomLeft = center + new Vector2(min.X, max.Y);
+
+            if (rotation != 0f) {
+                RotateQuad(ref topLeft, ref topRight, ref bottomRight, ref bottomLeft, center, rotation);
+            }
+
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
+
+            if (polygon && dash.IsEnabled && thickness > 0f) {
+                Span<Vector2> outline = count <= 64 ? stackalloc Vector2[count] : new Vector2[count];
+                Span<Vector2> splits = count <= 64 ? stackalloc Vector2[count] : new Vector2[count];
+                Span<float> radii = count <= 64 ? stackalloc float[count] : new float[count];
+                RegularOutline(apothem, MathF.PI / points - MathF.PI * 0.5f, outline, splits);
+                radii.Fill(rounded);
+                if (EmitDashedOutline(center, rotation, outline, radii, splits, Vector2.Zero, fill, border, thickness, aaOffset, aaSize, dash)) return;
+            }
+
+            // The field's own constants: the half sector's cosine and sine, and which way the edge
+            // runs from a dent to its point.
+            (float sinA, float cosA) = SinCos(MathF.PI / points);
+            Vector2 edge = new(radius * cosA - inner, radius * sinA);
+            edge = polygon || edge.LengthSquared() == 0f ? Vector2.UnitY : Vector2.Normalize(edge);
+            float sector = MathF.Tau / points;
+            float r = radius * scale;
+
+            if (shrunk > 0f && Hollows(fill, thickness, out bool interior)) {
+                float holeOffset = rounded - thickness - aaOffset - _pixelSize;
+                float holeApothem = shrunk + MathF.Min(holeOffset, 0f);
+                if (holeApothem > _hollowMinHolePixels * _pixelSize) {
+                    Span<Vector2> outerCorners = count <= 64 ? stackalloc Vector2[count] : new Vector2[count];
+                    Span<Vector2> innerCorners = count <= 64 ? stackalloc Vector2[count] : new Vector2[count];
+                    // Offset in or out, the shrunk star's edges slide along their normals, which
+                    // is a scale again.
+                    float scaleOut = scale * (shrunk + rounded + aaOffset + _pixelSize) / shrunk;
+                    float scaleIn = scale * holeApothem / shrunk;
+                    for (int i = 0; i < count; i++) {
+                        outerCorners[i] = corners[i] * scaleOut;
+                        innerCorners[i] = corners[i] * scaleIn;
+                    }
+                    EmitHollowFrame(center, rotation, outerCorners, innerCorners, VertexShape.Shape.Star, fill, border, thickness, r, sector, aaSize, rounded, cosA, sinA, edge.X, edge.Y);
+                    if (interior) {
+                        if (polygon) {
+                            EmitInterior(center, rotation, innerCorners, fill, aaSize);
+                        } else {
+                            // A star's hole isn't convex, but the kite from the center through
+                            // each point and the dents either side of it is.
+                            Span<Vector2> kite = stackalloc Vector2[4];
+                            for (int k = 0; k < count; k += 2) {
+                                kite[0] = Vector2.Zero;
+                                kite[1] = innerCorners[k == 0 ? count - 1 : k - 1];
+                                kite[2] = innerCorners[k];
+                                kite[3] = innerCorners[k + 1];
+                                EmitInterior(center, rotation, kite, fill, aaSize);
+                            }
+                        }
+                    }
+                    return;
+                }
+            }
+
+            VertexShape v = new(topLeft, min, VertexShape.Shape.Star, fill, border, thickness, r, sector, aaSize: Aa(aaSize), rounded: rounded, a: cosA, b: sinA, c: edge.X, d: edge.Y, colorSpace: ColorSpace, ramps: _ramps);
+            _vertices[_vertexCount + 0] = v;
+            v.CopyTo(ref _vertices[_vertexCount + 1], topRight, new Vector2(max.X, min.Y));
+            v.CopyTo(ref _vertices[_vertexCount + 2], bottomRight, max);
+            v.CopyTo(ref _vertices[_vertexCount + 3], bottomLeft, new Vector2(min.X, max.Y));
+
+            _vertexCount += 4;
+            _indexCount += 6;
+        }
+
+        // What a regular star scales by to slide its edges in by the rounding, which can't pass
+        // the apothem, how far the edge lines stand from the center. A star with no apothem is
+        // all spokes, which any rounding at all shrinks to a point, the same as a sliver of one.
+        internal static float StarScale(int points, float radius, float inner, bool polygon, ref float rounded, out float apothem) {
+            (float sinA, float cosA) = SinCos(MathF.PI / points);
+            if (polygon) {
+                apothem = radius * cosA;
+            } else {
+                float edge = MathF.Sqrt(MathF.Max(radius * radius + inner * inner - 2f * radius * inner * cosA, 0f));
+                apothem = edge > 0f ? radius * inner * sinA / edge : 0f;
+            }
+            if (!(apothem > 0f)) {
+                float scale = rounded > 0f ? 0f : 1f;
+                apothem = 0f;
+                rounded = 0f;
+                return scale;
+            }
+            rounded = Math.Clamp(rounded, 0f, apothem);
+            return (apothem - rounded) / apothem;
+        }
+
+        // A regular star's corners, clockwise on screen from the point straight up: points and
+        // dents in turn, or only the points for a polygon.
+        internal static void StarCorners(float radius, float inner, bool polygon, Span<Vector2> corners) {
+            int count = corners.Length;
+            float step = MathF.Tau / count;
+            for (int k = 0; k < count; k++) {
+                (float sin, float cos) = SinCos(k * step);
+                float reach = polygon || (k & 1) == 0 ? radius : inner;
+                corners[k] = new Vector2(sin * reach, -cos * reach);
+            }
         }
 
         /// <summary>Draws a triangle with both a fill and a border. The points can be given in any order.</summary>
@@ -2707,6 +2931,50 @@ namespace Apos.Shapes {
         /// <param name="dash">Cuts the stroke into dashes along its centerline, each one outlined on its own.</param>
         public void BorderRing(Vector2 center, float angle1, float angle2, float radius1, float radius2, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashStyle dash = default) {
             DrawRing(center, angle1, angle2, radius1, radius2, Color.Transparent, g, thickness, aaSize, dash);
+        }
+
+        /// <summary>
+        /// Draws a pie with both a fill and a border: the slice of a circle between two angles,
+        /// reaching in to the center. A full turn is the whole circle.
+        /// </summary>
+        /// <param name="center">Center of the circle.</param>
+        /// <param name="angle1">Where the slice starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the slice ends, in radians.</param>
+        /// <param name="radius">Radius of the circle, in world units.</param>
+        /// <param name="fill">Color or gradient inside the border.</param>
+        /// <param name="border">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels. Lower is sharper.</param>
+        public void DrawPie(Vector2 center, float angle1, float angle2, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
+            // A pie is a ring whose band reaches from the center to the rim. A full turn has no
+            // sides, so it would only keep the ring's inner edge, a point at the center, which
+            // a border would show as a dot.
+            if (MathF.Abs(Mod((angle2 - angle1) * 0.5f + MathF.PI, MathF.PI * 2f) - MathF.PI) >= MathF.PI) {
+                DrawCircle(center, radius, fill, border, thickness, angle1, aaSize);
+                return;
+            }
+            DrawRing(center, angle1, angle2, radius * 0.5f, radius * 0.5f, fill, border, thickness, aaSize);
+        }
+        /// <summary>Fills a pie, with no border. See <see cref="DrawPie"/>.</summary>
+        /// <param name="center">Center of the circle.</param>
+        /// <param name="angle1">Where the slice starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the slice ends, in radians.</param>
+        /// <param name="radius">Radius of the circle, in world units.</param>
+        /// <param name="g">Color or gradient to fill with.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        public void FillPie(Vector2 center, float angle1, float angle2, float radius, Gradient g, float aaSize = 1.5f) {
+            DrawPie(center, angle1, angle2, radius, g, g, 0f, aaSize);
+        }
+        /// <summary>Outlines a pie, with nothing inside it. See <see cref="DrawPie"/>.</summary>
+        /// <param name="center">Center of the circle.</param>
+        /// <param name="angle1">Where the slice starts, in radians. 0 points right and angles increase clockwise.</param>
+        /// <param name="angle2">Where the slice ends, in radians.</param>
+        /// <param name="radius">Radius of the circle, in world units.</param>
+        /// <param name="g">Color or gradient of the border.</param>
+        /// <param name="thickness">Size of the border in world units. It grows inward from the edge.</param>
+        /// <param name="aaSize">Size of the anti-aliasing edge in pixels.</param>
+        public void BorderPie(Vector2 center, float angle1, float angle2, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
+            DrawPie(center, angle1, angle2, radius, Color.Transparent, g, thickness, aaSize);
         }
 
         /// <summary>

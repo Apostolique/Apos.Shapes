@@ -13,7 +13,7 @@ Special thanks to [Inigo Quilez](https://iquilezles.org/) for doing a lot of the
 
 ## Features
 
-* 11 shapes: Circle, Ellipse, Line, Path, Rectangle, Chamfer, Hexagon, Equilateral Triangle, Triangle, Arc, Ring
+* 14 shapes: Circle, Ellipse, Line, Path, Rectangle, Chamfer, Hexagon, Equilateral Triangle, Triangle, Polygon, Star, Arc, Ring, Pie
 * `Fill`, `Border`, and `Draw` variants for every shape
 * Paths draw a polyline as one continuous shape, with round, miter, or bevel joins and round, butt, or square caps. Open or closed
 * Rounded or chamfered corners, one per corner, plus rotation and adjustable anti-aliasing

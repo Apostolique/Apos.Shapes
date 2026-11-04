@@ -231,6 +231,30 @@ _sb.FillTriangle(new Vector2(100, 100), new Vector2(200, 100), new Vector2(150, 
 
 ![A triangle](triangle.png)
 
+## Polygon
+
+A regular polygon is defined by a center, a number of sides, and a radius. The radius is the distance from the center to the corners. With no rotation, a corner points up.
+
+```csharp
+_sb.FillPolygon(new Vector2(120, 120), 5, 80, Color.White);
+```
+
+![A pentagon](polygon.png)
+
+## Star
+
+A star is defined by a center, a number of points, and two radii. The radius is the distance from the center to the points, and the inner radius is the distance from the center to the dents between them. With no rotation, a point faces up.
+
+```csharp
+_sb.FillStar(new Vector2(120, 125), 5, 95, 40, Color.White);
+```
+
+![A five pointed star](star.png)
+
+The inner radius goes from 0, where the star is only spokes, up to the radius. At the radius times `MathF.Cos(MathF.PI / points)` the dents sit on the lines between the points, and the star is the polygon with that many sides. Two points make a rhombus.
+
+Rounding only rounds the corners that point outward, so the dents stay sharp. It can't go past the distance from the center to the lines the edges run along. A spiky star doesn't have much of that, so a large rounding shrinks it down to a circle. A star's border can't be dashed yet, while a polygon's can.
+
 ## Arc
 
 An arc is a stroke that follows a circle. It is defined by a center, two angles, the radius of the circle, and the half thickness of the stroke. The angles are in radians. An angle of 0 points to the right and angles increase clockwise. The end caps are rounded.
@@ -250,6 +274,18 @@ _sb.FillRing(new Vector2(120, 120), 0f, MathF.PI, 75, 10, Color.White);
 ```
 
 ![A ring with flat end caps](ring.png)
+
+## Pie
+
+A pie is the slice of a circle between two angles, reaching in to the center. It is defined by a center, two angles, and the radius of the circle. The angles work the same as an arc's. A full turn is the whole circle.
+
+```csharp
+_sb.FillPie(new Vector2(120, 120), -MathF.PI / 2f, MathF.PI, 85, Color.White);
+```
+
+![A pie with a quarter missing](pie.png)
+
+A pie's border can't be dashed.
 
 ## Measuring a shape
 

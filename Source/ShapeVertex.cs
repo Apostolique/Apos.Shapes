@@ -319,8 +319,11 @@ namespace Apos.Shapes {
             Line = 2,
             /// <summary>A hexagon with flat top and bottom edges.</summary>
             Hexagon = 3,
-            /// <summary>An equilateral triangle pointing down.</summary>
-            EquilateralTriangle = 4,
+            /// <summary>
+            /// A regular star or polygon, with a point on the local -y axis. A polygon is the star
+            /// whose dents sit on the lines between its points.
+            /// </summary>
+            Star = 4,
             /// <summary>A triangle through three arbitrary points.</summary>
             Triangle = 5,
             /// <summary>An ellipse.</summary>

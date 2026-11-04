@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `DrawSvg` takes a `currentColor`, which paints the elements the file paints with `currentColor`.
 - SVG `clip-path` with a `clipPath` that is one `rect`, `circle`, or round `ellipse`.
 - `ShapeFeatures.EllipsesAndPaths`, `ShapeFeatures.Clips`, `ShapeFeatures.Ramps` and `ShapeFeatures.DenseText`, for `Warmup`.
+- `DrawStar`, `FillStar` and `BorderStar` draw regular stars, and `Measure.Star` measures them.
+- `DrawPolygon`, `FillPolygon` and `BorderPolygon` draw regular polygons, and `Measure.Polygon` measures them.
+- `DrawPie`, `FillPie` and `BorderPie` draw a slice of a circle, and `Measure.Pie` measures it.
 
 ### Changed
 
@@ -20,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The shader compiles faster the first time a game runs.
 - `Warmup(ShapeFeatures.None)` leaves out ellipses, paths, clips, and palettes and ramps on gradients. Pass their features to warm those up too.
 - Creating the first `ShapeBatch` is faster on DirectX and Vulkan.
+- `VertexShape.Shape.EquilateralTriangle` is now `VertexShape.Shape.Star`.
 
 ### Fixed
 

@@ -137,7 +137,7 @@ _sb.FillCircle(new Vector2(200, 200), 100, new Gradient(
 
 The local origin follows the shape:
 
-* Circles, ellipses, hexagons, equilateral triangles, arcs and rings use their center.
+* Circles, ellipses, hexagons, equilateral triangles, polygons, stars, arcs, rings and pies use their center.
 * Rectangles use their top left corner.
 * Lines and triangles use their first point, with the x axis pointing towards the second point.
 

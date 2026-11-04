@@ -165,13 +165,21 @@ float HexagonSDF(float2 p, float r) {
     p -= float2(clamp(p.x, -k.z * r, k.z * r), r);
     return length(p) * sign(p.y);
 }
-float EquilateralTriangleSDF(float2 p, float ha) {
-    const float k = sqrt(3.0);
-    p.x = abs(p.x) - ha;
-    p.y = p.y + ha / k;
-    if (p.x + k * p.y > 0.0) p = float2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
-    p.x -= clamp(p.x, -2.0 * ha, 0.0);
-    return -length(p) * sign(p.y);
+// Regular star with its points on a circle of radius r, the first one on -y, and sector the
+// angle between two points. ae.xy is the cosine and sine of half that angle, ae.zw the direction
+// from a dent to the point beside it, in a frame turned to put the dent on +x. A dent on the line
+// between two points makes a regular polygon, where ae.zw is (0, 1). Folded onto one half sector,
+// the star is the triangle between its center, the point and the dent, so the side of that one
+// edge says inside or out.
+float StarSDF(float2 p, float r, float sector, float4 ae) {
+    float t = atan2(p.x, -p.y);
+    float b = t - sector * floor(t / sector) - 0.5 * sector;
+    float2 cs;
+    sincos(b, cs.y, cs.x);
+    p = length(p) * float2(cs.x, abs(cs.y)) - r * ae.xy;
+    float side = p.x * ae.w - p.y * ae.z;
+    p += ae.zw * clamp(-dot(p, ae.zw), 0.0, r * ae.y / ae.w);
+    return side < 0.0 ? -length(p) : length(p);
 }
 float TriangleSDF(float2 p, float2 p0, float2 p1, float2 p2) {
     float2 e0 = p1 - p0;
@@ -1645,7 +1653,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         if (shape < 3.5) {
             d = HexagonSDF(q, sdfSize);
         } else {
-            d = EquilateralTriangleSDF(q, sdfSize);
+            d = StarSDF(q, sdfSize, p.Meta1.w, p.Meta2);
         }
     } else if (shape < 5.5) {
         d = TriangleSDF(q, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);

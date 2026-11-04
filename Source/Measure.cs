@@ -81,6 +81,27 @@ namespace Apos.Shapes {
             return HullOfDiscs(corners, center, rotation, rounded);
         }
 
+        /// <summary>Bounds of DrawStar.</summary>
+        public static RectangleF Star(Vector2 center, int points, float radius, float innerRadius, float rounded = 0f, float rotation = 0f) {
+            if (points < 2) throw new ArgumentOutOfRangeException(nameof(points), "A star needs at least 2 points.");
+            return StarBounds(center, points, radius, Math.Clamp(innerRadius, 0f, radius), false, rounded, rotation);
+        }
+
+        /// <summary>Bounds of DrawPolygon.</summary>
+        public static RectangleF Polygon(Vector2 center, int sides, float radius, float rounded = 0f, float rotation = 0f) {
+            if (sides < 3) throw new ArgumentOutOfRangeException(nameof(sides), "A polygon needs at least 3 sides.");
+            return StarBounds(center, sides, radius, radius * MathF.Cos(MathF.PI / sides), true, rounded, rotation);
+        }
+
+        // The drawing's own shrink, with each corner of the shrunk star dilated back by the rounding.
+        private static RectangleF StarBounds(Vector2 center, int points, float radius, float inner, bool polygon, float rounded, float rotation) {
+            float scale = ShapeBatch.StarScale(points, radius, inner, polygon, ref rounded, out _);
+            int count = polygon ? points : 2 * points;
+            Span<Vector2> corners = count <= 64 ? stackalloc Vector2[count] : new Vector2[count];
+            ShapeBatch.StarCorners(radius * scale, inner * scale, polygon, corners);
+            return HullOfDiscs(corners, center, rotation, rounded);
+        }
+
         /// <summary>Bounds of DrawTriangle.</summary>
         public static RectangleF Triangle(Vector2 a, Vector2 b, Vector2 c, float rounded = 0f) {
             rounded = MathF.Max(rounded, 0f);
@@ -156,6 +177,11 @@ namespace Apos.Shapes {
             }
             AddSweptAxes(ref bb, center, mid, halfSpan, outer);
             return bb;
+        }
+
+        /// <summary>Bounds of DrawPie, which is a ring whose band reaches from the center to the rim.</summary>
+        public static RectangleF Pie(Vector2 center, float angle1, float angle2, float radius) {
+            return Ring(center, angle1, angle2, radius * 0.5f, radius * 0.5f);
         }
 
         /// <summary>

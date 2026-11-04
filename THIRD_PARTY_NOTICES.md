@@ -8,7 +8,7 @@ in their own headers.
 
 Several of the 2D distance functions in `apos-shapes.fx` come from the collection at
 <https://iquilezles.org/articles/distfunctions2d/>: circle, rounded box, segment, hexagon,
-equilateral triangle, triangle and arc, with the ring built on the arc. The cosine palettes
+star, triangle and arc, with the ring built on the arc. The cosine palettes
 behind `Palette` come from <https://iquilezles.org/articles/palettes/>.
 
 Each function carries its own MIT notice with the year it was written. The terms are the same
