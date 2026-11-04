@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.10.0] - 2026-11-04
+
 ### Added
 
 - SVG `use` and `symbol` elements, and nested `svg` elements.
@@ -531,7 +535,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.4...v0.10.0
 [0.9.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.1...v0.9.2
