@@ -4,6 +4,12 @@ on:
   push:
     tags:
     - 'v*'
+  # Publishes a version again from the chosen branch, for when a tag's own run failed.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, like 0.10.0'
+        required: true
 
 env:
   SOURCE1: Source/Apos.Shapes.csproj
@@ -13,6 +19,10 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    # Trusted Publishing: the run's GitHub OIDC token is traded for a one-hour nuget.org key.
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
     - uses: actions/checkout@v4
@@ -20,13 +30,25 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
-    - name: Get version from tag
+    - name: Get version
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
-        TAGVERSION=$(git describe --tags --abbrev=0)
-        echo "TAGVERSION=${TAGVERSION:1}" >> $GITHUB_ENV
+        if [ -n "$INPUT_VERSION" ]; then
+          TAGVERSION="$INPUT_VERSION"
+        else
+          TAGVERSION=$(git describe --tags --abbrev=0)
+          TAGVERSION=${TAGVERSION:1}
+        fi
+        echo "TAGVERSION=$TAGVERSION" >> $GITHUB_ENV
     - name: Pack with dotnet
       run: |
         dotnet pack ${{ env.SOURCE1 }} -c Release --include-source --include-symbols -o ./artifacts -p:Version=${{ env.TAGVERSION }}
         dotnet pack ${{ env.SOURCE2 }} -c Release --include-source --include-symbols -o ./artifacts -p:Version=${{ env.TAGVERSION }}
+    - name: NuGet login
+      uses: NuGet/login@v1
+      id: nuget-login
+      with:
+        user: Apos
     - name: Push with dotnet
-      run: dotnet nuget push ./artifacts/*.nupkg -k ${{ secrets.NUGETAPIKEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push ./artifacts/*.nupkg -k ${{ steps.nuget-login.outputs.NUGET_API_KEY }} -s https://api.nuget.org/v3/index.json --skip-duplicate
