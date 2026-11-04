@@ -453,6 +453,24 @@ float StrokeConeSDF(float2 p, float len, float rA, float rB, float4 data) {
     return d;
 }
 
+// StrokeConeSDF with both ends round and nothing to cut them, which is all a tapered line needs.
+// Written out on its own so the versions without paths leave the end modes out.
+float TaperSDF(float2 p, float len, float rA, float rB) {
+    float b = (rA - rB) / len;
+    float d;
+    if (abs(b) >= 1.0) {
+        d = length(p - (rA >= rB ? float2(0.0, 0.0) : float2(len, 0.0))) - max(rA, rB);
+    } else {
+        float a = sqrt(1.0 - b * b);
+        float ay = abs(p.y);
+        float k = a * p.x - b * ay;
+        if (k < 0.0) d = length(p) - rA;
+        else if (k > a * len) d = length(p - float2(len, 0.0)) - rB;
+        else d = b * p.x + a * ay - rA;
+    }
+    return d;
+}
+
 // A path segment's distance joined with its neighbor's across one joint whose slabs overlap.
 // Each segment draws its own quads, so without this the border of one would run on across the
 // fill of the other. Mirrored across the joint's bisector, the neighbor lands on this segment's
@@ -631,14 +649,17 @@ float4 LerpColorPremul(float4 a, float4 b, float t, float space) {
 }
 float4 ToRgb(float4 c, float space) {
     float4 result = c; // Raw sRGB passes through untouched.
-    if (space < 0.5) {
-        // Oklch. Chroma is remapped from [0, 0.4], hue from [-pi, pi].
-        float ch = c.y * 0.4;
-        float h = c.z * 6.283185307179586 - 3.14159265358979;
-        result = OkLabToRgb(float4(c.x, ch * cos(h), ch * sin(h), c.w));
-    } else if (space < 1.5) {
-        // Oklab. a and b are remapped from [-0.4, 0.4].
-        result = OkLabToRgb(float4(c.x, c.y * 0.8 - 0.4, c.z * 0.8 - 0.4, c.w));
+    if (space < 1.5) {
+        // Oklab's a and b are remapped from [-0.4, 0.4]. Oklch's chroma is remapped from
+        // [0, 0.4] and its hue from [-pi, pi]. Both meet in Oklab so the conversion that follows
+        // is written once.
+        float2 ab = c.yz * 0.8 - 0.4;
+        if (space < 0.5) {
+            float ch = c.y * 0.4;
+            float h = c.z * 6.283185307179586 - 3.14159265358979;
+            ab = ch * float2(cos(h), sin(h));
+        }
+        result = OkLabToRgb(float4(c.x, ab, c.w));
     }
     return result;
 }
@@ -652,19 +673,20 @@ float2 Rotate(float2 a, float2 b, float2 c, float mag) {
     float vx = -c.x + a.x;
     float vy = c.y - a.y;
 
-    if (mag == 0) return c;
-
-    ux /= mag;
-    uy /= mag;
-
-    float rx = ux * vx - uy * vy;
-    float ry = uy * vx + ux * vy;
-
-    return float2(rx, ry);
+    // One return rather than an early one, which the translator would wrap in a loop.
+    float2 r = c;
+    if (mag != 0) {
+        ux /= mag;
+        uy /= mag;
+        r = float2(ux * vx - uy * vy, uy * vx + ux * vy);
+    }
+    return r;
 }
 
+// Folds a negative x back around too. Spelled with floor rather than HLSL's %, which lowers to
+// an fmod whose GLSL spelling has broken macOS before and costs two of them here.
 float Mod(float x, float m) {
-    return (x % m + m) % m;
+    return x - m * floor(x / m);
 }
 
 // Smooths the wrap seam of a periodic gradient by pulling values within half a
@@ -764,6 +786,8 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
         float2 rc = type.x >= 3.5 && type.x < 9.5 ? Rotate(posAB.xy, posAB.zw, c, gl) : c;
 
         float grad;
+        bool shapeWrap = false;
+        float wrapSize = 0.0;
         if (type.x < 1.5) {
             grad = RadialGradient(posAB.xy, c, gl);
             tAa = aaSize / gl;
@@ -780,9 +804,8 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
             grad = ConicalAsymGradient(rc);
             tAa = aaSize / (6.283185307179586 * max(length(posAB.xy - c.xy), 1e-6));
             wrapF = 1.0;
-            if (!pal && !rampd) {
-                grad = SmoothWrapDiscontinuity(grad, aaSize / (6.283185307179586 * length(posAB.xy - c.xy)));
-            }
+            shapeWrap = true;
+            wrapSize = aaSize / (6.283185307179586 * length(posAB.xy - c.xy));
         } else if (type.x < 6.5) {
             grad = SquareGradient(rc, gl);
             tAa = aaSize / gl;
@@ -793,12 +816,15 @@ float Gradient(float2 type, float4 posAB, float2 c, float d, float aaSize, float
             grad = SpiralGradient(rc, gl, type.x < 8.5 ? 1.0 : -1.0);
             tAa = aaSize * SpiralGradientSize(posAB.xy, c, gl);
             wrapF = 1.0;
-            if (!pal && !rampd) {
-                grad = SmoothWrapDiscontinuity(grad, tAa);
-            }
+            shapeWrap = true;
+            wrapSize = tAa;
         } else if (type.x < 10.5) {
             grad = ShapeGradient(posAB.x, posAB.y, d);
             tAa = aaSize / max(abs(posAB.y - posAB.x), 1e-6);
+        }
+        // The two gradients that wrap on their own, smoothed in one place.
+        if (shapeWrap && !pal && !rampd) {
+            grad = SmoothWrapDiscontinuity(grad, wrapSize);
         }
 
         if (type.y < 0.5) {
@@ -839,12 +865,21 @@ float4 PackColors(float4 a, float4 b) {
     return float4(Pack11(a.x, a.y), Pack11(a.z, a.w), Pack11(b.x, b.y), Pack11(b.z, b.w));
 }
 
-float2 Unpack11(float v) {
-    float lo = DecodeDigit(v, 2048.0);
-    return float2(v, lo) / 2047.0;
+// DecodeDigit on four lanes at once, which is a whole side's two colors.
+float4 DecodeDigit4(inout float4 m, float radix) {
+    float4 q = floor(m / radix);
+    float4 r = m - q * radix;
+    float4 fix = step(radix, r) - step(r, -0.5);
+    q += fix;
+    r -= fix * radix;
+    m = q;
+    return r;
 }
-float4 UnpackColor(float2 c) {
-    return float4(Unpack11(c.x), Unpack11(c.y));
+// The two colors packed in v.
+void UnpackColors(float4 v, out float4 a, out float4 b) {
+    float4 lo = DecodeDigit4(v, 2048.0);
+    a = float4(v.x, lo.x, v.y, lo.y) / 2047.0;
+    b = float4(v.z, lo.z, v.w, lo.w) / 2047.0;
 }
 
 // One logical texel of the ramp table is two physical texels. The first is the curve's
@@ -1188,18 +1223,19 @@ float ClipDistance(float2 pos, float4 frame, float4 size, float2 jx, float2 jy, 
 }
 
 // Abramowitz and Stegun 7.1.26. The error peaks at 1.5e-7, orders below an 8 bit alpha step,
-// so the profile is exact for every purpose the coverage is put to here.
-float Erf(float x) {
-    float a = abs(x);
-    float t = 1.0 / (1.0 + 0.3275911 * a);
-    float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * exp(-a * a);
+// so the profile is exact for every purpose the coverage is put to here. Two at once, since a
+// blurred border reads two profiles, and the shader then carries one copy of it.
+float2 Erf(float2 x) {
+    float2 a = abs(x);
+    float2 t = 1.0 / (1.0 + 0.3275911 * a);
+    float2 y = 1.0 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * exp(-a * a);
     return x < 0.0 ? -y : y;
 }
 // Coverage of a half plane at signed distance d under a Gaussian of width sigma. This is the
 // exact blur of a straight edge, so it holds wherever the contour is locally straight; a corner
 // tighter than sigma reads slightly too solid, since a convolution there depends on how much
 // shape is nearby rather than on the distance alone.
-float GaussianCoverage(float d, float sigma) {
+float2 GaussianCoverage(float2 d, float sigma) {
     return 0.5 * (1.0 - Erf(d / (sigma * 1.414213562373095)));
 }
 
@@ -1234,13 +1270,6 @@ float DitherNoise(float2 worldPos) {
 #define MAX_BAND_CURVES 8
 #define DENSE_BAND_CURVES 16
 
-// Positive operands only, which is what keeps it apart from the Mod above: that one folds a
-// negative back around through HLSL's %, and % lowers to an fmod whose GLSL spelling has
-// broken macOS before. A texel index is never negative and this runs once per lane.
-float BandMod(float x, float y) {
-    return x - y * floor(x / y);
-}
-
 #if __KNIFX__
 // WebGL1 through KNI cannot take a float texture at all - the interop wraps every upload in a
 // Uint8Array and WebGL answers a FLOAT texImage2D with INVALID_OPERATION - so both glyph
@@ -1256,7 +1285,7 @@ float4 Byte4(float4 t) {
 // One texel is two integers, 12 bits then 20. The low nibble of g holds the first value's high
 // four bits and the high nibble holds the second value's low four.
 float2 FetchBandTexel(float texelIndex) {
-    float tx = BandMod(texelIndex, band_tex_size.x);
+    float tx = Mod(texelIndex, band_tex_size.x);
     float ty = floor(texelIndex * band_texel.x);
     float4 t = Byte4(SampleBand((float2(tx, ty) + 0.5) * band_texel));
     float hi = floor(t.g * 0.0625);
@@ -1274,7 +1303,7 @@ float4 FetchCurveTexel(float2 curveLoc) {
 }
 #else
 float2 FetchBandTexel(float texelIndex) {
-    float tx = BandMod(texelIndex, band_tex_size.x);
+    float tx = Mod(texelIndex, band_tex_size.x);
     float ty = floor(texelIndex * band_texel.x);
     return SampleBand((float2(tx, ty) + 0.5) * band_texel).rg;
 }
@@ -1294,8 +1323,10 @@ float2 RootEligibility(float y1, float y2, float y3) {
     float n0 = 1.0 - s0;
     float n1 = 1.0 - s1;
     float n2 = 1.0 - s2;
-    float root1 = saturate(s0 * n1 * n2 + n0 * s1 * n2 + s0 * s1 * n2 + s0 * n1 * s2);
-    float root2 = saturate(n0 * s1 * n2 + n0 * n1 * s2 + s0 * n1 * s2 + n0 * s1 * s2);
+    // The eight sign patterns' table, factored: the first root counts for 100, 010, 110 and 101,
+    // the second for 010, 001, 101 and 011.
+    float root1 = n2 * max(s0, s1) + s0 * n1 * s2;
+    float root2 = n0 * s1 + n1 * s2;
     return float2(root1, root2);
 }
 
@@ -1364,13 +1395,21 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // Peel the packed meta apart field by field. Every intermediate stays an exact integer.
     float meta = p.TexCoord.w;
     float shape = DecodeDigit(meta, 16.0);
-    float2 fillStyles;
-    float2 borderStyles;
-    fillStyles.x = DecodeDigit(meta, 16.0);
-    fillStyles.y = DecodeDigit(meta, 4.0);
-    borderStyles.x = DecodeDigit(meta, 16.0);
-    borderStyles.y = DecodeDigit(meta, 4.0);
-    float space = DecodeDigit(meta, 4.0);
+    // Flat colors arrive in sRGB (see the VertexShape ctor), so a version without gradients
+    // leaves out the color space conversions, and it peels the styles and the space off in one
+    // step: every style it draws reads as no gradient, whatever its repeat says.
+    float2 fillStyles = float2(0.0, 0.0);
+    float2 borderStyles = float2(0.0, 0.0);
+    float space = 2.0;
+    if (useFillGradient || useBorderGradient) {
+        fillStyles.x = DecodeDigit(meta, 16.0);
+        fillStyles.y = DecodeDigit(meta, 4.0);
+        borderStyles.x = DecodeDigit(meta, 16.0);
+        borderStyles.y = DecodeDigit(meta, 4.0);
+        space = DecodeDigit(meta, 4.0);
+    } else {
+        DecodeDigit(meta, 16384.0);
+    }
     // 0 solid, 1 basic dashes, 2 rounded dashes. Where the pattern rides depends on the shape.
     float dashType = DecodeDigit(meta, 4.0);
     // Set when Meta1.y carries a world space blur instead of a screen space AA width.
@@ -1379,9 +1418,6 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // The border's style stays as it came: a border on the fill's own gradient reads the fill's
     // result through sameGradient below, which compares the two, and never needs its own.
     if (!useFillGradient) fillStyles.x = 0.0;
-    // Flat colors arrive in sRGB (see the VertexShape ctor), so a version without gradients
-    // leaves out the color space conversions.
-    if (!useFillGradient && !useBorderGradient) space = 2.0;
 
     float2 jx = ddx(p.Pos);
     float2 jy = ddy(p.Pos);
@@ -1401,9 +1437,23 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         clipAlpha = 1.0 - smoothstep(0.0, 1.0, saturate(clipN + aaBias));
     }
 
+    // The packed floats' signs are flags (see the vertex shader): x marks a cosine palette, y a
+    // ramp riding the gradient, z and w carry a ramped stop pair's top row bits. The payloads
+    // come back positive before anything unpacks them; x keeps its sign, PaletteColor reads it
+    // itself. Every path reads the fill, so it unpacks once here.
+    bool fillRamp = useFillGradient && useRows && p.Fill.y < -0.5;
+    bool fillZN = p.Fill.z < -0.5;
+    bool fillWN = p.Fill.w < -0.5;
+    float4 fillPk = float4(p.Fill.x,
+                           fillRamp ? -p.Fill.y - 1.0 : p.Fill.y,
+                           fillZN ? -p.Fill.z - 1.0 : p.Fill.z,
+                           fillWN ? -p.Fill.w - 1.0 : p.Fill.w);
+    float4 fillA, fillB;
+    UnpackColors(fillPk, fillA, fillB);
+
     float2 q0 = p.TexCoord.xy;
     if (shape >= 8.5 && shape < 9.5) {
-        return SampleTexture(p.TexCoord.xy) * UnpackColor(p.Fill.xy) * clipAlpha;
+        return SampleTexture(p.TexCoord.xy) * fillA * clipAlpha;
     }
     // Every technique reads all five textures, in register order, so every one of them keeps
     // the same samplers on the same units: the Vulkan translator drops a sampler nothing reads
@@ -1412,14 +1462,18 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     if (ramp_texel.x < 0.0) {
         return SampleBand(q0) + SampleCurve(q0) + SampleBlueNoise(q0) + SampleRamp(q0);
     }
+    // Every path from here on ends on the same dither, so the shader carries one copy of it.
+    // It reads the blue noise, so it waits until the line above has read the textures in order.
+    float dither = (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
 
     // The inside of a large shape with a flat fill, which is the fill and nothing else. This is
     // what the tail below arrives at there, without the distance it would work out on the way.
+    // A flat color repeats its one stop, so the second one is the fill.
     if (shape > 14.5) {
-        float4 inside = ToRgb(LerpColorPremul(UnpackColor(p.Fill.xy), UnpackColor(p.Fill.zw), 1.0, space), space);
+        float4 inside = ToRgb(fillB, space);
         inside.rgb *= inside.a;
         inside *= clipAlpha;
-        inside.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
+        inside.rgb += dither;
         return inside;
     }
 
@@ -1577,7 +1631,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         if (p.Meta2.z == sdfSize) {
             d = SegmentSDF(q, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
         } else {
-            d = StrokeConeSDF(q, p.Meta1.w, sdfSize, p.Meta2.z, float4(0.0, 0.0, 0.0, 0.0));
+            d = TaperSDF(q, p.Meta1.w, sdfSize, p.Meta2.z);
             rounded = 0.0;
         }
         if (dashType >= 0.5) {
@@ -1895,19 +1949,17 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         // Flat color by construction, so it factors out of the convolution and the whole blur
         // collapses to coverage. That is what makes this exact rather than an approximation of
         // one, and it is why the gradient machinery below is skipped rather than adapted.
-        float coverage = GaussianCoverage(d, sigma);
-        if (lineSize > 0.0) {
-            // The band is the shape minus the same shape offset inward by the thickness, so its
-            // blur is the difference of the two half plane profiles that bound it. Past a
-            // thickness of a few sigma the inner term vanishes and this returns to a fill.
-            coverage -= GaussianCoverage(d + lineSize, sigma);
-        }
-        float4 bc = UnpackColor(p.Fill.xy);
+        // A border is the shape minus the same shape offset inward by the thickness, so its
+        // blur is the difference of the two half plane profiles that bound it. Past a thickness
+        // of a few sigma the inner term vanishes and this returns to a fill.
+        float2 profiles = GaussianCoverage(float2(d, d + lineSize), sigma);
+        float coverage = profiles.x - (lineSize > 0.0 ? profiles.y : 0.0);
+        float4 bc = fillA;
         bc.a *= coverage;
         float4 br = ToRgb(bc, space);
         br.rgb *= br.a;
         br *= clipAlpha;
-        br.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
+        br.rgb += dither;
         return br;
     }
 
@@ -1922,12 +1974,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         discard;
     }
 
-    // The packed floats' signs are flags (see the vertex shader): y marks a ramp riding the
-    // gradient, z and w carry a ramped stop pair's top row bits. The payloads come back
-    // positive before anything unpacks them; x keeps its sign, PaletteColor reads it itself.
-    bool fillRamp = useFillGradient && useRows && p.Fill.y < -0.5;
-    bool fillZN = p.Fill.z < -0.5;
-    bool fillWN = p.Fill.w < -0.5;
+    // The border's lanes carry the same flags as the fill's.
     bool borderRamp = useBorderGradient && useRows && p.Border.y < -0.5;
     bool borderZN = p.Border.z < -0.5;
     bool borderWN = p.Border.w < -0.5;
@@ -1935,16 +1982,10 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // stop pair only ever sets it with the ramp flag, so the pair can't collide.
     bool fillLut = useFillGradient && useRows && fillZN && !fillRamp;
     bool borderLut = useBorderGradient && useRows && borderZN && !borderRamp;
-    float4 fillPk = float4(p.Fill.x,
-                           fillRamp ? -p.Fill.y - 1.0 : p.Fill.y,
-                           fillZN ? -p.Fill.z - 1.0 : p.Fill.z,
-                           fillWN ? -p.Fill.w - 1.0 : p.Fill.w);
     float4 borderPk = float4(p.Border.x,
                              borderRamp ? -p.Border.y - 1.0 : p.Border.y,
                              borderZN ? -p.Border.z - 1.0 : p.Border.z,
                              borderWN ? -p.Border.w - 1.0 : p.Border.w);
-    float4 fillA = UnpackColor(fillPk.xy);
-    float4 fillB = UnpackColor(fillPk.zw);
 
     // The glyph's own coverage is its fade, and it has no border band for the crossfade to
     // reach: the border slots stand down on a glyph quad (see the ctor in ShapeVertex.cs) and
@@ -2018,7 +2059,9 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
                 // the filtered color; only a palette has to blend colors instead.
                 t = RampBox(t, row, tAa, wrapF > 0.5).w;
             }
-            c = LerpColorPremul(fillA, fillB, t, space);
+            // A flat color repeats its one stop, and a version without fill gradients only
+            // draws flat fills.
+            c = useFillGradient ? LerpColorPremul(fillA, fillB, t, space) : fillB;
         }
         fr = ToRgb(c, cSpace);
         fr.rgb *= fr.a;
@@ -2039,13 +2082,13 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             c = LutColor(t, m, introw, tAa, wrapF > 0.5);
             cSpace = max(space, 1.0);
         } else {
-            float4 bA = UnpackColor(borderPk.xy);
-            float4 bB = UnpackColor(borderPk.zw);
+            float4 bA, bB;
+            UnpackColors(borderPk, bA, bB);
             if (borderRamp) {
                 float row = StopRampRow(borderPk, borderZN, borderWN, bA, bB);
                 t = RampBox(t, row, tAa, wrapF > 0.5).w;
             }
-            c = LerpColorPremul(bA, bB, t, space);
+            c = useBorderGradient ? LerpColorPremul(bA, bB, t, space) : bB;
         }
         br = ToRgb(c, cSpace);
         br.rgb *= br.a;
@@ -2061,7 +2104,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
     // offsetting rgb here dithers the post-blend value that actually quantizes to 8 bits,
     // covering banding from color and alpha gradients alike. Left unclamped on purpose:
     // the negative half must survive to dither near-black, and the target clamps on write.
-    result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
+    result.rgb += dither;
     return result;
 }
 
