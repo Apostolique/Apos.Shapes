@@ -1228,13 +1228,15 @@ float DitherNoise(float2 worldPos) {
 // block body, and carried state limited to independent accumulators. A carried latch, a break,
 // or a non-constant bound each degrade the emitted for header into something ANGLE rejects.
 //
-// The baker pads every band's curve list out to exactly this, so all sixteen lanes fetch real
-// texels and the count guard is a stateless step of the loop index rather than an early out.
-#define MAX_BAND_CURVES 16
+// The baker pads every band's curve list out to exactly this, or to the dense length, so every
+// lane fetches a real texel and the count guard is a stateless step of the loop index rather than
+// an early out.
+#define MAX_BAND_CURVES 8
+#define DENSE_BAND_CURVES 16
 
 // Positive operands only, which is what keeps it apart from the Mod above: that one folds a
 // negative back around through HLSL's %, and % lowers to an fmod whose GLSL spelling has
-// broken macOS before. A texel index is never negative and this runs sixteen times a pixel.
+// broken macOS before. A texel index is never negative and this runs once per lane.
 float BandMod(float x, float y) {
     return x - y * floor(x / y);
 }
@@ -1340,15 +1342,13 @@ float2 SolveHorizPoly(float4 p12, float2 p3) {
         (a.x * t2 - b.x * 2.0) * t2 + p12.x);
 }
 
-// The whole pixel shader, built once per combination of the four features that cost the most
-// to compile. A variant without one holds that feature's inputs where they sit when nothing
-// uses it, and the compiler drops whatever they would have reached. See the techniques at the
-// end of the file.
+// The whole pixel shader. A version without a feature holds that feature's inputs where they
+// sit when nothing uses it, and the compiler drops whatever they would have reached.
 // The switches are what a version of the shader carries: dashes, fill gradients, border
-// gradients that differ from the fill, text, ellipses and paths, clips, and the ramp table's
-// rows (palettes, ramps and color ramps). ShapeBatch only hands a version quads it covers, so
+// gradients that differ from the fill, text, ellipses and paths, clips, the ramp table's rows
+// (palettes, ramps and color ramps), and text with glyphs baked with the long curve lists. ShapeBatch only hands a version quads it covers, so
 // each switch that is off is code the driver never compiles.
-float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBorderGradient, bool useText, bool useShapes, bool useClip, bool useRows) {
+float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBorderGradient, bool useText, bool useShapes, bool useClip, bool useRows, bool useDenseText) {
     float lineSize = p.Meta1.x;
     // A negative width asks for the fade to straddle the true edge instead of sitting outside
     // it, which is what makes a shape cover exactly the pixels its size claims. It rides in the
@@ -1470,7 +1470,11 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         // what GLSL ES 1.00 Appendix A admits; see MAX_BAND_CURVES above.
         float2 emCoord = q;
         float bandBase = p.Meta2.x;
-        float bandCount = p.Meta2.y;
+        // Negative for a glyph baked with the long lists, which only a version with dense text
+        // draws. A version that has them reads the short lists right too: the lanes past a
+        // short list's end are masked off by its count.
+        float bandCount = abs(p.Meta2.y);
+        int curveLanes = useDenseText ? DENSE_BAND_CURVES : MAX_BAND_CURVES;
         float bandMax = bandCount - 1.0;
         // Per axis rather than one number: an anisotropic transform stretches the two scans by
         // different amounts, and each loop only ever measures along its own axis.
@@ -1480,13 +1484,22 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
         float bandIndexY = clamp(floor(bandPos.y), 0.0, bandMax);
         float bandIndexX = clamp(floor(bandPos.x), 0.0, bandMax);
 
+        // Each band is split in two, with a curve list for each half (see GlyphBake.cs). A
+        // sample before the split casts its ray backwards and one after it forwards, so each
+        // list only holds the curves on its own side. Backwards, the crossings count from the
+        // other end, and since a closed outline's crossings along a whole line sum to zero, the
+        // negated count is the very number the forward ray would have reached.
+        float2 hBefore = FetchBandTexel(bandBase + 2.0 * bandIndexY);
+        float2 hAfter = FetchBandTexel(bandBase + 2.0 * bandIndexY + 1.0);
+        float hSplit = floor(hBefore.x * 0.03125);
+        float hDir = bandIndexX < hSplit ? -1.0 : 1.0;
+        float hCurveCount = hDir < 0.0 ? hBefore.x - hSplit * 32.0 : hAfter.x;
+        float hCurveOffset = hDir < 0.0 ? hBefore.y : hAfter.y;
+
         float xcov = 0.0;
         float xwgt = 0.0;
-        float2 hHeader = FetchBandTexel(bandBase + bandIndexY);
-        float hCurveCount = hHeader.x;
-        float hCurveOffset = hHeader.y;
 
-        for (int i = 0; i < MAX_BAND_CURVES; i++) {
+        for (int i = 0; i < curveLanes; i++) {
             float2 curveLoc = FetchBandTexel(hCurveOffset + float(i));
             // Sample relative before anything else: the solver's near-linear threshold is a
             // test on the second difference of these, and forming a.y any other way moves it.
@@ -1494,24 +1507,28 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
             float2 p3 = FetchCurveTexel(float2(curveLoc.x + 1.0, curveLoc.y)).xy - emCoord;
 
             // The count guard is stateless. There is no early-out mask: curves past the
-            // sorted cut lie entirely left of the sample, where both the coverage and weight
-            // terms already clamp to zero.
+            // sorted cut lie entirely behind the ray, where both the coverage and weight terms
+            // already clamp to zero.
             float mask = step(float(i) + 0.5, hCurveCount);
 
             float2 elig = RootEligibility(p12.y, p12.w, p3.y) * mask;
             float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.x;
-            xcov += elig.x * saturate(r.x + 0.5) - elig.y * saturate(r.y + 0.5);
+            xcov += hDir * (elig.x * saturate(hDir * r.x + 0.5) - elig.y * saturate(hDir * r.y + 0.5));
             xwgt = max(xwgt, elig.x * saturate(1.0 - abs(r.x) * 2.0));
             xwgt = max(xwgt, elig.y * saturate(1.0 - abs(r.y) * 2.0));
         }
 
+        float2 vBefore = FetchBandTexel(bandBase + 2.0 * (bandCount + bandIndexX));
+        float2 vAfter = FetchBandTexel(bandBase + 2.0 * (bandCount + bandIndexX) + 1.0);
+        float vSplit = floor(vBefore.x * 0.03125);
+        float vDir = bandIndexY < vSplit ? -1.0 : 1.0;
+        float vCurveCount = vDir < 0.0 ? vBefore.x - vSplit * 32.0 : vAfter.x;
+        float vCurveOffset = vDir < 0.0 ? vBefore.y : vAfter.y;
+
         float ycov = 0.0;
         float ywgt = 0.0;
-        float2 vHeader = FetchBandTexel(bandBase + bandCount + bandIndexX);
-        float vCurveCount = vHeader.x;
-        float vCurveOffset = vHeader.y;
 
-        for (int j = 0; j < MAX_BAND_CURVES; j++) {
+        for (int j = 0; j < curveLanes; j++) {
             float2 curveLoc = FetchBandTexel(vCurveOffset + float(j));
             float4 raw12 = FetchCurveTexel(curveLoc);
             float2 raw3 = FetchCurveTexel(float2(curveLoc.x + 1.0, curveLoc.y)).xy;
@@ -1525,7 +1542,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
 
             float2 elig = RootEligibility(p12.y, p12.w, p3.y) * mask;
             float2 r = SolveHorizPoly(p12, p3) * pixelsPerEm.y;
-            ycov += elig.x * saturate(r.x + 0.5) - elig.y * saturate(r.y + 0.5);
+            ycov += vDir * (elig.x * saturate(vDir * r.x + 0.5) - elig.y * saturate(vDir * r.y + 0.5));
             ywgt = max(ywgt, elig.x * saturate(1.0 - abs(r.x) * 2.0));
             ywgt = max(ywgt, elig.y * saturate(1.0 - abs(r.y) * 2.0));
         }
@@ -2052,7 +2069,7 @@ float4 ShapePixel(PixelInput p, bool useDash, bool useFillGradient, bool useBord
 // of its own named after them; see Tools/ShaderPack, which builds every version a release
 // ships. A version's shaders compile the first time something draws with it, so a game only
 // waits on the ones it uses. Compiled on its own, this file is the version with everything.
-float4 ShapePixelAll(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, true, true, true, true); }
+float4 ShapePixelAll(PixelInput p) : SV_TARGET { return ShapePixel(p, true, true, true, true, true, true, true, true); }
 
 #ifndef ONE_TECHNIQUE
 technique Shapes15 {

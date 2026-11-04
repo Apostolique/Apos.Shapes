@@ -26,7 +26,12 @@ namespace Apos.Shapes {
         Clips = 32,
         /// <summary>A <see cref="Gradient"/> palette, <see cref="Ramp"/> or <see cref="ColorRamp"/>.</summary>
         Ramps = 64,
+        /// <summary>
+        /// Text with glyphs too intricate for the version with <see cref="Text"/> alone, which
+        /// some symbol and CJK glyphs and dense SVG drawings are.
+        /// </summary>
+        DenseText = 128,
         /// <summary>Everything.</summary>
-        All = Dashes | Gradients | BorderGradients | Text | EllipsesAndPaths | Clips | Ramps
+        All = Dashes | Gradients | BorderGradients | Text | EllipsesAndPaths | Clips | Ramps | DenseText
     }
 }

@@ -123,19 +123,23 @@ static byte[] Gzip(byte[] raw) {
 
 static class Variants {
     // The feature bits, the same as ShapeFeatures.
-    const int Dashes = 1, Gradients = 2, BorderGradients = 4, Text = 8, Shapes = 16, Clips = 32, Ramps = 64;
-    // Technique names carry these three inverted, so the names a shader had before they were
-    // switches still mean what they did: Shapes0 to Shapes15 have ellipses, paths, clips and
-    // ramps. ShapeBatch undoes it the same way.
-    const int Inverted = Shapes | Clips | Ramps;
+    const int Dashes = 1, Gradients = 2, BorderGradients = 4, Text = 8, Shapes = 16, Clips = 32, Ramps = 64, DenseText = 128;
+    // Technique names carry these inverted, so the names a shader had before they were
+    // switches still mean what they did: Shapes0 to Shapes15 have ellipses, paths, clips, ramps
+    // and the long glyph curve lists. ShapeBatch undoes it the same way.
+    const int Inverted = Shapes | Clips | Ramps | DenseText;
 
     // Every combination of dashes, gradients, text, ellipses and paths, and clips. Border
     // gradients and ramps are rarer, so they come as one more version for each one with
-    // gradients rather than doubling the count twice over.
+    // gradients rather than doubling the count twice over. Each version with text but no dashes
+    // has a twin with the long glyph curve lists, which only rare glyphs need; dashed text with
+    // those draws with the version that has everything.
     public static IEnumerable<int> Gl() {
-        for (int f = 0; f < 128; f++) {
+        for (int f = 0; f < 256; f++) {
             int rare = f & (BorderGradients | Ramps);
-            if (rare == 0 || (rare == (BorderGradients | Ramps) && (f & Gradients) != 0)) yield return f;
+            if (rare != 0 && (rare != (BorderGradients | Ramps) || (f & Gradients) == 0)) continue;
+            if ((f & DenseText) != 0 && f != 255 && ((f & Text) == 0 || (f & Dashes) != 0)) continue;
+            yield return f;
         }
     }
 
@@ -153,7 +157,7 @@ static class Variants {
         string Flag(int bit) => (features & bit) != 0 ? "true" : "false";
         int name = Name(features);
         return $"#define ONE_TECHNIQUE\n#include \"{shader}\"\n" +
-            $"float4 ShapePixel{name}(PixelInput p) : SV_TARGET {{ return ShapePixel(p, {Flag(Dashes)}, {Flag(Gradients)}, {Flag(BorderGradients)}, {Flag(Text)}, {Flag(Shapes)}, {Flag(Clips)}, {Flag(Ramps)}); }}\n" +
+            $"float4 ShapePixel{name}(PixelInput p) : SV_TARGET {{ return ShapePixel(p, {Flag(Dashes)}, {Flag(Gradients)}, {Flag(BorderGradients)}, {Flag(Text)}, {Flag(Shapes)}, {Flag(Clips)}, {Flag(Ramps)}, {Flag(DenseText)}); }}\n" +
             $"technique Shapes{name} {{ pass {{ VertexShader = compile {vsModel} SpriteVertexShader(); PixelShader = compile {psModel} ShapePixel{name}(); }} }}\n";
     }
 }

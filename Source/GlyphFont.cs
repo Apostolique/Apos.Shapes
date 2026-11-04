@@ -198,7 +198,11 @@ namespace Apos.Shapes {
 
             int x1, y1, x2, y2;
             StbTrueType.stbtt_GetGlyphBox(_info, glyph, &x1, &y1, &x2, &y2);
-            return GlyphBake.Bake(curves, glyph, advance, bearing, x1, y1, x2, y2, UnitsPerEm, MaxCurves);
+            BakedGlyph baked = GlyphBake.Bake(curves, glyph, advance, bearing, x1, y1, x2, y2, UnitsPerEm, MaxCurves);
+            if (baked.Clamped > 0 && MaxCurves < GlyphBake.DenseCurves) {
+                baked = GlyphBake.Bake(curves, glyph, advance, bearing, x1, y1, x2, y2, UnitsPerEm, GlyphBake.DenseCurves);
+            }
+            return baked;
         }
 
         // A glyph with nothing to draw still advances the cursor, so whitespace does not

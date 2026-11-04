@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - SVG `switch` draws only its first child that applies, and `requiredExtensions` and `systemLanguage` are read.
 - `DrawSvg` takes a `currentColor`, which paints the elements the file paints with `currentColor`.
 - SVG `clip-path` with a `clipPath` that is one `rect`, `circle`, or round `ellipse`.
-- `ShapeFeatures.EllipsesAndPaths`, `ShapeFeatures.Clips` and `ShapeFeatures.Ramps`, for `Warmup`.
+- `ShapeFeatures.EllipsesAndPaths`, `ShapeFeatures.Clips`, `ShapeFeatures.Ramps` and `ShapeFeatures.DenseText`, for `Warmup`.
 
 ### Changed
 
@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Glyphs with many curves across one line, like some symbols, no longer lose pieces of their outline.
 - An SVG `stroke-dasharray` with more than two lengths draws dashed instead of solid.
 - SVG dashes with `stroke-linecap="square"` have square ends instead of flat ones.
 - SVG dashes on a closed shape like a `rect` or a `circle` start where the file says instead of half a dash early.

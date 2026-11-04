@@ -231,7 +231,7 @@ namespace Apos.Shapes {
             src = glyph.BandTexels;
             dst = Band.Data;
             int texels = glyph.BandTexelCount;
-            int heads = glyph.Bands * 2;
+            int heads = glyph.HeaderCount;
             for (int t = 0; t < texels; t++) {
                 int s = t * 4;
                 int d = (bandAt + t) * 4;

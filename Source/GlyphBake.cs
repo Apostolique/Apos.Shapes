@@ -25,15 +25,19 @@ namespace Apos.Shapes {
     // a line of text need to place it. Pure CPU data: nothing here touches a graphics device,
     // and a GlyphTable is what turns it into texels at a fixed place in the two textures.
     //
-    // Band block, 2 * Bands * (1 + MaxCurves) texels, .rg used:
-    //   [0, Bands)              horizontal band headers, one per band row.
-    //   [Bands, 2 * Bands)      vertical band headers, one per band column.
+    // Band block, 4 * Bands * (1 + MaxCurves) texels, .rg used:
+    //   [0, 2 * Bands)          horizontal band headers, two per band row.
+    //   [2 * Bands, 4 * Bands)  vertical band headers, two per band column.
     //   the rest                one curve list per header, in header order, each exactly
     //                           MaxCurves texels long.
-    // A header is (curve count, curve list offset). The offset is a linear texel index into
-    // the band texture and lands absolute only once the glyph seats; here it is relative to
-    // the block. A list entry holds a relative linear index into the glyph's curve block in
-    // .r, which seating resolves into the 2D texel coordinate the shader fetches.
+    // Each band is split in two at a line of the other axis's band grid. The first of its two
+    // headers is for the samples before the split, which cast their ray backwards, the second
+    // for the ones after it, which cast it forwards. A header is (curve count, curve list
+    // offset), and the first header's count also carries the split, as the band index it falls
+    // before, times 32. The offset is a linear texel index into the band texture and lands
+    // absolute only once the glyph seats; here it is relative to the block. A list entry holds
+    // a relative linear index into the glyph's curve block in .r, which seating resolves into
+    // the 2D texel coordinate the shader fetches.
     //
     // Curve block, 2 * (1 + curve count) texels:
     //   texels 0 and 1          the pad curve every short list is filled out with.
@@ -85,6 +89,9 @@ namespace Apos.Shapes {
         internal int MaxCurves;
 
         internal bool HasOutline => Bands > 0;
+        internal int HeaderCount => Bands * 4;
+        // Baked with the long lists, which only the shader versions with dense text read.
+        internal bool Dense => MaxCurves > GlyphBake.MaxCurves;
         internal int BandTexelCount => BandTexels.Length >> 2;
         internal int CurveTexelCount => CurveTexels.Length >> 2;
 
@@ -101,8 +108,12 @@ namespace Apos.Shapes {
     internal static class GlyphBake {
         // The shader fetches every lane of a fixed length loop and masks by the header's count,
         // so every list is padded out to exactly this and the dead lanes still land on a real
-        // texel. Must match MAX_BAND_CURVES in the shader.
-        internal const int MaxCurves = 16;
+        // texel. Must match MAX_BAND_CURVES in the shader. Both list lengths stay under 32,
+        // which is what the split is packed above in a header's count.
+        internal const int MaxCurves = 8;
+        // The lists a glyph too intricate for MaxCurves bakes with instead, which some symbol and
+        // CJK glyphs and dense SVG drawings are. Must match DENSE_BAND_CURVES in the shader.
+        internal const int DenseCurves = 16;
 
         // Bands per axis never goes past this. The band block grows as 2 * bands * (1 +
         // MaxCurves) texels, so the ceiling is what keeps one difficult glyph from taking a
@@ -178,11 +189,12 @@ namespace Apos.Shapes {
             // Forme's heuristic: half the shorter side in design units, capped at 16. For any
             // real font that is 16 for everything but a glyph a few dozen units across.
             int bands = Math.Max(1, Math.Min(16, Math.Min(sizeX, sizeY) / 2));
+            int margin = Margin(unitsPerEm);
             // Narrower bands can only drop curves from a list, never add them, so doubling
             // until the longest list fits is what guarantees the shader's fixed loop covers
             // every band. Band membership does not depend on the order the curves are in, so
             // the trial runs before the sorts do.
-            while (Longest(curves, bands, x1, y1, sizeX, sizeY) > maxCurves && bands < MaxBands) {
+            while (Longest(curves, bands, x1, y1, sizeX, sizeY, margin) > maxCurves && bands < MaxBands) {
                 bands = Math.Min(MaxBands, bands * 2);
             }
 
@@ -195,56 +207,126 @@ namespace Apos.Shapes {
             float sy = 1f / MathF.Max(1f, dimY);
             g.Transform = new Vector4(em * sx, em * sy, -x1 * sx, -y1 * sy);
 
-            int heads = bands * 2;
+            int heads = bands * 4;
             var bandTexels = new float[heads * (1 + maxCurves) * 4];
 
             // Horizontal bands cut the glyph's Y extent into strips and the shader solves for
-            // where each curve crosses the sample's scanline, so the lists are sorted by
-            // descending max x: the curves that can still cover the sample come first, and a
-            // list that has to lose its tail loses the curves furthest to the left, which are
-            // the ones whose coverage and weight terms clamp to zero anyway.
-            curves.Sort(ByMaxX);
-            int at = heads;
-            for (int b = 0; b < bands; b++) {
-                float lo = y1 + b * dimY;
-                float hi = lo + dimY;
-                at = Fill(g, bandTexels, b, at, curves, lo, hi, horizontal: true, maxCurves: maxCurves);
-            }
+            // where each curve crosses the sample's scanline. Each is split along X at a line of
+            // the vertical band grid, which is where the shader can tell the two halves apart.
             // Vertical bands cut the X extent and the shader swaps the axes to reuse the same
-            // solver, so the same argument runs on Y.
-            curves.Sort(ByMaxY);
+            // solver, so the same runs on Y.
+            int at = heads;
+            var buckets = new List<GlyphCurve>[bands];
+            var mins = new float[curves.Count];
+            var maxs = new float[curves.Count];
+            Bucket(curves, true, y1, dimY, bands, buckets);
             for (int b = 0; b < bands; b++) {
-                float lo = x1 + b * dimX;
-                float hi = lo + dimX;
-                at = Fill(g, bandTexels, bands + b, at, curves, lo, hi, horizontal: false, maxCurves: maxCurves);
+                at = Fill(g, bandTexels, 2 * b, at, buckets[b], mins, maxs, horizontal: true, x1, dimX, bands, margin, maxCurves);
+            }
+            Bucket(curves, false, x1, dimX, bands, buckets);
+            for (int b = 0; b < bands; b++) {
+                at = Fill(g, bandTexels, 2 * (bands + b), at, buckets[b], mins, maxs, horizontal: false, y1, dimY, bands, margin, maxCurves);
             }
             g.BandTexels = bandTexels;
             return g;
         }
 
-        // Writes one band's header and its padded curve list, and returns where the next list
-        // starts. Offsets are relative to the block; seating makes them absolute.
-        private static int Fill(
-            BakedGlyph g, float[] texels, int band, int at, List<GlyphCurve> curves,
-            float lo, float hi, bool horizontal, int maxCurves) {
+        // How far past its split a half's list reaches. A sample's antialiasing reads the curves
+        // within half a pixel of it, so a sample next to the split needs a few from the other
+        // side. Half a pixel at 8 pixels per em covers that for any text worth reading; below
+        // that, a sample within a fraction of a pixel of the split can miss a curve.
+        private static int Margin(int unitsPerEm) => Math.Max(1, unitsPerEm / 16);
 
+        // Where a band splits, as the index of the band of the other axis it falls before, and
+        // how many curves each half then holds. The split that leaves the longer half shortest
+        // wins, nearest the middle on a tie. A split at either end leaves one half no sample
+        // reads, so that half doesn't count.
+        // The candidates go by in order, so each half's count comes off the sorted extents with a
+        // pointer that only moves forward. mins and maxs are scratch, at least members long.
+        private static (int Split, int Before, int After) Split(List<GlyphCurve> members, bool horizontal, float start, int dim, int bands, int margin, float[] mins, float[] maxs) {
+            int n = members.Count;
+            for (int i = 0; i < n; i++) {
+                mins[i] = Min(members[i], horizontal);
+                maxs[i] = Max(members[i], horizontal);
+            }
+            Array.Sort(mins, 0, n);
+            Array.Sort(maxs, 0, n);
+            int bestSplit = 0, bestBefore = 0, bestAfter = n, bestCost = int.MaxValue;
+            int before = 0, behind = 0;
+            for (int k = 0; k <= bands; k++) {
+                float at = start + k * dim;
+                while (before < n && mins[before] <= at + margin) before++;
+                while (behind < n && maxs[behind] < at - margin) behind++;
+                int after = n - behind;
+                int cost = Math.Max(k > 0 ? before : 0, k < bands ? after : 0);
+                if (cost < bestCost || (cost == bestCost && Math.Abs(2 * k - bands) < Math.Abs(2 * bestSplit - bands))) {
+                    bestSplit = k;
+                    bestBefore = before;
+                    bestAfter = after;
+                    bestCost = cost;
+                }
+            }
+            return (bestSplit, bestBefore, bestAfter);
+        }
+
+        // The extent of a curve along the axis its band's rays run, which is x for a horizontal
+        // band.
+        private static float Min(in GlyphCurve c, bool horizontal) {
+            return horizontal ? MathF.Min(MathF.Min(c.P1.X, c.P2.X), c.P3.X) : MathF.Min(MathF.Min(c.P1.Y, c.P2.Y), c.P3.Y);
+        }
+        private static float Max(in GlyphCurve c, bool horizontal) {
+            return horizontal ? MathF.Max(MathF.Max(c.P1.X, c.P2.X), c.P3.X) : MathF.Max(MathF.Max(c.P1.Y, c.P2.Y), c.P3.Y);
+        }
+
+        // Writes one band's two headers and their padded curve lists, and returns where the next
+        // list starts. members are the band's curves, which it sorts. Offsets are relative to the
+        // block; seating makes them absolute.
+        private static int Fill(
+            BakedGlyph g, float[] texels, int header, int at, List<GlyphCurve> members, float[] mins, float[] maxs,
+            bool horizontal, float splitStart, int splitDim, int bands, int margin, int maxCurves) {
+
+            var (split, _, _) = Split(members, horizontal, splitStart, splitDim, bands, margin, mins, maxs);
+            float splitAt = splitStart + split * splitDim;
+            bool over = false;
+
+            // Before the split, rays run backwards, so the list keeps the curves whose near end
+            // comes first: one that has to lose its tail loses the ones furthest along, which
+            // only the samples right at the split reach.
+            members.Sort((a, b) => Min(a, horizontal).CompareTo(Min(b, horizontal)));
             int count = 0;
-            int over = 0;
-            foreach (GlyphCurve c in curves) {
-                if (!Crosses(c, lo, hi, horizontal)) continue;
+            foreach (GlyphCurve c in members) {
+                if (Min(c, horizontal) > splitAt + margin) continue;
                 if (count == maxCurves) {
-                    over++;
+                    over |= split > 0;
                     continue;
                 }
                 Write(texels, at + count, new Vector2(c.Texel, 0f), Vector2.Zero);
                 count++;
             }
-            if (over > 0) g.Clamped++;
-            for (int i = count; i < maxCurves; i++) {
-                Write(texels, at + i, Vector2.Zero, Vector2.Zero);
+            for (int i = count; i < maxCurves; i++) Write(texels, at + i, Vector2.Zero, Vector2.Zero);
+            Write(texels, header, new Vector2(count + 32 * split, at), Vector2.Zero);
+            at += maxCurves;
+
+            // After it they run forwards, so the curves whose far end comes last go first, and
+            // a list that has to lose its tail loses the ones furthest back, whose coverage and
+            // weight terms clamp to zero anyway.
+            members.Sort((a, b) => Max(b, horizontal).CompareTo(Max(a, horizontal)));
+            count = 0;
+            foreach (GlyphCurve c in members) {
+                if (Max(c, horizontal) < splitAt - margin) continue;
+                if (count == maxCurves) {
+                    over |= split < bands;
+                    continue;
+                }
+                Write(texels, at + count, new Vector2(c.Texel, 0f), Vector2.Zero);
+                count++;
             }
-            Write(texels, band, new Vector2(count, at), Vector2.Zero);
-            return at + maxCurves;
+            for (int i = count; i < maxCurves; i++) Write(texels, at + i, Vector2.Zero, Vector2.Zero);
+            Write(texels, header + 1, new Vector2(count, at), Vector2.Zero);
+            at += maxCurves;
+
+            if (over) g.Clamped++;
+            return at;
         }
 
         // Whether a curve belongs in a band. A curve that runs flat along the band's own axis
@@ -259,36 +341,44 @@ namespace Apos.Shapes {
             return MathF.Min(MathF.Min(a, b), d) <= hi && MathF.Max(MathF.Max(a, b), d) >= lo;
         }
 
-        // The longest curve list any of the 2 * bands bands would hold.
-        private static int Longest(List<GlyphCurve> curves, int bands, int x1, int y1, int sizeX, int sizeY) {
+        // The longest curve list any half of the 2 * bands bands would hold, each split the
+        // way Fill splits it.
+        private static int Longest(List<GlyphCurve> curves, int bands, int x1, int y1, int sizeX, int sizeY, int margin) {
             int dimX = (sizeX + bands - 1) / bands;
             int dimY = (sizeY + bands - 1) / bands;
             int longest = 0;
-            for (int b = 0; b < bands; b++) {
-                float lo = y1 + b * dimY;
-                int n = 0;
-                foreach (GlyphCurve c in curves) {
-                    if (Crosses(c, lo, lo + dimY, horizontal: true)) n++;
+            var buckets = new List<GlyphCurve>[bands];
+            var mins = new float[curves.Count];
+            var maxs = new float[curves.Count];
+            for (int axis = 0; axis < 2; axis++) {
+                bool horizontal = axis == 0;
+                Bucket(curves, horizontal, horizontal ? y1 : x1, horizontal ? dimY : dimX, bands, buckets);
+                for (int b = 0; b < bands; b++) {
+                    var (split, before, after) = Split(buckets[b], horizontal, horizontal ? x1 : y1, horizontal ? dimX : dimY, bands, margin, mins, maxs);
+                    longest = Math.Max(longest, Math.Max(split > 0 ? before : 0, split < bands ? after : 0));
                 }
-                if (n > longest) longest = n;
-            }
-            for (int b = 0; b < bands; b++) {
-                float lo = x1 + b * dimX;
-                int n = 0;
-                foreach (GlyphCurve c in curves) {
-                    if (Crosses(c, lo, lo + dimX, horizontal: false)) n++;
-                }
-                if (n > longest) longest = n;
             }
             return longest;
         }
 
-        private static readonly Comparison<GlyphCurve> ByMaxX =
-            (a, b) => MathF.Max(MathF.Max(b.P1.X, b.P2.X), b.P3.X)
-                .CompareTo(MathF.Max(MathF.Max(a.P1.X, a.P2.X), a.P3.X));
-        private static readonly Comparison<GlyphCurve> ByMaxY =
-            (a, b) => MathF.Max(MathF.Max(b.P1.Y, b.P2.Y), b.P3.Y)
-                .CompareTo(MathF.Max(MathF.Max(a.P1.Y, a.P2.Y), a.P3.Y));
+        // Each band's curves, which are the ones Crosses puts in it. A curve can only cross the
+        // bands its extent spans, so it is only tried against those.
+        private static void Bucket(List<GlyphCurve> curves, bool horizontal, float start, int dim, int bands, List<GlyphCurve>[] buckets) {
+            for (int b = 0; b < bands; b++) {
+                if (buckets[b] == null) buckets[b] = new List<GlyphCurve>();
+                else buckets[b].Clear();
+            }
+            foreach (GlyphCurve c in curves) {
+                float lo = horizontal ? MathF.Min(MathF.Min(c.P1.Y, c.P2.Y), c.P3.Y) : MathF.Min(MathF.Min(c.P1.X, c.P2.X), c.P3.X);
+                float hi = horizontal ? MathF.Max(MathF.Max(c.P1.Y, c.P2.Y), c.P3.Y) : MathF.Max(MathF.Max(c.P1.X, c.P2.X), c.P3.X);
+                int first = Math.Max(0, (int)MathF.Floor((lo - start) / dim) - 1);
+                int last = Math.Min(bands - 1, (int)MathF.Floor((hi - start) / dim) + 1);
+                for (int b = first; b <= last; b++) {
+                    float bandLo = start + b * dim;
+                    if (Crosses(c, bandLo, bandLo + dim, horizontal)) buckets[b].Add(c);
+                }
+            }
+        }
 
         // Design units to em units, a division per component rather than the multiply by a
         // reciprocal a Vector2 divide would do: the reciprocal of a units per em is not exact,

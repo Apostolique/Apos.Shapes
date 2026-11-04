@@ -38,12 +38,16 @@ namespace Apos.Shapes {
                     if (TechniqueFeatures(technique.Name) is int features) {
                         _techniques[features] = technique;
                         _effects[features] = _effect;
-                        _available |= UInt128.One << features;
+                        _available[features] = true;
+                        _anyAvailable = true;
                     }
                 }
             } else {
                 _archive = ShaderArchive.For(EmbeddedArchive(graphicsDevice));
-                foreach (int name in _archive.Names) _available |= UInt128.One << (name ^ InvertedFeatures);
+                foreach (int name in _archive.Names) {
+                    _available[name ^ InvertedFeatures] = true;
+                    _anyAvailable = true;
+                }
             }
 
             _vertices = new VertexShape[_initialVertices];
@@ -3476,9 +3480,9 @@ namespace Apos.Shapes {
 
             // The band block's address and the shape of the two scans ride in the four dash
             // channels, which no glyph dashes with. See the channel map above PixelInput in
-            // apos-shapes.fx.
+            // apos-shapes.fx. A glyph baked with the long lists says so with a negative band count.
             VertexShape v = new(topLeft, emTopLeft, shape, fill, fill, 0f, 1f,
-                                aaSize: Aa(aaSize), a: _glyphs.BandBase(at), b: g.Bands, c: pixelsPerEm.X, d: pixelsPerEm.Y,
+                                aaSize: Aa(aaSize), a: _glyphs.BandBase(at), b: g.Dense ? -g.Bands : g.Bands, c: pixelsPerEm.X, d: pixelsPerEm.Y,
                                 colorSpace: ColorSpace, ramps: _ramps);
             // The em to band index transform, which is the one thing with nowhere else to ride.
             // A glyph has no border band, so the border gradient's slot is free.
@@ -3612,7 +3616,7 @@ namespace Apos.Shapes {
         // dashed quads among solid ones don't each cost a draw call. runFeatures are the ones the
         // whole run needs, which is its clips.
         private void DrawSplit(Texture2D? texture, int firstIndex, int indexCount, int runFeatures) {
-            if (_available == 0) {
+            if (!_anyAvailable) {
                 DrawRange(texture, -1, firstIndex, indexCount);
                 return;
             }
@@ -3673,7 +3677,7 @@ namespace Apos.Shapes {
         private void DrawRange(Texture2D? texture, int techniqueIndex, int firstIndex, int indexCount) {
             ShaderEffect effect = EffectFor(techniqueIndex);
             EffectTechnique technique = techniqueIndex < 0 ? effect.Effect.CurrentTechnique : _techniques[techniqueIndex]!;
-            if (techniqueIndex >= 0) _compiled |= UInt128.One << techniqueIndex;
+            if (techniqueIndex >= 0) _compiled[techniqueIndex] = true;
             if (effect.Version != _parameterVersion) {
                 effect.Version = _parameterVersion;
                 SetParameters(effect);
@@ -3726,7 +3730,7 @@ namespace Apos.Shapes {
         // shader may leave techniques out, and then the smallest one it has that covers them
         // draws instead.
         private int PickTechnique(int features) {
-            if (_available == 0) return -1;
+            if (!_anyAvailable) return -1;
             if (_warmupFeatures == 0) {
                 int best = Smallest(features, _compiled);
                 if (best >= 0) return best;
@@ -3744,10 +3748,10 @@ namespace Apos.Shapes {
 
         // The technique among a set of them, by bit, that covers these features and is quickest
         // to compile, or -1 if none does.
-        private static int Smallest(int features, UInt128 among) {
+        private static int Smallest(int features, bool[] among) {
             int best = -1;
             for (int i = 0; i < FeatureSets; i++) {
-                if (((among >> i) & UInt128.One) != UInt128.Zero && (i & features) == features && (best < 0 || CompileCost(i) < CompileCost(best))) best = i;
+                if (among[i] && (i & features) == features && (best < 0 || CompileCost(i) < CompileCost(best))) best = i;
             }
             return best;
         }
@@ -3761,6 +3765,7 @@ namespace Apos.Shapes {
             if ((features & (int)ShapeFeatures.EllipsesAndPaths) != 0) cost += 10;
             if ((features & (int)ShapeFeatures.Clips) != 0) cost += 3;
             if ((features & (int)ShapeFeatures.Ramps) != 0) cost += 9;
+            if ((features & (int)ShapeFeatures.DenseText) != 0) cost += 9;
             return cost;
         }
 
@@ -3787,7 +3792,10 @@ namespace Apos.Shapes {
                 features |= (int)ShapeFeatures.BorderGradients;
                 if (borderRows) features |= (int)ShapeFeatures.Ramps;
             }
-            if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) features |= (int)ShapeFeatures.Text;
+            if (shape == (int)VertexShape.Shape.Glyph || shape == (int)VertexShape.Shape.EvenOdd) {
+                features |= (int)ShapeFeatures.Text;
+                if (v.Meta2.Y < 0f) features |= (int)ShapeFeatures.DenseText;
+            }
             if (shape == (int)VertexShape.Shape.Ellipse || shape == (int)VertexShape.Shape.Path) features |= (int)ShapeFeatures.EllipsesAndPaths;
             return features;
         }
@@ -5070,9 +5078,9 @@ namespace Apos.Shapes {
         private readonly ShaderEffect? _effect;
         private readonly ShaderArchive? _archive;
         // Every mix of ShapeFeatures, which is how the tables below are indexed.
-        private const int FeatureSets = 128;
+        private const int FeatureSets = 256;
         // The features a technique's name carries inverted; see TechniqueFeatures.
-        private const int InvertedFeatures = (int)(ShapeFeatures.EllipsesAndPaths | ShapeFeatures.Clips | ShapeFeatures.Ramps);
+        private const int InvertedFeatures = (int)(ShapeFeatures.EllipsesAndPaths | ShapeFeatures.Clips | ShapeFeatures.Ramps | ShapeFeatures.DenseText);
         // Whether the batch loaded its effects, and so disposes them, rather than taking one.
         private readonly bool _ownsEffect;
         // The built-in shader's techniques by the features they carry, and the effects that
@@ -5080,10 +5088,11 @@ namespace Apos.Shapes {
         // doesn't have. A replacement with none of them draws with its current technique.
         private readonly EffectTechnique?[] _techniques = new EffectTechnique?[FeatureSets];
         private readonly ShaderEffect?[] _effects = new ShaderEffect?[FeatureSets];
-        // The techniques there are to draw with, one bit each, and the ones this batch has drawn
-        // with and so has already paid to compile.
-        private readonly UInt128 _available;
-        private UInt128 _compiled;
+        // The techniques there are to draw with, and the ones this batch has drawn with and so has
+        // already paid to compile.
+        private readonly bool[] _available = new bool[FeatureSets];
+        private readonly bool[] _compiled = new bool[FeatureSets];
+        private readonly bool _anyAvailable;
         // Goes up whenever a parameter changes, so each effect gets them again before it draws.
         private int _parameterVersion;
         // Set only while a warmup draws, to the features it was asked to compile.

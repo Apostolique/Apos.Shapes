@@ -1199,7 +1199,9 @@ namespace Apos.Shapes {
             int x2 = (int)MathF.Ceiling(hix);
             int y2 = (int)MathF.Ceiling(hi);
 
-            BakedGlyph whole = GlyphBake.Bake(Flatten(contours), index, 0, 0, x1, y1, x2, y2, Grid, GlyphBake.MaxCurves);
+            List<GlyphCurve> flat = Flatten(contours);
+            BakedGlyph whole = GlyphBake.Bake(flat, index, 0, 0, x1, y1, x2, y2, Grid, GlyphBake.MaxCurves);
+            if (whole.Clamped > 0) whole = GlyphBake.Bake(flat, index, 0, 0, x1, y1, x2, y2, Grid, GlyphBake.DenseCurves);
             if (whole.Clamped > 0) {
                 tiles = Tile(contours, index, x1, y1, x2, y2, whole.Clamped);
             }
@@ -1283,7 +1285,7 @@ namespace Apos.Shapes {
                             iy == 0 ? float.NegativeInfinity : ty1 - margin,
                             iy == ny - 1 ? float.PositiveInfinity : ty2 + margin);
                         if (clipped.Count == 0) continue;
-                        BakedGlyph tile = GlyphBake.Bake(clipped, index, 0, 0, tx1, ty1, tx2, ty2, Grid, GlyphBake.MaxCurves);
+                        BakedGlyph tile = GlyphBake.Bake(clipped, index, 0, 0, tx1, ty1, tx2, ty2, Grid, GlyphBake.DenseCurves);
                         clamped += tile.Clamped;
                         tile.SeamMinX = ix > 0;
                         tile.SeamMaxX = ix < nx - 1;
