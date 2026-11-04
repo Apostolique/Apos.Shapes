@@ -29,9 +29,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001" />
-    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001" />
-    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001" />
+    <PackageReference Include="nkast.Xna.Framework" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.3.9001" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.3.9001" />
     <PackageReference Include="KNI.Extended" Version="5.3.1" />
     <!-- Reads the glyph outlines the shader solves. -->
     <PackageReference Include="StbTrueTypeSharp" Version="1.26.12" />
@@ -70,7 +70,7 @@
     <PropertyGroup>
       <_AposShaderPack>dotnet run --project ../Tools/ShaderPack/ShaderPack.csproj -c Release -- build Content/apos-shapes.fx</_AposShaderPack>
     </PropertyGroup>
-    <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.knifx.pack&quot; gl lz vs_3_0 ps_3_0 --target-runtime kni-knifx" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
+    <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.knifx.pack&quot; gl lz vs_3_0 ps_3_0 --target-runtime kni-knifx-v12" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
     <Exec Command="$(_AposShaderPack) &quot;$(AposShaderDir)apos-shapes.kni.dx11.pack&quot; bytecode lz VS_SHADERMODEL PS_SHADERMODEL /Profile:DirectX_11" WorkingDirectory="$(MSBuildProjectDirectory)" EnvironmentVariables="DOTNET_ROLL_FORWARD=Major" />
   </Target>
 

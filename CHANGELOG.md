@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `Warmup(ShapeFeatures.None)` leaves out ellipses, paths, clips, and palettes and ramps on gradients. Pass their features to warm those up too.
 - Creating the first `ShapeBatch` is faster on DirectX and Vulkan.
 - `VertexShape.Shape.EquilateralTriangle` is now `VertexShape.Shape.Star`.
+- Apos.Shapes.KNI needs KNI 4.3, and its shaders load there without the warning that they are for an older version.
 
 ### Fixed
 
