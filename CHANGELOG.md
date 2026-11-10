@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Fixed
+
+- Creating a `ShapeBatch` on DirectX 12 no longer fails with `CREATEVERTEXSHADER_INVALIDSHADERBYTECODE`. The shaders are compiled with ShadowDusk 0.25.1, which signs the DirectX 12 shaders when they are built on Linux and macOS too.
 
 ## [0.10.0] - 2026-11-04
 
