@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Nothing yet!
+
+## [0.10.1] - 2026-11-10
+
 ### Fixed
 
-- Creating a `ShapeBatch` on DirectX 12 no longer fails with `CREATEVERTEXSHADER_INVALIDSHADERBYTECODE`. The shaders are compiled with ShadowDusk 0.25.1, which signs the DirectX 12 shaders when they are built on Linux and macOS too.
+- Creating a `ShapeBatch` on DirectX 12 no longer fails with `CREATEVERTEXSHADER_INVALIDSHADERBYTECODE`.
 
 ## [0.10.0] - 2026-11-04
 
@@ -537,7 +541,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Everything!
 
-[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Apostolique/Apos.Shapes/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/Apostolique/Apos.Shapes/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.4...v0.10.0
 [0.9.4]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/Apostolique/Apos.Shapes/compare/v0.9.2...v0.9.3
